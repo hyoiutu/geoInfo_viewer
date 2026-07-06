@@ -39,15 +39,13 @@
 
 ## 📝 開発プロジェクト固有の検証手順
 
-> **TODO**: 本セクションは `package.json` / pnpm workspace / frontend・backend の雛形構築（別タスク）が完了した時点で、実際のコマンドに置き換えること。想定構成は以下の通り。
->
-> - **フロントエンド (frontend/)**
->   - テストコマンド: `pnpm --filter frontend test:unit`（単体テスト作成・実行時は test_rules.md のルールに従うこと）
->   - リントコマンド: `pnpm --filter frontend lint`（Biome）
->   - 型チェックコマンド: `pnpm --filter frontend typecheck`
->   - E2Eテストコマンド: `pnpm --filter frontend test:e2e`（Playwright。ビルドを含めて実行する。`frontend/src/**` 配下の実装ファイル（テストコードのみの変更を除く）に修正がある場合は必ず実行すること。README.md・仕様書・スキル定義等のドキュメントのみの修正の場合は実行不要）
-> - **バックエンド (backend/)**
->   - テストコマンド: `pnpm --filter backend test:unit`（NestJS部分・Electronメインプロセス部分を含む。単体テスト作成・実行時は test_rules.md のルールに従うこと）
->   - リントコマンド: `pnpm --filter backend lint`（Biome）
->   - 型チェックコマンド: `pnpm --filter backend typecheck`
->   - DB(PostgreSQL/PostGIS)を伴うテストの実行方法（テスト用DBの用意方法、マイグレーション手順等）は、バックエンド雛形構築時にあわせて本セクションに追記すること。
+- **テストコマンド**: `pnpm run test:unit`（`pnpm --filter frontend test:unit`のエイリアス。単体テスト作成・実行時は test_rules.md のルールに従うこと）
+- **リントコマンド**: `pnpm run lint`（Biome。対象は `electron/**`, `frontend/src/**`）
+- **型チェックコマンド**: `pnpm run typecheck`（`frontend/tsconfig.json`と`tsconfig.electron.json`の両方を対象とする）
+- **E2Eテストコマンド**: `pnpm run test:e2e`（`pnpm run build`によるビルドを含んだ上でPlaywrightを実行する。`electron/**`, `frontend/src/**`配下の実装ファイル（テストコードのみの変更を除く）に修正がある場合は必ず実行すること。README.md・仕様書・スキル定義等のドキュメントのみの修正の場合は実行不要）
+
+> **TODO**: バックエンド (backend/, NestJS + PostgreSQL/PostGIS) の雛形構築時に、以下を本セクションに追記すること。
+> - テストコマンド: `pnpm --filter backend test:unit`
+> - リントコマンド: `pnpm --filter backend lint`
+> - 型チェックコマンド: `pnpm --filter backend typecheck`
+> - DB(PostgreSQL/PostGIS)を伴うテストの実行方法（テスト用DBの用意方法、マイグレーション手順等）

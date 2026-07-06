@@ -14,7 +14,7 @@
 - UIコンポーネント
   - ChakraUI
 - 地図描画
-  - MapBox（mapbox-gl-js）
+  - MapLibre GL JS（mapbox-gl-jsからフォークされたオープンソース実装。APIキー不要でベクタタイルを描画できる）
 - テスト
   - vite + vitest
   - testinglibrary
@@ -41,6 +41,12 @@
 
 ## ディレクトリ構造
 - root
+  - electron
+    - main
+      - ...
+    - preload
+      - ...
+    - ...（Electronのメインプロセス・プリロードスクリプト。共通基盤として frontend/backend のどちらにも属さない）
   - backend
     - src
       - ...
