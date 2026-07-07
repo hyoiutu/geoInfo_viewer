@@ -67,6 +67,18 @@
 - **地図(MapLibre GL JS)を使用するコンポーネントのテスト**: jsdomはWebGL/canvasを持たないため、`maplibre-gl`は`vi.mock('maplibre-gl', ...)`でモジュール全体をモック化してテストする（実際のタイル取得・地図描画は行わない）。`Map`コンストラクタをモックする際は、`vi.fn().mockImplementation(function MockMap() { ... })`のように`function`宣言を使うこと（アロー関数は`new`で呼び出せないため`is not a constructor`エラーになる）。例: `frontend/src/components/__tests__/MapView.tests.tsx`。
 - **共有モック・フィクスチャ**: 複数のテストファイルで共有するモック（例: Electronの`window.api`のスタブ、地図データのダミーフィクスチャ）やヘルパー（`renderWithChakra`等）は `frontend/src/test-utils/` に配置する。このディレクトリのファイルはテスト対象そのものではないため `*.tests.*` という命名は使わない（Vitestの実行対象に含めないため）。
 - **`vi.restoreAllMocks()` は `vi.spyOn` で作成したモックにしか効かない**: `vi.mock('module', () => ({ fn: vi.fn() }))` のようにモックファクトリ内で作成した `vi.fn()` は、`vi.restoreAllMocks()` では呼び出し履歴も実装もクリアされず、次のテストへ持ち越されてしまう。モックファクトリで作成した関数のクリーンアップには `vi.resetAllMocks()`（または `vi.clearAllMocks()`）を使うこと。`vi.spyOn(window, 'alert')` のように実オブジェクトをスパイした場合は `vi.restoreAllMocks()` で元の実装に戻せるため、そちらは引き続き使用してよい。
-- **実行コマンド**: `pnpm run test:unit`（対象は `frontend/src/**/*.tests.*`）
+- **実行コマンド**: `pnpm run test:unit`（`frontend/src/**/*.tests.*`と`backend/src/**/*.tests.*`の両方を実行する）
 
-> **TODO**: バックエンド（NestJS + PostgreSQL/PostGIS）のテスト方針は未検討。ORM選定、テスト用DB（例: testcontainers、専用テストスキーマ等）の用意方法、PostGISを含む空間クエリのテスト方法は、バックエンド雛形構築時にあわせて本セクションに追記すること。
+### バックエンド（backend/, NestJS）
+
+- **テストフレームワーク**: Vitest（`@nestjs/testing`の`Test.createTestingModule`でテスト対象のモジュール/コントローラ/サービスを組み立てる）
+- **設定ファイル**: `backend/vitest.config.ts`
+  - vitestの既定トランスフォーム（esbuild、およびvitest v4で既定化されたOxc）は`emitDecoratorMetadata`をサポートしないため、`unplugin-swc`（`@swc/core`）をpluginとして使い、`oxc: false`を明示的に設定してOxcトランスフォームを無効化すること。これを怠るとNestJSのコンストラクタインジェクション（DI）が正しく動作しない。
+  - コンストラクタで注入するクラス（例: `constructor(private readonly appService: AppService) {}`）はBiomeの`lint/style/useImportType`から「型としてのみ使用」と誤検知され`import type`への変換を提案されることがあるが、実行時の型メタデータ解決に実体の参照が必要なため、提案を鵜呑みにせず通常の`import`のまま残すこと（詳細は`rules.md`参照）。
+- **命名・配置規約**: NestJS既定の`.spec.ts`ではなく、フロントエンドと同じ`__tests__`配置・`<対象ファイル名>.tests.ts`命名を使う（例: `backend/src/app.service.ts` → `backend/src/__tests__/app.service.tests.ts`）。
+- **実行コマンド**: `pnpm --filter backend test:unit`
+
+> **TODO**: backend/にPostgreSQL/PostGIS接続・ORMを実装するタイミングで、以下を本セクションに追記すること。
+> - ORM選定（TypeORM/Prisma/MikroORM等）とPostGISジオメトリ型の扱い方
+> - テスト用DBの用意方法（testcontainers、専用テストスキーマ等）
+> - PostGISを含む空間クエリのテスト方法

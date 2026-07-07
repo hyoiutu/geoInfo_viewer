@@ -7,6 +7,8 @@
 
 **Biomeが指摘しないからといって、規約に準拠しているとは限らない。** 新規コード作成時・既存コードの見直し時は、Biomeのlint結果だけに頼らず、本ファイルの各ルールと照らし合わせて確認すること。
 
+逆に、**Biomeの指摘が誤りである場合もある**。例えばNestJSのコンストラクタインジェクションで使うクラス（例: `constructor(private readonly appService: AppService) {}`）は、Biomeの`lint/style/useImportType`からは「型としてしか使われていない」ように見え`import type`への変換を提案されるが、実際には`emitDecoratorMetadata`が実行時にこのクラスの参照（値）を必要とするため、`import type`に変換すると依存性注入が壊れる。この種の警告（`Found N warning(s)`、exit code 0）は自動修正を鵜呑みにせず、フレームワークの実行時要件を優先すること。
+
 ---
 
 # 使用しない引数は_(アンダースコア)にする

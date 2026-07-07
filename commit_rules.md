@@ -39,13 +39,11 @@
 
 ## 📝 開発プロジェクト固有の検証手順
 
-- **テストコマンド**: `pnpm run test:unit`（`pnpm --filter frontend test:unit`のエイリアス。単体テスト作成・実行時は test_rules.md のルールに従うこと）
-- **リントコマンド**: `pnpm run lint`（Biome。対象は `electron/**`, `frontend/src/**`）
-- **型チェックコマンド**: `pnpm run typecheck`（`frontend/tsconfig.json`と`tsconfig.electron.json`の両方を対象とする）
-- **E2Eテストコマンド**: `pnpm run test:e2e`（`pnpm run build`によるビルドを含んだ上でPlaywrightを実行する。`electron/**`, `frontend/src/**`配下の実装ファイル（テストコードのみの変更を除く）に修正がある場合は必ず実行すること。README.md・仕様書・スキル定義等のドキュメントのみの修正の場合は実行不要）
+- **テストコマンド**: `pnpm run test:unit`（`pnpm --filter frontend test:unit && pnpm --filter backend test:unit`のエイリアス。単体テスト作成・実行時は test_rules.md のルールに従うこと）
+- **リントコマンド**: `pnpm run lint`（Biome。対象は `electron/**`, `frontend/src/**`, `backend/src/**`。backend単体には専用のlintスクリプトはなく、ルートのBiome設定でカバーする）
+- **型チェックコマンド**: `pnpm run typecheck`（`frontend/tsconfig.json`・`backend/tsconfig.json`・`tsconfig.electron.json`の3つを対象とする）
+- **E2Eテストコマンド**: `pnpm run test:e2e`（`pnpm run build`によるビルドを含んだ上でPlaywrightを実行する。`electron/**`, `frontend/src/**`配下の実装ファイル（テストコードのみの変更を除く）に修正がある場合は必ず実行すること。README.md・仕様書・スキル定義等のドキュメントのみの修正の場合は実行不要。backend/はElectronメインプロセスからまだ起動されないため、backend/src/**のみの修正では現時点では対象外）
 
-> **TODO**: バックエンド (backend/, NestJS + PostgreSQL/PostGIS) の雛形構築時に、以下を本セクションに追記すること。
-> - テストコマンド: `pnpm --filter backend test:unit`
-> - リントコマンド: `pnpm --filter backend lint`
-> - 型チェックコマンド: `pnpm --filter backend typecheck`
+> **TODO**: backend/にPostgreSQL/PostGIS接続・ORMを実装するタイミングで、以下を本セクションに追記すること。
 > - DB(PostgreSQL/PostGIS)を伴うテストの実行方法（テスト用DBの用意方法、マイグレーション手順等）
+> - ElectronメインプロセスからのNestJS起動連携が実装された場合のE2Eテスト対象範囲の見直し
