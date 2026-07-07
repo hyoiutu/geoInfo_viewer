@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-07-07] 自転車ログ表示機能フェーズ2: Strava APIをラップしたバックエンドAPIを実装した
+* **修正の動機・概要**:
+  - フェーズ1で構築したStrava疎通機能を使い、フロントエンドが呼び出せるラッパーAPI（`GET /activities`）を実装した。この時点ではDBを介さずStrava APIへ毎回パススルーする。
+  - Stravaの`summary_polyline`（エンコード済み文字列）は地図描画にそのまま使えないため、`@mapbox/polyline`でデコードし`[lng, lat]`順（GeoJSON座標順）に変換して返すこととした。
+  - Electronレンダラーや将来の環境差異に備え、開発時点ではCORSを全オリジン許可とした（本番向けの絞り込みは将来の課題）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/activities/`を新規作成: `activities.constants.ts`, `types/cycling-activity.dto.ts`, `cycling-activity.util.ts`（polylineデコード・DTO変換）, `activities.service.ts`, `activities.controller.ts`（`GET /activities`）, `activities.module.ts`。
+    - `backend/src/app.module.ts`を`ActivitiesModule`をimportするよう変更（`StravaModule`は`ActivitiesModule`経由での間接importに整理）。
+    - `backend/src/main.ts`に`app.enableCors()`を追加。
+    - `backend/package.json`に`@mapbox/polyline`（依存）・`@types/mapbox__polyline`（開発依存）を追加。
+    - 実際に`nest build`でビルドし起動、`curl http://localhost:3000/activities`でルーティング・DI疎通を確認済み（実Strava認証情報が無い開発環境のため、レスポンス自体は500エラーになることを確認。認証情報未設定時の想定通りの挙動）。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし。
+
 ### [2026-07-07] 自転車ログ表示機能フェーズ1: バックエンド側からStrava APIを呼び出せるようにした
 * **修正の動機・概要**:
   - `specs/system_specification.md`に追記された「自転車ログ表示機能」の実装を、ユーザー指定の順序（バックエンドのStrava疎通→ラッパーAPI→フロントエンド表示→DB化→レイヤー化）に従って開始した。本コミットはその第1段階。
