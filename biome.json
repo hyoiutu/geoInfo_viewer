@@ -25,7 +25,12 @@
         "noNestedTernary": "error",
         "noInferrableTypes": "error",
         "useNamingConvention": "error",
-        "useConsistentTypeDefinitions": "error",
+        "useConsistentTypeDefinitions": {
+          "level": "error",
+          "options": {
+            "style": "type"
+          }
+        },
         "useSelfClosingElements": "error"
       },
       "correctness": {

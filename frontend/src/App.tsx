@@ -1,8 +1,8 @@
 import { ChakraProvider, defaultSystem } from '@chakra-ui/react';
-import { MapView } from './components/MapView';
+import { MapWorkspace } from './components/MapWorkspace';
 
 export const App = () => (
   <ChakraProvider value={defaultSystem}>
-    <MapView />
+    <MapWorkspace />
   </ChakraProvider>
 );
