@@ -14,6 +14,19 @@
 
 ## 変更履歴
 
+### [2026-07-07] 自転車ログ表示機能フェーズ1: バックエンド側からStrava APIを呼び出せるようにした
+* **修正の動機・概要**:
+  - `specs/system_specification.md`に追記された「自転車ログ表示機能」の実装を、ユーザー指定の順序（バックエンドのStrava疎通→ラッパーAPI→フロントエンド表示→DB化→レイヤー化）に従って開始した。本コミットはその第1段階。
+  - Strava初回認可（OAuth同意フロー）は対象外とし、`backend/.env`に`STRAVA_CLIENT_ID`/`STRAVA_CLIENT_SECRET`/`STRAVA_REFRESH_TOKEN`を手動設定する前提とした（ユーザーと合意済み）。`refresh_token`は失効しないため、これを使い都度`access_token`をリフレッシュする方式にした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/strava/`を新規作成: `strava.constants.ts`（API URL・トークン失効バッファ等）、`types/strava-activity.type.ts`（Stravaレスポンス型）、`strava-auth.service.ts`（リフレッシュトークンによるアクセストークン取得・メモリキャッシュ）、`strava-activity.util.ts`（`Ride`/`VirtualRide`判定）、`strava-activities.service.ts`（`GET /athlete/activities`呼び出し）、`strava.module.ts`。
+    - `backend/src/app.module.ts`に`ConfigModule.forRoot({ isGlobal: true })`と`StravaModule`を追加。
+    - `backend/package.json`に`@nestjs/config`, `@nestjs/axios`, `axios`を追加。
+    - `backend/.env.example`を新規作成（実際の`.env`はGit管理対象外）。
+  * **README.md**: 開発環境セットアップ（`.env.example`のコピーとStrava認証情報の設定手順）を追記。
+  * **仕様書**: 変更なし（ユーザーが先行して記載した仕様に実装を追従させたため）。
+
 ### [2026-07-07] バックエンド（NestJS）の雛形を構築した
 * **修正の動機・概要**:
   - Strava連携（自転車ログ表示機能）などバックエンドを要する機能を今後実装するにあたり、`specs/system_specification.md`で定義済みのNestJSバックエンドが未着手（`backend/`ディレクトリ自体が存在しない）だったため、まず雛形を構築した。
