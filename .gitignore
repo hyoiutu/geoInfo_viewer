@@ -1,0 +1,29 @@
+# Node.js
+node_modules/
+npm-debug.log*
+.eslintcache
+
+# pnpm
+.pnpm-store/
+
+# Environment variables
+.env
+.env.local
+
+# Electron / build outputs
+dist/
+dist-electron/
+out/
+build/
+release/
+*.dmg
+*.exe
+
+# Test artifacts
+test-results/
+playwright-report/
+
+# OS metadata
+.DS_Store
+Thumbs.db
+Desktop.ini

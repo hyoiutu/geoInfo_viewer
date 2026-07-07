@@ -1,0 +1,3 @@
+packages:
+  - frontend
+  # backend はNestJS+PostGISでの実装時に追加する

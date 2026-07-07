@@ -1,0 +1,15 @@
+- 会話は日本語にする
+- 実装, README.md, specs/以下の仕様書に修正があった場合は修正内容をチェックし、実装, README.md, specs/以下の仕様書にそれぞれ乖離がないか確認する
+  - 乖離がある場合は連動して修正を行う
+- 実装, README.md, 仕様書いずれかの修正に応じてそれぞれ連動して乖離を埋めるために修正を行った場合、どんな修正があり、それによって実装, README.md, 仕様書がそれぞれどのように修正されたか紐づけて履歴として残す
+  - 履歴はCHANGELOG.mdに記載する
+- 実装を行うときはコード規約に従う
+  - コード規約はrules.mdに記載する
+- 開発はTDDで行う
+  - 既存のコードを変更するときはRed-Green-Refactoringに則って行う
+- リファクタリングも同様にRed-Green-Refactoringに則って行う
+  - またリファクタリングによる変更もCHANGELOG.mdに記載する
+- 人間からの指摘でコードを修正する場合、rules.mdに新しくルールを追加する
+- git commitはauto-commitスキル（.agents/skills/auto-commit/SKILL.md）を経由してのみ実行し、スキルを介さずに直接git commitを実行してはならない
+- 単体テスト・E2Eテストを作成または実行する場合はtest_rules.mdに記載されたルールに従う
+- GitHub Issueをもとに実装・修正を行う場合はissue-implementスキル（.agents/skills/issue-implement/SKILL.md）を経由し、対象Issue・ブランチ名・派生元ブランチをユーザーに確認したうえで、branch_rules.mdに記載された「1 Issue = 1 Branch」の原則に従ってブランチを作成する
