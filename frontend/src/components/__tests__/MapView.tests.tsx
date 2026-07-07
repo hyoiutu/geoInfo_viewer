@@ -1,5 +1,7 @@
+import { waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { fetchCyclingActivities } from '../../api/activitiesApi';
 import {
   AERIAL_PHOTO_ATTRIBUTION,
   AERIAL_PHOTO_LAYER_ID,
@@ -7,9 +9,14 @@ import {
   AERIAL_PHOTO_TILE_SIZE,
   AERIAL_PHOTO_TILE_URL
 } from '../../constants/aerialPhoto';
+import { BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_SOURCE_ID } from '../../constants/bicycleLog';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import type { LayerVisibility } from '../../types/layer';
 import { MapView } from '../MapView';
+
+vi.mock('../../api/activitiesApi', () => ({
+  fetchCyclingActivities: vi.fn()
+}));
 
 const FIXTURE_STYLE_LAYERS = [
   { id: 'background', type: 'background' },
@@ -52,6 +59,7 @@ const getMapInstance = () => vi.mocked(maplibregl.Map).mock.results[0].value;
 describe('MapViewに関するテスト', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([]);
   });
 
   test('マウントされたとき、コンテナ要素を指定して地図が生成される', () => {
@@ -120,5 +128,40 @@ describe('MapViewに関するテスト', () => {
 
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_motorway', 'visibility', 'none');
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_minor', 'visibility', 'none');
+  });
+
+  test('スタイルロード時、自転車ログのGeoJSONソース・ラインレイヤーが追加される', async () => {
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([
+      {
+        id: 1,
+        name: 'ライド1',
+        distanceMeters: 1000,
+        movingTimeSeconds: 600,
+        startDate: '2026-07-01T00:00:00Z',
+        path: [
+          [139.7, 35.6],
+          [139.8, 35.7]
+        ]
+      }
+    ]);
+
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    const mapInstance = getMapInstance();
+
+    await waitFor(() => {
+      expect(mapInstance.addSource).toHaveBeenCalledWith(
+        BICYCLE_LOG_SOURCE_ID,
+        expect.objectContaining({
+          type: 'geojson',
+          data: expect.objectContaining({
+            type: 'FeatureCollection',
+            features: [expect.objectContaining({ properties: { id: 1, name: 'ライド1' } })]
+          })
+        })
+      );
+    });
+    expect(mapInstance.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: BICYCLE_LOG_LAYER_ID, type: 'line', source: BICYCLE_LOG_SOURCE_ID })
+    );
   });
 });

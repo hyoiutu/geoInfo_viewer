@@ -2,6 +2,7 @@ import { Box } from '@chakra-ui/react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
+import { fetchCyclingActivities } from '../api/activitiesApi';
 import {
   AERIAL_PHOTO_ATTRIBUTION,
   AERIAL_PHOTO_LAYER_ID,
@@ -10,7 +11,14 @@ import {
   AERIAL_PHOTO_TILE_SIZE,
   AERIAL_PHOTO_TILE_URL
 } from '../constants/aerialPhoto';
+import {
+  BICYCLE_LOG_LAYER_ID,
+  BICYCLE_LOG_LINE_COLOR,
+  BICYCLE_LOG_LINE_WIDTH,
+  BICYCLE_LOG_SOURCE_ID
+} from '../constants/bicycleLog';
 import type { LayerVisibility, ToggleableLayerId } from '../types/layer';
+import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
 import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
 
 const OSM_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
@@ -36,6 +44,22 @@ const addAerialPhotoLayer = (map: maplibregl.Map, categorizedLayerIds: Categoriz
 
   const beforeId = categorizedLayerIds['osm-road'][0];
   map.addLayer({ id: AERIAL_PHOTO_LAYER_ID, type: 'raster', source: AERIAL_PHOTO_SOURCE_ID }, beforeId);
+};
+
+// TODO: フェーズ5でレイヤートグル連動(ON時にsync→fetch)に置き換える暫定実装。現時点ではマウント時に一度だけ取得して常時表示する
+const addBicycleLogLayer = async (map: maplibregl.Map) => {
+  try {
+    const activities = await fetchCyclingActivities();
+    map.addSource(BICYCLE_LOG_SOURCE_ID, { type: 'geojson', data: cyclingActivityToGeoJson(activities) });
+    map.addLayer({
+      id: BICYCLE_LOG_LAYER_ID,
+      type: 'line',
+      source: BICYCLE_LOG_SOURCE_ID,
+      paint: { 'line-color': BICYCLE_LOG_LINE_COLOR, 'line-width': BICYCLE_LOG_LINE_WIDTH }
+    });
+  } catch (error) {
+    console.error('自転車ログの取得に失敗しました', error);
+  }
 };
 
 const applyLayerVisibility = (
@@ -77,6 +101,7 @@ export const MapView = ({ layerVisibility }: MapViewProps) => {
       const categorizedLayerIds = groupLayerIdsByCategory(map.getStyle().layers ?? []);
       categorizedLayerIdsRef.current = categorizedLayerIds;
       addAerialPhotoLayer(map, categorizedLayerIds);
+      void addBicycleLogLayer(map);
       setIsStyleLoaded(true);
     });
 

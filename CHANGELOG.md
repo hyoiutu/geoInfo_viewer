@@ -14,6 +14,22 @@
 
 ## 変更履歴
 
+### [2026-07-08] 自転車ログ表示機能フェーズ3: フロントエンドからラップAPIを呼び出し地図上に表示した
+* **修正の動機・概要**:
+  - フェーズ2で実装したバックエンドの`GET /activities`をフロントエンドから呼び出し、実際に地図上へ自転車ログ（GeoJSON LineString）を表示できることを確認した。
+  - サイドバーのレイヤー連携（ON/OFF切り替え、更新API呼び出し）はフェーズ5で実装するため、本フェーズでは暫定的に「地図のスタイルロード時に一度だけ取得し常時表示する」実装とした（コード上に`TODO`コメントで明記）。
+  - バックエンドAPIが失敗した場合（Strava認証情報未設定時など）でもアプリ全体がクラッシュしないよう、`console.error`によるログ出力のみで握りつぶす方針とした（ユーザー向けエラー表示は今回のスコープ外）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/api/activitiesApi.ts`（新規）: バックエンドの`GET /activities`を呼び出す`fetchCyclingActivities`。
+    - `frontend/src/utils/cyclingActivityToGeoJson.ts`（新規）: アクティビティ配列をGeoJSON `FeatureCollection<LineString>`に変換する純粋関数（`path`が`null`のアクティビティは除外）。
+    - `frontend/src/constants/bicycleLog.ts`（新規）: 自転車ログレイヤーのソース/レイヤーID・線の色・太さを定数化。
+    - `frontend/src/components/MapView.tsx`を変更し、スタイルロード時に自転車ログのGeoJSONソース・ラインレイヤーを追加するようにした（暫定実装）。
+    - `frontend/package.json`に`@types/geojson`を追加。
+    - `pnpm run dev:backend`・`pnpm run dev:renderer`を実際に起動し、ブラウザ（Playwright経由）でアプリが正常に描画されること、バックエンドAPI失敗時もクラッシュしないことを確認済み。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし。
+
 ### [2026-07-07] 自転車ログ表示機能フェーズ2: Strava APIをラップしたバックエンドAPIを実装した
 * **修正の動機・概要**:
   - フェーズ1で構築したStrava疎通機能を使い、フロントエンドが呼び出せるラッパーAPI（`GET /activities`）を実装した。この時点ではDBを介さずStrava APIへ毎回パススルーする。
