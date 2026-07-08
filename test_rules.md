@@ -77,8 +77,8 @@
   - コンストラクタで注入するクラス（例: `constructor(private readonly appService: AppService) {}`）はBiomeの`lint/style/useImportType`から「型としてのみ使用」と誤検知され`import type`への変換を提案されることがあるが、実行時の型メタデータ解決に実体の参照が必要なため、提案を鵜呑みにせず通常の`import`のまま残すこと（詳細は`rules.md`参照）。
 - **命名・配置規約**: NestJS既定の`.spec.ts`ではなく、フロントエンドと同じ`__tests__`配置・`<対象ファイル名>.tests.ts`命名を使う（例: `backend/src/app.service.ts` → `backend/src/__tests__/app.service.tests.ts`）。
 - **実行コマンド**: `pnpm --filter backend test:unit`
-
-> **TODO**: backend/にPostgreSQL/PostGIS接続・ORMを実装するタイミングで、以下を本セクションに追記すること。
-> - ORM選定（TypeORM/Prisma/MikroORM等）とPostGISジオメトリ型の扱い方
-> - テスト用DBの用意方法（testcontainers、専用テストスキーマ等）
-> - PostGISを含む空間クエリのテスト方法
+- **DB（PostgreSQL/PostGIS, TypeORM）を伴うサービスのテスト**: 実DBには接続せず、`@nestjs/typeorm`の`getRepositoryToken(Entity)`を使い`Repository<Entity>`を`vi.fn()`でモック化する（`find`/`save`/`findOneBy`等）。実際のSQL・PostGIS空間クエリの振る舞い自体はこの方法では検証できないため、マイグレーション適用やPostGISジオメトリの保存・取得結果は、ローカルにPostgreSQL/PostGIS環境を用意した上で手動確認すること（ローカルDB環境は各自用意する前提とし、docker-compose等の共通環境は用意していない）。
+  - コンストラクタ引数に複数の`@InjectRepository(...)`のようなパラメータデコレータを使う場合、Biomeの既定設定ではパース時に`Decorators are not valid here`エラーになる。`biome.json`の`javascript.parser.unsafeParameterDecoratorsEnabled: true`を設定すること。
+- **TypeORM Entity固有の注意点**:
+  - Entityクラスのプロパティは`strictPropertyInitialization`により初期化必須と判定されるため、`id!: number`のように definite assignment assertion (`!`) を付与する（TypeORMはデコレータ・リフレクションでプロパティを設定するため、コンストラクタでの初期化は行わない）。
+  - `TypeOrmModuleOptions`/`DataSourceOptions`はDBドライバごとの判別可能共用体になっているため、設定を組み立てるヘルパー関数の戻り値に`DataSourceOptions`等の広い型を明示的に注釈すると、`type: 'postgres'`のようなリテラルが`string`に幅拡張され、共用体のどのメンバーにも一致しなくなり型エラーになることがある。戻り値の型注釈を省略しTypeScriptに具体的な型を推論させるか、`as const`でリテラル型を保持すること。

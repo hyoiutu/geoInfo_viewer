@@ -14,6 +14,28 @@
 
 ## 変更履歴
 
+### [2026-07-08] 自転車ログ表示機能フェーズ4: 参照用API・更新用APIへの分割（DB化）を実装した
+* **修正の動機・概要**:
+  - フェーズ2〜3で実装した「Strava APIへの毎回パススルー」を、ユーザーと合意した設計（参照用API=DB参照、更新用API=Strava取得→DB更新→成功/失敗のみ返す）に置き換えた。
+  - ORMはTypeORMを採用（ユーザーと合意済み）。実装時に依存解決された`typeorm`のバージョンが`1.0.0`という見慣れない値だったため、パッケージのリポジトリURL・メンテナ情報を確認し、正規のTypeORMプロジェクトのメジャーバージョンアップであることを確認した上で採用した。
+  - DBを伴うサービスの単体テストは実DBを使わず`Repository`をモック化する方針とした（ユーザーと合意済み）。ローカルのPostgreSQL/PostGIS環境自体は各自用意する前提とし、docker-compose等の共通環境は用意していない。
+  - 単一ユーザー前提のため、同期状態（前回同期時刻）は`sync_state`テーブルに1行のみ保持する設計とした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - 依存追加: `@nestjs/typeorm`, `typeorm`, `pg`（本番）、`@types/pg`, `@types/geojson`, `dotenv`（開発）。
+    - `backend/src/activities/entities/`を新規作成: `cycling-activity.entity.ts`（PostGISの`geometry(LineString, 4326)`カラムを含む）, `sync-state.entity.ts`（単一行管理）。
+    - `backend/src/database/database.config.ts`（新規、テスト付き）: 環境変数からTypeORM接続設定を組み立てる。
+    - `backend/src/data-source.ts`（新規）: マイグレーションCLI用のDataSource。
+    - `backend/src/migrations/`（新規）: `postgis`拡張の有効化とテーブル作成。
+    - `backend/src/activities/cycling-activity.util.ts`を`cycling-activity-entity.util.ts`（Strava→Entity変換）と`cycling-activity-dto.util.ts`（Entity→DTO変換）に分割。
+    - `ActivitiesService`を`findAll()`（DB参照）と`sync()`（Strava取得→DB更新、失敗時は`{ success: false }`を返し例外を投げない）に分割。`ActivitiesController`に`POST /activities/sync`を追加。
+    - `backend/.env.example`にDB接続用の環境変数を追記。`backend/package.json`に`migration:generate`/`migration:run`/`migration:revert`スクリプトを追加。
+    - `biome.json`に`javascript.parser.unsafeParameterDecoratorsEnabled: true`を追加（複数の`@InjectRepository(...)`等パラメータデコレータをBiomeがパースできるようにするため）。
+    - 単体テスト25件（backend）全てGreen、typecheck・`nest build`成功を確認。実DB無しのため、実際のマイグレーション適用・PostGIS空間クエリの動作確認はユーザー環境で別途行う必要がある。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし。
+  * **その他**: `test_rules.md`・`commit_rules.md`のバックエンドDB関連TODOを、今回決定した内容（TypeORM・Repositoryモック・ローカルDB各自用意）で更新。
+
 ### [2026-07-08] 自転車ログ表示機能フェーズ3: フロントエンドからラップAPIを呼び出し地図上に表示した
 * **修正の動機・概要**:
   - フェーズ2で実装したバックエンドの`GET /activities`をフロントエンドから呼び出し、実際に地図上へ自転車ログ（GeoJSON LineString）を表示できることを確認した。

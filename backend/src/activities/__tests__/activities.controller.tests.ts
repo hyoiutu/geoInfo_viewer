@@ -27,4 +27,18 @@ describe('ActivitiesControllerに関するテスト', () => {
 
     expect(result).toBe(dtos);
   });
+
+  test('syncが呼ばれたとき、ActivitiesServiceのsyncの戻り値をそのまま返す', async () => {
+    const syncResult = { success: true };
+    const sync = vi.fn().mockResolvedValue(syncResult);
+    const moduleRef = await Test.createTestingModule({
+      controllers: [ActivitiesController],
+      providers: [{ provide: ActivitiesService, useValue: { sync } }]
+    }).compile();
+    const controller = moduleRef.get(ActivitiesController);
+
+    const result = await controller.sync();
+
+    expect(result).toBe(syncResult);
+  });
 });
