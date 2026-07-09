@@ -30,4 +30,9 @@ export class CyclingActivityEntity {
 
   @Column({ type: 'geometry', spatialFeatureType: 'LineString', srid: 4326, nullable: true })
   path!: LineString | null;
+
+  // 詳細API(GET /activities/{id})での取得が完了した時刻。nullの間は初期取り込み未完了（プレースホルダー）を表す。
+  // pathがnullでもこの値が入っていれば「GPSルートの無いアクティビティとして取得済み」と判別できる。
+  @Column({ name: 'detail_fetched_at', type: 'timestamptz', nullable: true })
+  detailFetchedAt!: Date | null;
 }

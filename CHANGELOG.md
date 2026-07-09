@@ -14,6 +14,33 @@
 
 ## 変更履歴
 
+### [2026-07-09] 自転車ログ表示機能フェーズ6: 詳細API化と初期取り込み(バックフィル)機能を実装した
+* **修正の動機・概要**:
+  - 自転車ログの描画が「カクカク」になる問題を調査した結果、一覧API（`GET /athlete/activities`）が返す`summary_polyline`がStrava側で間引かれた低解像度データであることが原因と判明した。高解像度の`polyline`は詳細API（`GET /activities/{id}`）を1件ずつ呼ばないと取得できない。
+  - 詳細APIはStravaのレート制限（非アップロード系: 15分100リクエスト・1日1000リクエスト、[developers.strava.com/docs/rate-limits](https://developers.strava.com/docs/rate-limits/)）の対象であり、大量のログを一度に取得できないため、ユーザーと合意の上で以下の設計とした。
+    - 今後追加される新規ライドも含め、通常の同期(`sync`)も詳細API化する（1回のレイヤーONあたり新規件数分のみのリクエストで済むため、レート制限にはほぼ影響しない）。
+    - 過去分の一括取得（初期取り込み/バックフィル）は非同期のバックグラウンドジョブとして分離し、実行状態はインメモリ管理とする（バックエンド再起動時はリセットされ、ユーザーが再度ボタンを押せばDB上の未取得分から再開する）。
+    - 詳細取得済みだがGPSルートの無い（手動記録等の）アクティビティを「未取得」と誤判定しないよう、`detail_fetched_at`列を追加し取得完了時刻で判別する。
+  - `specs/system_specification.md`にユーザーが追記した「自転車ログ初期取り込み機能」の仕様（先にアクティビティ数・プレースホルダーレコードを用意し、進捗%と残り時間を表示し、実行中は更新系APIを走らせない）をそのままレビューし、矛盾・不足が無いことを確認した上で実装した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/strava/strava-rate-limiter.service.ts`（新規）: 15分100リクエストの間隔（9秒）を保証するレート制限サービス。
+    - `backend/src/strava/strava-activities.service.ts`: `fetchAllCyclingActivities()`（`per_page=200`での全ページ取得、レート制限適用）・`fetchCyclingActivityDetail(id)`（詳細API、レート制限適用）を追加。
+    - `backend/src/strava/types/strava-activity.type.ts`に`StravaActivityDetail`型（`map.polyline`を含む）を追加。
+    - `backend/src/activities/cycling-activity-entity.util.ts`を`toPlaceholderCyclingActivityEntity`（プレースホルダー生成、pathは常にnull）と`toCyclingActivityEntityFromDetail`（詳細レスポンスから高解像度Entity生成、`polyline`が空の場合は`summary_polyline`にフォールバック、`detailFetchedAt`を設定）に置き換えた。
+    - `backend/src/activities/entities/cycling-activity.entity.ts`に`detailFetchedAt`列を追加。マイグレーション`1720500000000-AddDetailFetchedAtToCyclingActivities`を新規作成し、ローカル(docker-compose)DBに適用済み。
+    - `backend/src/activities/activities-backfill.service.ts`（新規）: `start()`（二重起動防止、一覧取得→未登録IDのプレースホルダー保存→未取得分の詳細取得を非同期に実行）・`getStatus()`（進捗%・残り時間の見積もりを返す）。
+    - `backend/src/activities/activities.service.ts`の`sync()`を、新規アクティビティごとに詳細APIを呼び出しDBを高解像度で更新するよう変更。バックフィル実行中は`sync()`がStrava APIを呼ばず`success:false`を返すガードを追加。
+    - `backend/src/activities/activities.controller.ts`に`POST /activities/backfill`・`GET /activities/backfill/status`を追加。
+    - `frontend/src/api/activitiesApi.ts`に`startBackfill()`・`getBackfillStatus()`を追加。
+    - `frontend/src/hooks/useBackfillStatus.ts`（新規）: マウント時に状態取得、実行中は5秒間隔でポーリングするフック。
+    - `frontend/src/components/LayerSidebar.tsx`にレイヤー一覧の下へ「自転車ログ初期取り込み」ボタン（実行中はdisabled）と進捗率・残り時間の表示を追加。
+    - `frontend/src/components/MapView.tsx`の同期処理を、バックフィル実行中は`syncCyclingActivities()`を呼ばず取得済み分のみ表示するよう変更。
+    - 単体テスト全て（バックエンド55件・フロントエンド63件）Green、typecheck・lint成功を確認。
+    - 実際にDocker上のPostGIS DB・実Strava認証情報でマイグレーション適用・バックフィル起動・進捗取得・`sync`のガード動作・フロントエンド表示（ボタンdisabled、進捗%・残り時間表示）を確認済み。実アカウントのアクティビティ件数は629件で、バックフィルはバックグラウンドで継続中（完了まで別途待つ必要あり、本セッションでは完了確認まで行っていない）。
+  * **README.md**: 変更なし（セットアップ手順に変更は無いため）。
+  * **仕様書**: ユーザーが記載した「自転車ログ初期取り込み機能」の仕様をレビューし、矛盾・不足が無いことを確認した上でそのまま実装（変更なし）。
+
 ### [2026-07-09] ローカルDB環境をdocker-compose化した（PostGISのHomebrewビルド失敗への対処）
 * **修正の動機・概要**:
   - フェーズ4の時点では「ローカルのPostgreSQL/PostGIS環境は各自用意する前提とし、docker-compose等の共通環境は用意していない」としていたが、開発機のmacOSが12（Homebrewの Tier 3 = 非サポート対象）であるため、`brew install postgis`が依存関係（apache-arrow等）のソースビルドに失敗し続け、ネイティブ環境の用意ができない状態になった。

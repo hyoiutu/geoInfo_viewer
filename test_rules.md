@@ -82,3 +82,6 @@
 - **TypeORM Entity固有の注意点**:
   - Entityクラスのプロパティは`strictPropertyInitialization`により初期化必須と判定されるため、`id!: number`のように definite assignment assertion (`!`) を付与する（TypeORMはデコレータ・リフレクションでプロパティを設定するため、コンストラクタでの初期化は行わない）。
   - `TypeOrmModuleOptions`/`DataSourceOptions`はDBドライバごとの判別可能共用体になっているため、設定を組み立てるヘルパー関数の戻り値に`DataSourceOptions`等の広い型を明示的に注釈すると、`type: 'postgres'`のようなリテラルが`string`に幅拡張され、共用体のどのメンバーにも一致しなくなり型エラーになることがある。戻り値の型注釈を省略しTypeScriptに具体的な型を推論させるか、`as const`でリテラル型を保持すること。
+- **fire-and-forgetな非同期処理（バックグラウンドジョブ等）のテスト**: `start()`のようなメソッドが内部で`await`せず非同期処理を裏で走らせる（例: `this.runJob().finally(...)`を呼び出し元では待たない）設計の場合、以下の2パターンで書き分けること。
+  - 「実行中であること」自体を検証したいテスト（例: 二重起動防止、`isRunning()`がtrueになる）は、依存するモックの一つ（例: 外部API呼び出し）を`new Promise(() => {})`（意図的に解決しないPromise）にして、ジョブを確実に「実行中のまま」で止める。`await service.start()`直後に非同期チェーンがどこまで進んでいるかはPromiseのマイクロタスク解決順に依存し予測できないため、タイミング競合を避けるにはこの方法が確実。
+  - 「ジョブが完了した後の結果」を検証したいテスト（例: DBへの保存内容、完了後に`isRunning()`がfalseに戻ること）は、`await service.start()`の後に`await new Promise((resolve) => setTimeout(resolve, 0))`（マクロタスクへの切り替え）を挟んでから検証する。これにより、内部の`await`連鎖（マイクロタスク）が全て解決されたことを保証できる。

@@ -1,7 +1,7 @@
 import { waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fetchCyclingActivities, syncCyclingActivities } from '../../api/activitiesApi';
+import { fetchCyclingActivities, getBackfillStatus, syncCyclingActivities } from '../../api/activitiesApi';
 import {
   AERIAL_PHOTO_ATTRIBUTION,
   AERIAL_PHOTO_LAYER_ID,
@@ -16,8 +16,17 @@ import { MapView } from '../MapView';
 
 vi.mock('../../api/activitiesApi', () => ({
   fetchCyclingActivities: vi.fn(),
-  syncCyclingActivities: vi.fn()
+  syncCyclingActivities: vi.fn(),
+  getBackfillStatus: vi.fn()
 }));
+
+const NOT_RUNNING_BACKFILL_STATUS = {
+  isRunning: false,
+  totalCount: 0,
+  completedCount: 0,
+  progressPercent: 0,
+  estimatedRemainingSeconds: null
+};
 
 const FIXTURE_STYLE_LAYERS = [
   { id: 'background', type: 'background' },
@@ -65,6 +74,7 @@ describe('MapViewに関するテスト', () => {
     vi.clearAllMocks();
     vi.mocked(fetchCyclingActivities).mockResolvedValue([]);
     vi.mocked(syncCyclingActivities).mockResolvedValue({ success: true });
+    vi.mocked(getBackfillStatus).mockResolvedValue(NOT_RUNNING_BACKFILL_STATUS);
   });
 
   test('マウントされたとき、コンテナ要素を指定して地図が生成される', () => {
@@ -195,6 +205,24 @@ describe('MapViewに関するテスト', () => {
       expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
     });
     expect(fetchCyclingActivities).not.toHaveBeenCalled();
+  });
+
+  test('自転車ログレイヤーがOFF→ONに変化したとき、初期取り込み実行中の場合は同期用APIを呼ばず取得済み分のみ表示する', async () => {
+    vi.mocked(getBackfillStatus).mockResolvedValue({
+      isRunning: true,
+      totalCount: 4,
+      completedCount: 1,
+      progressPercent: 25,
+      estimatedRemainingSeconds: 27
+    });
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+
+    await waitFor(() => {
+      expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
+    });
+    expect(syncCyclingActivities).not.toHaveBeenCalled();
   });
 
   test('自転車ログレイヤーがON→OFFに変化したときは、同期用APIを呼ばない', () => {

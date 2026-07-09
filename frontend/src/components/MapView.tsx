@@ -3,7 +3,7 @@ import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
-import { fetchCyclingActivities, syncCyclingActivities } from '../api/activitiesApi';
+import { fetchCyclingActivities, getBackfillStatus, syncCyclingActivities } from '../api/activitiesApi';
 import {
   AERIAL_PHOTO_ATTRIBUTION,
   AERIAL_PHOTO_LAYER_ID,
@@ -59,10 +59,14 @@ const addBicycleLogLayer = (map: maplibregl.Map) => {
 };
 
 const syncAndLoadBicycleLog = async (map: maplibregl.Map) => {
-  const syncResult = await syncCyclingActivities();
-  if (!syncResult.success) {
-    console.error('自転車ログの同期に失敗しました');
-    return;
+  // 初期取り込み(バックフィル)実行中は更新用APIを呼ばず、その時点でDBに取得済みの分だけ表示する
+  const backfillStatus = await getBackfillStatus().catch(() => null);
+  if (!backfillStatus?.isRunning) {
+    const syncResult = await syncCyclingActivities();
+    if (!syncResult.success) {
+      console.error('自転車ログの同期に失敗しました');
+      return;
+    }
   }
 
   try {

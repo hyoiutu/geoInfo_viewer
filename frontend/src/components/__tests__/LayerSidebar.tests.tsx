@@ -9,9 +9,36 @@ const LAYERS = [
   { id: 'aerial-photo' as const, name: '航空写真', checked: false }
 ];
 
+const NOT_RUNNING_BACKFILL_STATUS = {
+  isRunning: false,
+  totalCount: 0,
+  completedCount: 0,
+  progressPercent: 0,
+  estimatedRemainingSeconds: null
+};
+
+const RUNNING_BACKFILL_STATUS = {
+  isRunning: true,
+  totalCount: 4,
+  completedCount: 1,
+  progressPercent: 25,
+  estimatedRemainingSeconds: 27
+};
+
+const renderSidebar = (overrides: Partial<Parameters<typeof LayerSidebar>[0]> = {}) =>
+  renderWithChakra(
+    <LayerSidebar
+      layers={LAYERS}
+      onToggleLayer={vi.fn()}
+      backfillStatus={NOT_RUNNING_BACKFILL_STATUS}
+      onStartBackfill={vi.fn()}
+      {...overrides}
+    />
+  );
+
 describe('LayerSidebarに関するテスト', () => {
   test('レンダリングされたとき、各レイヤー名が表示される', () => {
-    const { getByText } = renderWithChakra(<LayerSidebar layers={LAYERS} onToggleLayer={vi.fn()} />);
+    const { getByText } = renderSidebar();
 
     expect(getByText('POI')).toBeInTheDocument();
     expect(getByText('道路')).toBeInTheDocument();
@@ -19,20 +46,20 @@ describe('LayerSidebarに関するテスト', () => {
   });
 
   test('レンダリングされたとき、checked=trueのレイヤーのトグルはONになっている', () => {
-    const { getByRole } = renderWithChakra(<LayerSidebar layers={LAYERS} onToggleLayer={vi.fn()} />);
+    const { getByRole } = renderSidebar();
 
     expect(getByRole('checkbox', { name: 'POI' })).toBeChecked();
   });
 
   test('レンダリングされたとき、checked=falseのレイヤーのトグルはOFFになっている', () => {
-    const { getByRole } = renderWithChakra(<LayerSidebar layers={LAYERS} onToggleLayer={vi.fn()} />);
+    const { getByRole } = renderSidebar();
 
     expect(getByRole('checkbox', { name: '航空写真' })).not.toBeChecked();
   });
 
   test('トグルをクリックすると、onToggleLayerが対象のレイヤーIDで呼ばれる', async () => {
     const onToggleLayer = vi.fn();
-    const { getByRole } = renderWithChakra(<LayerSidebar layers={LAYERS} onToggleLayer={onToggleLayer} />);
+    const { getByRole } = renderSidebar({ onToggleLayer });
 
     fireEvent.click(getByRole('checkbox', { name: '道路' }));
 
@@ -40,13 +67,13 @@ describe('LayerSidebarに関するテスト', () => {
   });
 
   test('初期状態では、レイヤー一覧が表示されている', () => {
-    const { getByText } = renderWithChakra(<LayerSidebar layers={LAYERS} onToggleLayer={vi.fn()} />);
+    const { getByText } = renderSidebar();
 
     expect(getByText('POI')).toBeVisible();
   });
 
   test('折りたたみボタンをクリックすると、レイヤー一覧が非表示になる', () => {
-    const { getByRole, queryByText } = renderWithChakra(<LayerSidebar layers={LAYERS} onToggleLayer={vi.fn()} />);
+    const { getByRole, queryByText } = renderSidebar();
 
     fireEvent.click(getByRole('button', { name: 'サイドバーを折りたたむ' }));
 
@@ -54,11 +81,51 @@ describe('LayerSidebarに関するテスト', () => {
   });
 
   test('折りたたんだ状態で展開ボタンをクリックすると、レイヤー一覧が再表示される', () => {
-    const { getByRole, getByText } = renderWithChakra(<LayerSidebar layers={LAYERS} onToggleLayer={vi.fn()} />);
+    const { getByRole, getByText } = renderSidebar();
 
     fireEvent.click(getByRole('button', { name: 'サイドバーを折りたたむ' }));
     fireEvent.click(getByRole('button', { name: 'サイドバーを展開する' }));
 
     expect(getByText('POI')).toBeInTheDocument();
+  });
+
+  test('レイヤー一覧の下に初期取り込みボタンが表示される', () => {
+    const { getByRole } = renderSidebar();
+
+    expect(getByRole('button', { name: '自転車ログ初期取り込み' })).toBeInTheDocument();
+  });
+
+  test('初期取り込みボタンをクリックすると、onStartBackfillが呼ばれる', () => {
+    const onStartBackfill = vi.fn();
+    const { getByRole } = renderSidebar({ onStartBackfill });
+
+    fireEvent.click(getByRole('button', { name: '自転車ログ初期取り込み' }));
+
+    expect(onStartBackfill).toHaveBeenCalledTimes(1);
+  });
+
+  test('初期取り込みが実行中でない場合、初期取り込みボタンはdisabledではない', () => {
+    const { getByRole } = renderSidebar({ backfillStatus: NOT_RUNNING_BACKFILL_STATUS });
+
+    expect(getByRole('button', { name: '自転車ログ初期取り込み' })).not.toBeDisabled();
+  });
+
+  test('初期取り込みが実行中の場合、初期取り込みボタンはdisabledになる（二重押下防止）', () => {
+    const { getByRole } = renderSidebar({ backfillStatus: RUNNING_BACKFILL_STATUS });
+
+    expect(getByRole('button', { name: '自転車ログ初期取り込み' })).toBeDisabled();
+  });
+
+  test('初期取り込みが実行中の場合、進捗率と残り時間が表示される', () => {
+    const { getByText } = renderSidebar({ backfillStatus: RUNNING_BACKFILL_STATUS });
+
+    expect(getByText(/25%/)).toBeInTheDocument();
+    expect(getByText(/1\s*\/\s*4/)).toBeInTheDocument();
+  });
+
+  test('初期取り込みが実行中でない場合、進捗表示は無い', () => {
+    const { queryByText } = renderSidebar({ backfillStatus: NOT_RUNNING_BACKFILL_STATUS });
+
+    expect(queryByText(/%/)).not.toBeInTheDocument();
   });
 });

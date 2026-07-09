@@ -1,7 +1,10 @@
 import { Box, Button, Flex, Switch, Text } from '@chakra-ui/react';
 import { useState } from 'react';
+import type { BackfillStatus } from '../api/activitiesApi';
 import { layout } from '../theme';
 import type { ToggleableLayerId } from '../types/layer';
+
+const SECONDS_PER_MINUTE = 60;
 
 type LayerSidebarLayer = {
   id: ToggleableLayerId;
@@ -12,9 +15,11 @@ type LayerSidebarLayer = {
 type LayerSidebarProps = {
   layers: LayerSidebarLayer[];
   onToggleLayer: (id: ToggleableLayerId) => void;
+  backfillStatus: BackfillStatus | null;
+  onStartBackfill: () => void;
 };
 
-export const LayerSidebar = ({ layers, onToggleLayer }: LayerSidebarProps) => {
+export const LayerSidebar = ({ layers, onToggleLayer, backfillStatus, onStartBackfill }: LayerSidebarProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
   const handleToggleExpand = () => {
@@ -54,6 +59,23 @@ export const LayerSidebar = ({ layers, onToggleLayer }: LayerSidebarProps) => {
               </Switch.Label>
             </Switch.Root>
           ))}
+          <Box borderTop="1px solid" borderColor="border" paddingTop="3">
+            <Button onClick={onStartBackfill} disabled={backfillStatus?.isRunning ?? false} size="sm" width="100%">
+              自転車ログ初期取り込み
+            </Button>
+            {backfillStatus?.isRunning && (
+              <Box marginTop="2">
+                <Text fontSize="sm">
+                  {backfillStatus.progressPercent}%（{backfillStatus.completedCount} / {backfillStatus.totalCount}）
+                </Text>
+                {backfillStatus.estimatedRemainingSeconds !== null && (
+                  <Text fontSize="sm">
+                    残り約{Math.ceil(backfillStatus.estimatedRemainingSeconds / SECONDS_PER_MINUTE)}分
+                  </Text>
+                )}
+              </Box>
+            )}
+          </Box>
         </Flex>
       )}
     </Box>
