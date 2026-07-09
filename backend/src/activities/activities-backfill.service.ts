@@ -66,6 +66,30 @@ export class ActivitiesBackfillService {
   }
 
   private async runBackfill(): Promise<void> {
+    if (!(await this.isFullyBackfilled())) {
+      await this.fetchAndSavePlaceholders();
+    }
+
+    const pendingEntities = await this.cyclingActivityRepository.find({ where: { detailFetchedAt: IsNull() } });
+    for (const pendingEntity of pendingEntities) {
+      const detail = await this.stravaActivitiesService.fetchCyclingActivityDetail(pendingEntity.id);
+      await this.cyclingActivityRepository.save(toCyclingActivityEntityFromDetail(detail));
+    }
+  }
+
+  // 既に全件のdetailFetchedAtが埋まっている場合、Stravaへの全件一覧再取得（レート制限で数十秒かかる）は
+  // 新規アクティビティの検出という意味しか持たない。新規アクティビティの検出は通常のsync()が担うため、
+  // 一度完了した後の再実行はこれをスキップし即座に完了させる。
+  private async isFullyBackfilled(): Promise<boolean> {
+    const totalCount = await this.cyclingActivityRepository.count();
+    if (totalCount === NO_ACTIVITIES) {
+      return false;
+    }
+    const pendingCount = await this.cyclingActivityRepository.count({ where: { detailFetchedAt: IsNull() } });
+    return pendingCount === NO_ACTIVITIES;
+  }
+
+  private async fetchAndSavePlaceholders(): Promise<void> {
     const activities = await this.stravaActivitiesService.fetchAllCyclingActivities();
     const existingIds = new Set((await this.cyclingActivityRepository.find()).map((entity) => entity.id));
     const newPlaceholders = activities
@@ -74,12 +98,6 @@ export class ActivitiesBackfillService {
 
     if (newPlaceholders.length > NO_ACTIVITIES) {
       await this.cyclingActivityRepository.save(newPlaceholders);
-    }
-
-    const pendingEntities = await this.cyclingActivityRepository.find({ where: { detailFetchedAt: IsNull() } });
-    for (const pendingEntity of pendingEntities) {
-      const detail = await this.stravaActivitiesService.fetchCyclingActivityDetail(pendingEntity.id);
-      await this.cyclingActivityRepository.save(toCyclingActivityEntityFromDetail(detail));
     }
   }
 }

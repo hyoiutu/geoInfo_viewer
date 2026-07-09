@@ -135,6 +135,17 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
       );
     });
 
+    test('既に全件バックフィル済み（未取得行が無い）の場合、Stravaへの一覧再取得を行わず即座に完了する', async () => {
+      cyclingActivityRepository.count.mockResolvedValueOnce(629).mockResolvedValueOnce(0);
+      const service = await createService();
+
+      await service.start();
+      await flushMicrotasks();
+
+      expect(fetchAllCyclingActivities).not.toHaveBeenCalled();
+      expect(service.isRunning()).toBe(false);
+    });
+
     test('完了後にisRunningがfalseに戻る', async () => {
       const service = await createService();
 
@@ -188,7 +199,12 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     test('実行中の場合、残件数とレート制限間隔から残り秒数を見積もる', async () => {
       // 意図的に解決しないPromiseでジョブを実行中のまま保持し、タイミング競合を避ける
       fetchAllCyclingActivities.mockReturnValue(new Promise(() => {}));
-      cyclingActivityRepository.count.mockResolvedValueOnce(4).mockResolvedValueOnce(1);
+      // 1,2回目はstart()内部のisFullyBackfilledチェック用、3,4回目はgetStatus()用
+      cyclingActivityRepository.count
+        .mockResolvedValueOnce(4)
+        .mockResolvedValueOnce(1)
+        .mockResolvedValueOnce(4)
+        .mockResolvedValueOnce(1);
       const service = await createService();
       await service.start();
 
