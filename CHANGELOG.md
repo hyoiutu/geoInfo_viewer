@@ -14,6 +14,19 @@
 
 ## 変更履歴
 
+### [2026-07-09] ローカルDB環境をdocker-compose化した（PostGISのHomebrewビルド失敗への対処）
+* **修正の動機・概要**:
+  - フェーズ4の時点では「ローカルのPostgreSQL/PostGIS環境は各自用意する前提とし、docker-compose等の共通環境は用意していない」としていたが、開発機のmacOSが12（Homebrewの Tier 3 = 非サポート対象）であるため、`brew install postgis`が依存関係（apache-arrow等）のソースビルドに失敗し続け、ネイティブ環境の用意ができない状態になった。
+  - HomebrewでのビルドはmacOSバージョンに強く依存し根本解決が困難なため、`postgis/postgis`公式Dockerイメージを使い、ビルド不要でPostGIS入りPostgreSQLを起動する方式に変更した。ネイティブでHomebrew版PostgreSQL（ポート`5432`）を使っている環境と衝突しないよう、コンテナはホスト側`5433`番ポートで待ち受ける構成とした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `docker-compose.yml`（新規、リポジトリルート）: `postgis/postgis:16-3.4`イメージ、ポート`5433:5432`、永続化ボリューム`geo_info_viewer_pgdata`を定義。
+    - `backend/.env`・`backend/.env.example`の`DATABASE_PORT`を`5432`→`5433`、`DATABASE_USERNAME`/`DATABASE_PASSWORD`をdocker-composeのデフォルト（`postgres`/`postgres`）に合わせて変更。
+    - `docker-compose up -d`→`pnpm --filter backend run migration:run`→バックエンドを起動し`POST /activities/sync`・`GET /activities`を実行、実際にStravaの走行データがPostGISの`geometry(LineString, 4326)`カラムへ保存・取得できることを確認済み。
+  * **README.md**: 「バックエンド用データベース（PostgreSQL/PostGIS）」セクションを追加し、`docker-compose up -d`からマイグレーション実行までの手順を記載。
+  * **仕様書**: 変更なし（DB技術選定は引き続きPostgreSQL/PostGISのまま、起動方法のみの変更のため）。
+  * **その他**: `test_rules.md`・`commit_rules.md`のDB関連記述を、「ローカルDB環境は各自用意」からdocker-compose利用前提の記述に更新。
+
 ### [2026-07-08] 自転車ログ表示機能フェーズ5: 自転車ログをレイヤー化した
 * **修正の動機・概要**:
   - フェーズ3の暫定実装（マウント時に一度だけ取得し常時表示）を、仕様書通りの「レイヤーとして左サイドバーから表示・非表示を切り替え、ONにしたタイミングで更新用API→参照用APIを呼び出す」挙動に置き換えた。

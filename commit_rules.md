@@ -44,6 +44,6 @@
 - **型チェックコマンド**: `pnpm run typecheck`（`frontend/tsconfig.json`・`backend/tsconfig.json`・`tsconfig.electron.json`の3つを対象とする）
 - **E2Eテストコマンド**: `pnpm run test:e2e`（`pnpm run build`によるビルドを含んだ上でPlaywrightを実行する。`electron/**`, `frontend/src/**`配下の実装ファイル（テストコードのみの変更を除く）に修正がある場合は必ず実行すること。README.md・仕様書・スキル定義等のドキュメントのみの修正の場合は実行不要。backend/はElectronメインプロセスからまだ起動されないため、backend/src/**のみの修正では現時点では対象外）
 
-- **DB(PostgreSQL/PostGIS)を伴う変更のコミット前確認**: `backend/src/`にTypeORM Entity・マイグレーションの変更がある場合、単体テスト（Repositoryモック、test_rules.md参照）に加えて`pnpm --filter backend run migration:run`が実行可能なことを確認する（ローカルDB環境が無い場合はコミット者自身の環境で実行し、結果を報告する）。
+- **DB(PostgreSQL/PostGIS)を伴う変更のコミット前確認**: `backend/src/`にTypeORM Entity・マイグレーションの変更がある場合、単体テスト（Repositoryモック、test_rules.md参照）に加えて、ルートの`docker-compose.yml`を`docker-compose up -d`で起動した上で`pnpm --filter backend run migration:run`が実行可能なことを確認する。
 
 > **TODO**: ElectronメインプロセスからのNestJS起動連携が実装された場合、E2Eテスト対象範囲（`backend/src/**`もE2E対象に含めるかどうか）を見直すこと。

@@ -14,3 +14,14 @@ cp backend/.env.example backend/.env
 - `STRAVA_REFRESH_TOKEN`: OAuth認可により取得したリフレッシュトークン（失効しないため、手動で一度取得し設定する。取得手順はStrava公式のOAuth連携ドキュメントを参照）
 
 `.env`はGit管理対象外（`.gitignore`）です。
+
+### バックエンド用データベース（PostgreSQL/PostGIS）
+
+ルートの`docker-compose.yml`でPostGIS同梱のPostgreSQLコンテナを起動します（`backend/.env.example`のDB接続情報はこのコンテナにそのまま接続できる値になっています）。
+
+```bash
+docker-compose up -d
+pnpm --filter backend run migration:run
+```
+
+コンテナはホストの`5433`番ポートで待ち受けます（Homebrew等でネイティブにPostgreSQLを起動している場合の`5432`との衝突を避けるため）。
