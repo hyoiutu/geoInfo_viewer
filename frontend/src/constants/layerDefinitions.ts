@@ -11,5 +11,6 @@ export const LAYER_DEFINITIONS: LayerDefinition[] = [
   { id: 'osm-road', name: '道路', defaultChecked: true },
   { id: 'osm-building', name: '建物', defaultChecked: true },
   { id: 'osm-place-name', name: '地名', defaultChecked: true },
-  { id: 'aerial-photo', name: '航空写真', defaultChecked: false }
+  { id: 'aerial-photo', name: '航空写真', defaultChecked: false },
+  { id: 'bicycle-log', name: '自転車ログ', defaultChecked: false }
 ];

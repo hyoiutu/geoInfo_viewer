@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { fetchCyclingActivities } from '../activitiesApi';
+import { fetchCyclingActivities, syncCyclingActivities } from '../activitiesApi';
 
 describe('fetchCyclingActivitiesに関するテスト', () => {
   afterEach(() => {
@@ -33,5 +33,42 @@ describe('fetchCyclingActivitiesに関するテスト', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(fetchCyclingActivities()).rejects.toThrow();
+  });
+});
+
+describe('syncCyclingActivitiesに関するテスト', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('POSTでsyncエンドポイントを呼び出し、レスポンスのsuccessをそのまま返す', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ success: true })
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await syncCyclingActivities();
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/activities/sync', { method: 'POST' });
+    expect(result).toEqual({ success: true });
+  });
+
+  test('レスポンスが異常なとき、success:falseを返す', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await syncCyclingActivities();
+
+    expect(result).toEqual({ success: false });
+  });
+
+  test('fetch自体が失敗したとき、success:falseを返す', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network error'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await syncCyclingActivities();
+
+    expect(result).toEqual({ success: false });
   });
 });

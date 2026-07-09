@@ -1,7 +1,7 @@
 import { waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fetchCyclingActivities } from '../../api/activitiesApi';
+import { fetchCyclingActivities, syncCyclingActivities } from '../../api/activitiesApi';
 import {
   AERIAL_PHOTO_ATTRIBUTION,
   AERIAL_PHOTO_LAYER_ID,
@@ -15,7 +15,8 @@ import type { LayerVisibility } from '../../types/layer';
 import { MapView } from '../MapView';
 
 vi.mock('../../api/activitiesApi', () => ({
-  fetchCyclingActivities: vi.fn()
+  fetchCyclingActivities: vi.fn(),
+  syncCyclingActivities: vi.fn()
 }));
 
 const FIXTURE_STYLE_LAYERS = [
@@ -33,7 +34,8 @@ const ALL_ON_VISIBILITY: LayerVisibility = {
   'osm-road': true,
   'osm-building': true,
   'osm-place-name': true,
-  'aerial-photo': false
+  'aerial-photo': false,
+  'bicycle-log': false
 };
 
 vi.mock('maplibre-gl', () => {
@@ -47,8 +49,10 @@ vi.mock('maplibre-gl', () => {
   const addSource = vi.fn();
   const addLayer = vi.fn();
   const setLayoutProperty = vi.fn();
+  const setData = vi.fn();
+  const getSource = vi.fn(() => ({ setData }));
   const MapMock = vi.fn().mockImplementation(function MockMap() {
-    return { remove, once, getStyle, addSource, addLayer, setLayoutProperty };
+    return { remove, once, getStyle, addSource, addLayer, setLayoutProperty, getSource };
   });
   // biome-ignore lint/style/useNamingConvention: maplibre-glの実APIに合わせクラス名(Map)をPascalCaseのまま公開する
   return { default: { Map: MapMock } };
@@ -60,6 +64,7 @@ describe('MapViewに関するテスト', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(fetchCyclingActivities).mockResolvedValue([]);
+    vi.mocked(syncCyclingActivities).mockResolvedValue({ success: true });
   });
 
   test('マウントされたとき、コンテナ要素を指定して地図が生成される', () => {
@@ -117,6 +122,7 @@ describe('MapViewに関するテスト', () => {
     const mapInstance = getMapInstance();
 
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(AERIAL_PHOTO_LAYER_ID, 'visibility', 'none');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(BICYCLE_LOG_LAYER_ID, 'visibility', 'none');
   });
 
   test('layerVisibilityが変化したとき、該当レイヤーのvisibilityが更新される', () => {
@@ -130,7 +136,20 @@ describe('MapViewに関するテスト', () => {
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_minor', 'visibility', 'none');
   });
 
-  test('スタイルロード時、自転車ログのGeoJSONソース・ラインレイヤーが追加される', async () => {
+  test('スタイルロード時、自転車ログの空のGeoJSONソース・ラインレイヤーが追加される', () => {
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    const mapInstance = getMapInstance();
+
+    expect(mapInstance.addSource).toHaveBeenCalledWith(BICYCLE_LOG_SOURCE_ID, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+    expect(mapInstance.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: BICYCLE_LOG_LAYER_ID, type: 'line', source: BICYCLE_LOG_SOURCE_ID })
+    );
+  });
+
+  test('自転車ログレイヤーがOFF→ONに変化したとき、同期後に取得したデータが地図に反映される', async () => {
     vi.mocked(fetchCyclingActivities).mockResolvedValue([
       {
         id: 1,
@@ -144,24 +163,62 @@ describe('MapViewに関するテスト', () => {
         ]
       }
     ]);
-
-    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
     const mapInstance = getMapInstance();
 
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+
     await waitFor(() => {
-      expect(mapInstance.addSource).toHaveBeenCalledWith(
-        BICYCLE_LOG_SOURCE_ID,
+      expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
+    });
+    const source = mapInstance.getSource(BICYCLE_LOG_SOURCE_ID);
+    await waitFor(() => {
+      expect(source.setData).toHaveBeenCalledWith(
         expect.objectContaining({
-          type: 'geojson',
-          data: expect.objectContaining({
-            type: 'FeatureCollection',
-            features: [expect.objectContaining({ properties: { id: 1, name: 'ライド1' } })]
-          })
+          type: 'FeatureCollection',
+          features: [expect.objectContaining({ properties: { id: 1, name: 'ライド1' } })]
         })
       );
     });
-    expect(mapInstance.addLayer).toHaveBeenCalledWith(
-      expect.objectContaining({ id: BICYCLE_LOG_LAYER_ID, type: 'line', source: BICYCLE_LOG_SOURCE_ID })
-    );
+  });
+
+  test('自転車ログレイヤーがOFF→ONに変化したとき、同期に失敗した場合は参照APIを呼ばない', async () => {
+    vi.mocked(syncCyclingActivities).mockResolvedValue({ success: false });
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+
+    await waitFor(() => {
+      expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchCyclingActivities).not.toHaveBeenCalled();
+  });
+
+  test('自転車ログレイヤーがON→OFFに変化したときは、同期用APIを呼ばない', () => {
+    const { rerender } = renderWithChakra(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+    vi.mocked(syncCyclingActivities).mockClear();
+
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }} />);
+
+    expect(syncCyclingActivities).not.toHaveBeenCalled();
+  });
+
+  test('自転車ログレイヤーがOFF→ON→OFF→ONと変化した場合、ONになる度に同期用APIが呼ばれる', async () => {
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+    await waitFor(() => {
+      expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
+    });
+
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }} />);
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+
+    await waitFor(() => {
+      expect(syncCyclingActivities).toHaveBeenCalledTimes(2);
+    });
   });
 });

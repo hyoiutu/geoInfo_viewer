@@ -37,7 +37,8 @@ export const groupLayerIdsByCategory = (layers: LayerSpecification[]): Record<To
     'osm-road': [],
     'osm-building': [],
     'osm-place-name': [],
-    'aerial-photo': []
+    'aerial-photo': [],
+    'bicycle-log': []
   };
 
   for (const layer of layers) {

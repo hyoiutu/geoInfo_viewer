@@ -1,8 +1,9 @@
 import { Box } from '@chakra-ui/react';
+import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
-import { fetchCyclingActivities } from '../api/activitiesApi';
+import { fetchCyclingActivities, syncCyclingActivities } from '../api/activitiesApi';
 import {
   AERIAL_PHOTO_ATTRIBUTION,
   AERIAL_PHOTO_LAYER_ID,
@@ -26,6 +27,7 @@ const DEFAULT_ZOOM = 12;
 const DEFAULT_CENTER: [number, number] = [139.1798829, 35.2756364];
 const VISIBLE_VALUE = 'visible';
 const HIDDEN_VALUE = 'none';
+const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 type MapViewProps = {
   layerVisibility: LayerVisibility;
@@ -46,20 +48,40 @@ const addAerialPhotoLayer = (map: maplibregl.Map, categorizedLayerIds: Categoriz
   map.addLayer({ id: AERIAL_PHOTO_LAYER_ID, type: 'raster', source: AERIAL_PHOTO_SOURCE_ID }, beforeId);
 };
 
-// TODO: フェーズ5でレイヤートグル連動(ON時にsync→fetch)に置き換える暫定実装。現時点ではマウント時に一度だけ取得して常時表示する
-const addBicycleLogLayer = async (map: maplibregl.Map) => {
+const addBicycleLogLayer = (map: maplibregl.Map) => {
+  map.addSource(BICYCLE_LOG_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+  map.addLayer({
+    id: BICYCLE_LOG_LAYER_ID,
+    type: 'line',
+    source: BICYCLE_LOG_SOURCE_ID,
+    paint: { 'line-color': BICYCLE_LOG_LINE_COLOR, 'line-width': BICYCLE_LOG_LINE_WIDTH }
+  });
+};
+
+const syncAndLoadBicycleLog = async (map: maplibregl.Map) => {
+  const syncResult = await syncCyclingActivities();
+  if (!syncResult.success) {
+    console.error('自転車ログの同期に失敗しました');
+    return;
+  }
+
   try {
     const activities = await fetchCyclingActivities();
-    map.addSource(BICYCLE_LOG_SOURCE_ID, { type: 'geojson', data: cyclingActivityToGeoJson(activities) });
-    map.addLayer({
-      id: BICYCLE_LOG_LAYER_ID,
-      type: 'line',
-      source: BICYCLE_LOG_SOURCE_ID,
-      paint: { 'line-color': BICYCLE_LOG_LINE_COLOR, 'line-width': BICYCLE_LOG_LINE_WIDTH }
-    });
+    const source = map.getSource(BICYCLE_LOG_SOURCE_ID) as maplibregl.GeoJSONSource;
+    source.setData(cyclingActivityToGeoJson(activities));
   } catch (error) {
     console.error('自転車ログの取得に失敗しました', error);
   }
+};
+
+const resolveStyleLayerIds = (layerId: ToggleableLayerId, categorizedLayerIds: CategorizedLayerIds): string[] => {
+  if (layerId === 'aerial-photo') {
+    return [AERIAL_PHOTO_LAYER_ID];
+  }
+  if (layerId === 'bicycle-log') {
+    return [BICYCLE_LOG_LAYER_ID];
+  }
+  return categorizedLayerIds[layerId];
 };
 
 const applyLayerVisibility = (
@@ -71,7 +93,7 @@ const applyLayerVisibility = (
 
   for (const [layerId, isVisible] of entries) {
     const visibility = isVisible ? VISIBLE_VALUE : HIDDEN_VALUE;
-    const styleLayerIds = layerId === 'aerial-photo' ? [AERIAL_PHOTO_LAYER_ID] : categorizedLayerIds[layerId];
+    const styleLayerIds = resolveStyleLayerIds(layerId, categorizedLayerIds);
     for (const styleLayerId of styleLayerIds) {
       map.setLayoutProperty(styleLayerId, 'visibility', visibility);
     }
@@ -82,6 +104,7 @@ export const MapView = ({ layerVisibility }: MapViewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
+  const wasBicycleLogVisibleRef = useRef(false);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
 
   useEffect(() => {
@@ -101,7 +124,7 @@ export const MapView = ({ layerVisibility }: MapViewProps) => {
       const categorizedLayerIds = groupLayerIdsByCategory(map.getStyle().layers ?? []);
       categorizedLayerIdsRef.current = categorizedLayerIds;
       addAerialPhotoLayer(map, categorizedLayerIds);
-      void addBicycleLogLayer(map);
+      addBicycleLogLayer(map);
       setIsStyleLoaded(true);
     });
 
@@ -119,6 +142,14 @@ export const MapView = ({ layerVisibility }: MapViewProps) => {
     }
 
     applyLayerVisibility(map, categorizedLayerIds, layerVisibility);
+
+    const isBicycleLogVisible = layerVisibility['bicycle-log'];
+    const wasBicycleLogVisible = wasBicycleLogVisibleRef.current;
+    wasBicycleLogVisibleRef.current = isBicycleLogVisible;
+
+    if (!wasBicycleLogVisible && isBicycleLogVisible) {
+      void syncAndLoadBicycleLog(map);
+    }
   }, [layerVisibility, isStyleLoaded]);
 
   return <Box ref={containerRef} flex="1" minWidth="0" height="100vh" data-testid="map-container" />;

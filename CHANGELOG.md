@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-07-08] 自転車ログ表示機能フェーズ5: 自転車ログをレイヤー化した
+* **修正の動機・概要**:
+  - フェーズ3の暫定実装（マウント時に一度だけ取得し常時表示）を、仕様書通りの「レイヤーとして左サイドバーから表示・非表示を切り替え、ONにしたタイミングで更新用API→参照用APIを呼び出す」挙動に置き換えた。
+  - 更新用API（`sync`）が失敗した場合は参照用API（`fetchCyclingActivities`）を呼ばない設計とした（仕様書の「成功した後に参照用APIを呼び出す」という記述に従う）。エラー表示UIは今回のスコープ外とし、`console.error`のみとした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/types/layer.ts`の`ToggleableLayerId`に`'bicycle-log'`を追加。`frontend/src/constants/layerDefinitions.ts`に`{ id: 'bicycle-log', name: '自転車ログ', defaultChecked: false }`を追加（サイドバーに自動反映される）。
+    - `frontend/src/api/activitiesApi.ts`に`syncCyclingActivities()`（`POST /activities/sync`）を追加。
+    - `frontend/src/components/MapView.tsx`を変更: スタイルロード時は空のGeoJSONソース・ラインレイヤーのみ追加し、`layerVisibility['bicycle-log']`が`false→true`に変化した時だけ`syncCyclingActivities()`→成功時のみ`fetchCyclingActivities()`→`map.getSource(...).setData(...)`を実行するように改修。フェーズ3の「マウント時に一度だけfetch」処理は削除。
+    - `frontend/src/utils/mapLayerCategory.ts`・`frontend/src/hooks/useLayerVisibility.ts`関連のテストを`bicycle-log`追加に合わせて更新。
+    - ブラウザ（Playwright経由、フロントエンド単体・バックエンド未起動）で実際にサイドバーの「自転車ログ」トグルをON/OFFし、ON時に`syncCyclingActivities`が呼ばれ、失敗時（バックエンド未起動によるconnection refused）に`fetchCyclingActivities`が呼ばれずconsole.errorのみ出ることを確認。地図描画・他レイヤーへの影響が無いことも確認済み。
+    - なお本フェーズの完全なE2E確認（実際にStravaデータが地図上の自転車ログとして表示されること）には、ユーザー自身のPostgreSQL/PostGIS環境（マイグレーション適用済み）とStrava認証情報が必要（フェーズ4のTypeORM導入以降、バックエンドはDB接続無しでは起動できないため）。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし。
+
 ### [2026-07-08] 自転車ログ表示機能フェーズ4: 参照用API・更新用APIへの分割（DB化）を実装した
 * **修正の動機・概要**:
   - フェーズ2〜3で実装した「Strava APIへの毎回パススルー」を、ユーザーと合意した設計（参照用API=DB参照、更新用API=Strava取得→DB更新→成功/失敗のみ返す）に置き換えた。

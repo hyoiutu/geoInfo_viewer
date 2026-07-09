@@ -11,7 +11,8 @@ describe('useLayerVisibilityに関するテスト', () => {
       'osm-road': true,
       'osm-building': true,
       'osm-place-name': true,
-      'aerial-photo': false
+      'aerial-photo': false,
+      'bicycle-log': false
     });
   });
 
