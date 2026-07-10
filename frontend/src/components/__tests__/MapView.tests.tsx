@@ -162,7 +162,7 @@ describe('MapViewに関するテスト', () => {
   test('自転車ログレイヤーがOFF→ONに変化したとき、同期後に取得したデータが地図に反映される', async () => {
     vi.mocked(fetchCyclingActivities).mockResolvedValue([
       {
-        id: 1,
+        id: '1',
         name: 'ライド1',
         distanceMeters: 1000,
         movingTimeSeconds: 600,
@@ -189,7 +189,7 @@ describe('MapViewに関するテスト', () => {
       expect(source.setData).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'FeatureCollection',
-          features: [expect.objectContaining({ properties: { id: 1, name: 'ライド1' } })]
+          features: [expect.objectContaining({ properties: { id: '1', name: 'ライド1' } })]
         })
       );
     });

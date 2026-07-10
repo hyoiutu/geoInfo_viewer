@@ -10,7 +10,7 @@ describe('ActivitiesControllerに関するテスト', () => {
   test('findAllが呼ばれたとき、ActivitiesServiceのfindAllの戻り値をそのまま返す', async () => {
     const dtos: CyclingActivityDto[] = [
       {
-        id: 1,
+        id: '1',
         name: 'ライド1',
         distanceMeters: 1000,
         movingTimeSeconds: 600,

@@ -16,7 +16,7 @@ const mapBaseFields = (
   activity: StravaActivity | StravaActivityDetail,
   entity: CyclingActivityEntity
 ): CyclingActivityEntity => {
-  entity.id = activity.id;
+  entity.id = String(activity.id);
   entity.name = activity.name;
   entity.distanceMeters = activity.distance;
   entity.movingTimeSeconds = activity.moving_time;

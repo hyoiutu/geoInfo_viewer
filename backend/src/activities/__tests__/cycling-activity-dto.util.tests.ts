@@ -4,7 +4,7 @@ import { CyclingActivityEntity } from '../entities/cycling-activity.entity';
 
 const createEntity = (overrides: Partial<CyclingActivityEntity>): CyclingActivityEntity => {
   const entity = new CyclingActivityEntity();
-  entity.id = 42;
+  entity.id = '42';
   entity.name = 'テストライド';
   entity.distanceMeters = 12345.6;
   entity.movingTimeSeconds = 3600;
@@ -16,11 +16,11 @@ const createEntity = (overrides: Partial<CyclingActivityEntity>): CyclingActivit
 
 describe('toCyclingActivityDtoに関するテスト', () => {
   test('CyclingActivityEntityのフィールドがDTOへ正しくマッピングされる', () => {
-    const entity = createEntity({ id: 42, name: 'テストライド', distanceMeters: 12345.6, movingTimeSeconds: 3600 });
+    const entity = createEntity({ id: '42', name: 'テストライド', distanceMeters: 12345.6, movingTimeSeconds: 3600 });
 
     const dto = toCyclingActivityDto(entity);
 
-    expect(dto.id).toBe(42);
+    expect(dto.id).toBe('42');
     expect(dto.name).toBe('テストライド');
     expect(dto.distanceMeters).toBe(12345.6);
     expect(dto.movingTimeSeconds).toBe(3600);

@@ -72,7 +72,7 @@ export class ActivitiesBackfillService {
 
     const pendingEntities = await this.cyclingActivityRepository.find({ where: { detailFetchedAt: IsNull() } });
     for (const pendingEntity of pendingEntities) {
-      const detail = await this.stravaActivitiesService.fetchCyclingActivityDetail(pendingEntity.id);
+      const detail = await this.stravaActivitiesService.fetchCyclingActivityDetail(Number(pendingEntity.id));
       await this.cyclingActivityRepository.save(toCyclingActivityEntityFromDetail(detail));
     }
   }
@@ -93,7 +93,7 @@ export class ActivitiesBackfillService {
     const activities = await this.stravaActivitiesService.fetchAllCyclingActivities();
     const existingIds = new Set((await this.cyclingActivityRepository.find()).map((entity) => entity.id));
     const newPlaceholders = activities
-      .filter((activity) => !existingIds.has(activity.id))
+      .filter((activity) => !existingIds.has(String(activity.id)))
       .map((activity) => toPlaceholderCyclingActivityEntity(activity));
 
     if (newPlaceholders.length > NO_ACTIVITIES) {

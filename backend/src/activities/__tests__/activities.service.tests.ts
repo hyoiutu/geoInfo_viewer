@@ -71,7 +71,7 @@ describe('ActivitiesServiceに関するテスト', () => {
   describe('findAll', () => {
     test('DBに保存されたアクティビティをDTOへ変換して返す', async () => {
       const entity1 = Object.assign(new CyclingActivityEntity(), {
-        id: 1,
+        id: '1',
         name: 'ライド1',
         distanceMeters: 1000,
         movingTimeSeconds: 600,
@@ -84,7 +84,7 @@ describe('ActivitiesServiceに関するテスト', () => {
 
       const result = await service.findAll();
 
-      expect(result).toEqual([expect.objectContaining({ id: 1, name: 'ライド1' })]);
+      expect(result).toEqual([expect.objectContaining({ id: '1', name: 'ライド1' })]);
     });
   });
 
@@ -141,8 +141,8 @@ describe('ActivitiesServiceに関するテスト', () => {
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(1);
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(2);
       expect(cyclingActivityRepository.save).toHaveBeenCalledWith([
-        expect.objectContaining({ id: 1, path: expect.objectContaining({ type: 'LineString' }) }),
-        expect.objectContaining({ id: 2, path: expect.objectContaining({ type: 'LineString' }) })
+        expect.objectContaining({ id: '1', path: expect.objectContaining({ type: 'LineString' }) }),
+        expect.objectContaining({ id: '2', path: expect.objectContaining({ type: 'LineString' }) })
       ]);
       expect(syncStateRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({ id: SYNC_STATE_SINGLETON_ID, lastSyncedAt: expect.any(Date) })

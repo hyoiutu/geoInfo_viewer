@@ -3,18 +3,13 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 const CYCLING_ACTIVITIES_TABLE_NAME = 'cycling_activities';
 
-// StravaのアクティビティIDはPostgresのinteger(int4)の範囲を超えるためbigintで保持する。
-// pgドライバはbigintを文字列で返すため、JSのnumberとして扱えるようtransformerで相互変換する
-// (Strava側のID桁数は現状Number.MAX_SAFE_INTEGERを超えないため、この変換による精度欠損は発生しない)。
-const bigintNumberTransformer = {
-  to: (value: number) => value,
-  from: (value: string) => Number(value)
-};
-
 @Entity({ name: CYCLING_ACTIVITIES_TABLE_NAME })
 export class CyclingActivityEntity {
-  @PrimaryColumn({ type: 'bigint', transformer: bigintNumberTransformer })
-  id!: number;
+  // StravaのアクティビティIDはPostgresのinteger(int4)の範囲を超えるためbigintで保持する。
+  // IDに対して数値比較・演算を行うことは無い（存在確認・DBの主キーとしての利用のみ）ため、
+  // pgドライバがbigintをそのまま返す文字列として扱い、number変換用のtransformerは持たない。
+  @PrimaryColumn({ type: 'bigint' })
+  id!: string;
 
   @Column()
   name!: string;

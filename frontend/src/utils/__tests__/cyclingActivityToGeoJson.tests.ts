@@ -6,7 +6,7 @@ describe('cyclingActivityToGeoJsonに関するテスト', () => {
   test('pathを持つアクティビティは、LineString FeatureのFeatureCollectionに変換される', () => {
     const activities: CyclingActivity[] = [
       {
-        id: 1,
+        id: '1',
         name: 'ライド1',
         distanceMeters: 1000,
         movingTimeSeconds: 600,
@@ -25,7 +25,7 @@ describe('cyclingActivityToGeoJsonに関するテスト', () => {
       features: [
         {
           type: 'Feature',
-          properties: { id: 1, name: 'ライド1' },
+          properties: { id: '1', name: 'ライド1' },
           geometry: {
             type: 'LineString',
             coordinates: [
@@ -41,7 +41,7 @@ describe('cyclingActivityToGeoJsonに関するテスト', () => {
   test('pathがnullのアクティビティは、FeatureCollectionから除外される', () => {
     const activities: CyclingActivity[] = [
       {
-        id: 1,
+        id: '1',
         name: 'GPSデータなし',
         distanceMeters: 0,
         movingTimeSeconds: 0,

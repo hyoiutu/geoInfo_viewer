@@ -100,7 +100,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     test('一覧取得したアクティビティのうちDB未登録のものだけプレースホルダーとして保存する', async () => {
       fetchAllCyclingActivities.mockResolvedValue([createActivity({ id: 1 }), createActivity({ id: 2 })]);
       cyclingActivityRepository.find.mockResolvedValue([
-        Object.assign(new CyclingActivityEntity(), { id: 1, detailFetchedAt: null })
+        Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null })
       ]);
       const service = await createService();
 
@@ -108,7 +108,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
       await flushMicrotasks();
 
       expect(cyclingActivityRepository.save).toHaveBeenCalledWith([
-        expect.objectContaining({ id: 2, path: null, detailFetchedAt: null })
+        expect.objectContaining({ id: '2', path: null, detailFetchedAt: null })
       ]);
     });
 
@@ -116,8 +116,8 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
       cyclingActivityRepository.find
         .mockResolvedValueOnce([]) // 既存ID確認用
         .mockResolvedValueOnce([
-          Object.assign(new CyclingActivityEntity(), { id: 1, detailFetchedAt: null }),
-          Object.assign(new CyclingActivityEntity(), { id: 2, detailFetchedAt: null })
+          Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null }),
+          Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null })
         ]); // 未取得分の取得
       fetchCyclingActivityDetail.mockImplementation((id: number) => Promise.resolve(createActivityDetail({ id })));
       const service = await createService();
@@ -128,10 +128,10 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(1);
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(2);
       expect(cyclingActivityRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 1, detailFetchedAt: expect.any(Date) })
+        expect.objectContaining({ id: '1', detailFetchedAt: expect.any(Date) })
       );
       expect(cyclingActivityRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({ id: 2, detailFetchedAt: expect.any(Date) })
+        expect.objectContaining({ id: '2', detailFetchedAt: expect.any(Date) })
       );
     });
 

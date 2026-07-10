@@ -32,7 +32,7 @@ describe('toPlaceholderCyclingActivityEntityに関するテスト', () => {
 
     const entity = toPlaceholderCyclingActivityEntity(activity);
 
-    expect(entity.id).toBe(42);
+    expect(entity.id).toBe('42');
     expect(entity.name).toBe('テストライド');
     expect(entity.distanceMeters).toBe(12345.6);
     expect(entity.movingTimeSeconds).toBe(3600);
@@ -62,7 +62,7 @@ describe('toCyclingActivityEntityFromDetailに関するテスト', () => {
 
     const entity = toCyclingActivityEntityFromDetail(detail);
 
-    expect(entity.id).toBe(42);
+    expect(entity.id).toBe('42');
     expect(entity.name).toBe('テストライド');
     expect(entity.distanceMeters).toBe(12345.6);
     expect(entity.movingTimeSeconds).toBe(3600);

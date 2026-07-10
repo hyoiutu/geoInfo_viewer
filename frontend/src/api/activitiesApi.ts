@@ -1,5 +1,5 @@
 export type CyclingActivity = {
-  id: number;
+  id: string;
   name: string;
   distanceMeters: number;
   movingTimeSeconds: number;
