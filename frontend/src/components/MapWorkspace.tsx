@@ -7,7 +7,7 @@ import { MapView } from './MapView';
 
 export const MapWorkspace = () => {
   const { visibility, toggleLayer } = useLayerVisibility();
-  const { status: backfillStatus, start: startBackfill } = useBackfillStatus();
+  const { backfillStatus, start: startBackfill } = useBackfillStatus();
 
   const layers = LAYER_DEFINITIONS.map((layerDefinition) => ({
     id: layerDefinition.id,

@@ -4,12 +4,12 @@ import { type BackfillStartResult, type BackfillStatus, getBackfillStatus, start
 const POLL_INTERVAL_MS = 5000;
 
 export const useBackfillStatus = () => {
-  const [status, setStatus] = useState<BackfillStatus | null>(null);
+  const [backfillStatus, setBackfillStatus] = useState<BackfillStatus | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const result = await getBackfillStatus();
-      setStatus(result);
+      setBackfillStatus(result);
       return result;
     } catch {
       return null;
@@ -21,7 +21,7 @@ export const useBackfillStatus = () => {
   }, [refresh]);
 
   useEffect(() => {
-    if (!status?.isRunning) {
+    if (!backfillStatus?.isRunning) {
       return;
     }
 
@@ -30,7 +30,7 @@ export const useBackfillStatus = () => {
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(timer);
-  }, [status?.isRunning, refresh]);
+  }, [backfillStatus?.isRunning, refresh]);
 
   const start = useCallback(async (): Promise<BackfillStartResult> => {
     const result = await startBackfill();
@@ -38,5 +38,5 @@ export const useBackfillStatus = () => {
     return result;
   }, [refresh]);
 
-  return { status, start };
+  return { backfillStatus, start };
 };

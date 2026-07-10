@@ -38,14 +38,14 @@ describe('useBackfillStatusに関するテスト', () => {
     const { result } = renderHook(() => useBackfillStatus());
 
     await waitFor(() => {
-      expect(result.current.status).toEqual(NOT_RUNNING_STATUS);
+      expect(result.current.backfillStatus).toEqual(NOT_RUNNING_STATUS);
     });
   });
 
   test('startを呼ぶとstartBackfillを呼び出し、その後状態を再取得する', async () => {
     const { result } = renderHook(() => useBackfillStatus());
     await waitFor(() => {
-      expect(result.current.status).toEqual(NOT_RUNNING_STATUS);
+      expect(result.current.backfillStatus).toEqual(NOT_RUNNING_STATUS);
     });
     vi.mocked(getBackfillStatus).mockResolvedValue(RUNNING_STATUS);
 
@@ -54,7 +54,7 @@ describe('useBackfillStatusに関するテスト', () => {
     });
 
     expect(startBackfill).toHaveBeenCalledTimes(1);
-    expect(result.current.status).toEqual(RUNNING_STATUS);
+    expect(result.current.backfillStatus).toEqual(RUNNING_STATUS);
   });
 
   test('実行中はポーリングして状態を更新する', async () => {
@@ -62,7 +62,7 @@ describe('useBackfillStatusに関するテスト', () => {
     vi.mocked(getBackfillStatus).mockResolvedValue(RUNNING_STATUS);
     const { result } = renderHook(() => useBackfillStatus());
     await waitFor(() => {
-      expect(result.current.status).toEqual(RUNNING_STATUS);
+      expect(result.current.backfillStatus).toEqual(RUNNING_STATUS);
     });
     vi.mocked(getBackfillStatus).mockResolvedValue(NOT_RUNNING_STATUS);
 
@@ -70,14 +70,14 @@ describe('useBackfillStatusに関するテスト', () => {
       await vi.advanceTimersByTimeAsync(10_000);
     });
 
-    expect(result.current.status).toEqual(NOT_RUNNING_STATUS);
+    expect(result.current.backfillStatus).toEqual(NOT_RUNNING_STATUS);
   });
 
   test('実行中でない場合はポーリングしない', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { result } = renderHook(() => useBackfillStatus());
     await waitFor(() => {
-      expect(result.current.status).toEqual(NOT_RUNNING_STATUS);
+      expect(result.current.backfillStatus).toEqual(NOT_RUNNING_STATUS);
     });
     vi.mocked(getBackfillStatus).mockClear();
 
