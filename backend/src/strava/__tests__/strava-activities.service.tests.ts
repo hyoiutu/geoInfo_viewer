@@ -76,11 +76,15 @@ describe('StravaActivitiesServiceに関するテスト', () => {
 
   describe('fetchAllCyclingActivities', () => {
     test('ページを最終ページ（空配列）まで辿り、全ページの自転車アクティビティを結合して返す', async () => {
-      const httpServiceGet = vi
-        .fn()
-        .mockReturnValueOnce(of({ data: [createActivity({ id: 1 }), createActivity({ id: 2, type: 'Run' })] }))
-        .mockReturnValueOnce(of({ data: [createActivity({ id: 3 })] }))
-        .mockReturnValueOnce(of({ data: [] }));
+      // 呼び出し順ではなく、リクエストのpageパラメータの値に応じてそのページのデータを返す
+      const pages: Record<number, StravaActivity[]> = {
+        1: [createActivity({ id: 1 }), createActivity({ id: 2, type: 'Run' })],
+        2: [createActivity({ id: 3 })],
+        3: []
+      };
+      const httpServiceGet = vi.fn((_url: string, config: { params: { page: number } }) =>
+        of({ data: pages[config.params.page] ?? [] })
+      );
       const { service } = await createService(httpServiceGet);
 
       const activities = await service.fetchAllCyclingActivities();

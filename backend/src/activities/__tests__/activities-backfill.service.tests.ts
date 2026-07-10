@@ -33,6 +33,11 @@ const createActivityDetail = (overrides: Partial<StravaActivityDetail>): StravaA
 // runBackfillはfire-and-forgetの非同期処理のため、内部のawait連鎖が完了するまでイベントループを回す
 const flushMicrotasks = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+// TypeORMのIsNull()/Not(IsNull())はFindOperatorインスタンス(.typeで種別を判別可能)になる。
+// 呼び出し「順番」ではなくクエリの中身（引数の形）に応じて結果を返すことで、
+// 「何回目の呼び出しか」を数えるコメントを書かずに済むようにする。
+type FindOperatorLike = { type?: string };
+
 describe('ActivitiesBackfillServiceに関するテスト', () => {
   let fetchAllCyclingActivities: ReturnType<typeof vi.fn>;
   let fetchCyclingActivityDetail: ReturnType<typeof vi.fn>;
@@ -41,6 +46,33 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     find: ReturnType<typeof vi.fn>;
     save: ReturnType<typeof vi.fn>;
     count: ReturnType<typeof vi.fn>;
+  };
+
+  // find()はfetchAndSavePlaceholders内の既存ID確認（引数無し）と、
+  // runBackfill内の未取得分取得（where: detailFetchedAt IsNull）の2種類の呼ばれ方をする。
+  const mockCyclingActivityFind = (params: {
+    existingEntities: CyclingActivityEntity[];
+    pendingEntities: CyclingActivityEntity[];
+  }) => {
+    cyclingActivityRepository.find.mockImplementation((options?: { where?: unknown }) =>
+      Promise.resolve(options === undefined ? params.existingEntities : params.pendingEntities)
+    );
+  };
+
+  // count()はisFullyBackfilled/getStatus内で、引数無し(totalCount)・
+  // where: detailFetchedAt IsNull(pendingCount)・where: detailFetchedAt Not(IsNull())(completedCount)
+  // の3種類の呼ばれ方をする。呼び出し回数に関わらず正しい値を返す。
+  const mockCyclingActivityCounts = (params: { totalCount: number; pendingCount: number }) => {
+    const completedCount = params.totalCount - params.pendingCount;
+    cyclingActivityRepository.count.mockImplementation(
+      (options?: { where?: { detailFetchedAt?: FindOperatorLike } }) => {
+        const operatorType = options?.where?.detailFetchedAt?.type;
+        if (operatorType === undefined) {
+          return Promise.resolve(params.totalCount);
+        }
+        return Promise.resolve(operatorType === 'isNull' ? params.pendingCount : completedCount);
+      }
+    );
   };
 
   const createService = async () => {
@@ -113,12 +145,13 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     });
 
     test('detailFetchedAtがnullの行それぞれについて詳細APIを呼び出し、Entityを更新保存する', async () => {
-      cyclingActivityRepository.find
-        .mockResolvedValueOnce([]) // 既存ID確認用
-        .mockResolvedValueOnce([
+      mockCyclingActivityFind({
+        existingEntities: [],
+        pendingEntities: [
           Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null }),
           Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null })
-        ]); // 未取得分の取得
+        ]
+      });
       fetchCyclingActivityDetail.mockImplementation((id: number) => Promise.resolve(createActivityDetail({ id })));
       const service = await createService();
 
@@ -136,7 +169,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     });
 
     test('既に全件バックフィル済み（未取得行が無い）の場合、Stravaへの一覧再取得を行わず即座に完了する', async () => {
-      cyclingActivityRepository.count.mockResolvedValueOnce(629).mockResolvedValueOnce(0);
+      mockCyclingActivityCounts({ totalCount: 629, pendingCount: 0 });
       const service = await createService();
 
       await service.start();
@@ -168,7 +201,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
 
   describe('getStatus', () => {
     test('全件数・完了件数から進捗率(%)を計算する', async () => {
-      cyclingActivityRepository.count.mockResolvedValueOnce(4).mockResolvedValueOnce(1);
+      mockCyclingActivityCounts({ totalCount: 4, pendingCount: 3 });
       const service = await createService();
 
       const status = await service.getStatus();
@@ -179,7 +212,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     });
 
     test('全件数が0の場合、進捗率は0を返す（0除算しない）', async () => {
-      cyclingActivityRepository.count.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+      mockCyclingActivityCounts({ totalCount: 0, pendingCount: 0 });
       const service = await createService();
 
       const status = await service.getStatus();
@@ -188,7 +221,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     });
 
     test('実行中でない場合、estimatedRemainingSecondsはnullを返す', async () => {
-      cyclingActivityRepository.count.mockResolvedValueOnce(4).mockResolvedValueOnce(1);
+      mockCyclingActivityCounts({ totalCount: 4, pendingCount: 3 });
       const service = await createService();
 
       const status = await service.getStatus();
@@ -199,12 +232,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     test('実行中の場合、残件数とレート制限間隔から残り秒数を見積もる', async () => {
       // 意図的に解決しないPromiseでジョブを実行中のまま保持し、タイミング競合を避ける
       fetchAllCyclingActivities.mockReturnValue(new Promise(() => {}));
-      // 1,2回目はstart()内部のisFullyBackfilledチェック用、3,4回目はgetStatus()用
-      cyclingActivityRepository.count
-        .mockResolvedValueOnce(4)
-        .mockResolvedValueOnce(1)
-        .mockResolvedValueOnce(4)
-        .mockResolvedValueOnce(1);
+      mockCyclingActivityCounts({ totalCount: 4, pendingCount: 3 });
       const service = await createService();
       await service.start();
 
