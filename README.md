@@ -1,5 +1,7 @@
 # geoInfo_viewer
 
+あらゆる位置情報を統合して一つの地図で見られるようにするアプリケーションです。仕様の詳細は[specs/system_specification.md](specs/system_specification.md)を参照してください。
+
 ## 前提環境
 
 以下がインストール済みであることを前提としています。
