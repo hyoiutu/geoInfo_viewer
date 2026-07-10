@@ -3,16 +3,32 @@ import { STRAVA_NON_UPLOAD_RATE_LIMIT_PER_WINDOW, STRAVA_NON_UPLOAD_RATE_LIMIT_W
 import { StravaRateLimiterService } from '../strava-rate-limiter.service';
 
 describe('StravaRateLimiterServiceに関するテスト', () => {
+  const originalEnvValue = process.env.STRAVA_RATE_LIMIT_INTERVAL_MS;
+
   afterEach(() => {
     vi.restoreAllMocks();
+    if (originalEnvValue === undefined) {
+      delete process.env.STRAVA_RATE_LIMIT_INTERVAL_MS;
+    } else {
+      process.env.STRAVA_RATE_LIMIT_INTERVAL_MS = originalEnvValue;
+    }
   });
 
   test('getIntervalMsは、レート制限のウィンドウを上限リクエスト数で割った間隔を返す', () => {
+    delete process.env.STRAVA_RATE_LIMIT_INTERVAL_MS;
     const service = new StravaRateLimiterService();
 
     expect(service.getIntervalMs()).toBe(
       STRAVA_NON_UPLOAD_RATE_LIMIT_WINDOW_MS / STRAVA_NON_UPLOAD_RATE_LIMIT_PER_WINDOW
     );
+  });
+
+  test('環境変数STRAVA_RATE_LIMIT_INTERVAL_MSが設定されている場合、その値を間隔として使う（E2Eでのバックフィル待機短縮のため）', () => {
+    process.env.STRAVA_RATE_LIMIT_INTERVAL_MS = '50';
+
+    const service = new StravaRateLimiterService();
+
+    expect(service.getIntervalMs()).toBe(50);
   });
 
   test('初回のwaitForSlotは待機しない', async () => {
