@@ -1,5 +1,12 @@
 # geoInfo_viewer
 
+## 前提環境
+
+以下がインストール済みであることを前提としています。
+
+- Node.js（`pnpm`が利用できるバージョン。`package.json`の`packageManager`でpnpmのバージョンを固定しているため、[Corepack](https://nodejs.org/api/corepack.html)経由（`corepack enable`）でのインストールを推奨します）
+- Docker / Docker Compose（バックエンド用データベース(PostgreSQL/PostGIS)をコンテナで起動するために使用します）
+
 ## 開発環境セットアップ
 
 ### アプリケーションの起動方法
