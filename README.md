@@ -33,7 +33,10 @@ cp backend/.env.example backend/.env
 ```
 
 - `STRAVA_CLIENT_ID` / `STRAVA_CLIENT_SECRET`: [Stravaの開発者向けAPIアプリケーション設定](https://www.strava.com/settings/api)で取得できるID・シークレット
-- `STRAVA_REFRESH_TOKEN`: OAuth認可により取得したリフレッシュトークン（失効しないため、手動で一度取得し設定する。取得手順はStrava公式のOAuth連携ドキュメントを参照）
+- `STRAVA_REFRESH_TOKEN`: OAuth認可により取得したリフレッシュトークン（失効しないため、手動で一度取得し設定する）。取得手順は[Strava公式のOAuth連携ドキュメント](https://developers.strava.com/docs/authentication/)を参照。概要は以下の通り。
+  1. `https://www.strava.com/oauth/authorize?client_id=<STRAVA_CLIENT_ID>&redirect_uri=http://localhost&response_type=code&scope=activity:read_all` をブラウザで開き認可する（`scope=activity:read_all`を明示しないと、後述のアクティビティ取得APIが401エラーになるため必須）
+  2. リダイレクト先URLの`code=`パラメータの値をコピーする
+  3. `curl -X POST https://www.strava.com/oauth/token -d client_id=<STRAVA_CLIENT_ID> -d client_secret=<STRAVA_CLIENT_SECRET> -d code=<コピーしたcode> -d grant_type=authorization_code` を実行し、レスポンスの`refresh_token`を`STRAVA_REFRESH_TOKEN`に設定する
 
 `.env`はGit管理対象外（`.gitignore`）です。
 
