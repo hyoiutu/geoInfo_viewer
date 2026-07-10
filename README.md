@@ -47,3 +47,17 @@ pnpm --filter backend run migration:run
 ```
 
 コンテナはホストの`5433`番ポートで待ち受けます（Homebrew等でネイティブにPostgreSQLを起動している場合の`5432`との衝突を避けるため）。
+
+#### マイグレーションの実行タイミング
+
+`pnpm --filter backend run migration:run`は以下のタイミングで実行してください。
+
+- 初回セットアップ時（`docker-compose up -d`で新規にDBコンテナを起動した直後）
+- `backend/src/migrations/`配下に新しいマイグレーションファイルが追加された変更を`git pull`等で取り込んだ後（`pnpm --filter backend run dev`でバックエンドを起動する前に実行すること。未適用のマイグレーションがあるとDBのテーブル定義がコードと一致せず、起動時やAPI呼び出し時にエラーになります）
+
+他に利用可能なマイグレーション関連コマンド:
+
+```bash
+pnpm --filter backend run migration:generate  # Entityの変更差分からマイグレーションファイルを生成
+pnpm --filter backend run migration:revert    # 直近のマイグレーションを1件分ロールバック
+```
