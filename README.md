@@ -51,14 +51,15 @@ cp backend/.env.example backend/.env
 
 ### バックエンド用データベース（PostgreSQL/PostGIS）
 
-ルートの`docker-compose.yml`でPostGIS同梱のPostgreSQLコンテナを起動します（`backend/.env.example`のDB接続情報はこのコンテナにそのまま接続できる値になっています）。
+ルートの`docker-compose.yml`でPostGIS同梱のPostgreSQLコンテナを起動します。認証情報・ポートは`docker-compose.yml`に直接書かず`backend/.env`の`DATABASE_USERNAME`/`DATABASE_PASSWORD`/`DATABASE_NAME`/`DATABASE_PORT`を参照するようになっているため、起動前にシェルへ読み込んでください。
 
 ```bash
+set -a && source backend/.env && set +a
 docker-compose up -d
 pnpm --filter backend run migration:run
 ```
 
-コンテナはホストの`5433`番ポートで待ち受けます（Homebrew等でネイティブにPostgreSQLを起動している場合の`5432`との衝突を避けるため）。
+コンテナはデフォルトでホストの`5433`番ポートで待ち受けます（Homebrew等でネイティブにPostgreSQLを起動している場合の`5432`との衝突を避けるため）。`backend/.env`を読み込まずに`docker-compose up -d`を実行した場合は、`docker-compose.yml`に記載のデフォルト値（`postgres`/`postgres`/`geo_info_viewer`/`5433`）が使われます。
 
 #### マイグレーションの実行タイミング
 
