@@ -13,3 +13,4 @@
 - git commitはauto-commitスキル（.agents/skills/auto-commit/SKILL.md）を経由してのみ実行し、スキルを介さずに直接git commitを実行してはならない
 - 単体テスト・E2Eテストを作成または実行する場合はtest_rules.mdに記載されたルールに従う
 - GitHub Issueをもとに実装・修正を行う場合はissue-implementスキル（.agents/skills/issue-implement/SKILL.md）を経由し、対象Issue・ブランチ名・派生元ブランチをユーザーに確認したうえで、branch_rules.mdに記載された「1 Issue = 1 Branch」の原則に従ってブランチを作成する
+- GitHub PRのレビューコメントに対応する場合はpr-review-respondスキル（.agents/skills/pr-review-respond/SKILL.md）を経由し、1コメント=1コミットの原則でauto-commitスキル経由でコミットした上で、各コメントへ対応内容（コミットへのリンク、または質問への回答・対応不要の理由）を返信する
