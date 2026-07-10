@@ -1,0 +1,17 @@
+version: "3.3"
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DATABASE_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-postgres}
+      POSTGRES_DB: ${DATABASE_NAME:-geo_info_viewer}
+    ports:
+      - "${DATABASE_PORT:-5433}:5432"
+    volumes:
+      - geo_info_viewer_pgdata:/var/lib/postgresql/data
+
+volumes:
+  geo_info_viewer_pgdata:

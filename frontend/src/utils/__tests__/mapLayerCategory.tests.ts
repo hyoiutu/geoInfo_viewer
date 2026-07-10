@@ -127,7 +127,8 @@ describe('groupLayerIdsByCategoryに関するテスト', () => {
       'osm-road': ['road_motorway', 'road_minor'],
       'osm-building': ['building'],
       'osm-place-name': ['label_city'],
-      'aerial-photo': []
+      'aerial-photo': [],
+      'bicycle-log': []
     });
   });
 
@@ -139,7 +140,8 @@ describe('groupLayerIdsByCategoryに関するテスト', () => {
       'osm-road': [],
       'osm-building': [],
       'osm-place-name': [],
-      'aerial-photo': []
+      'aerial-photo': [],
+      'bicycle-log': []
     });
   });
 });

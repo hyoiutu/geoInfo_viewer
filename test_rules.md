@@ -67,6 +67,22 @@
 - **地図(MapLibre GL JS)を使用するコンポーネントのテスト**: jsdomはWebGL/canvasを持たないため、`maplibre-gl`は`vi.mock('maplibre-gl', ...)`でモジュール全体をモック化してテストする（実際のタイル取得・地図描画は行わない）。`Map`コンストラクタをモックする際は、`vi.fn().mockImplementation(function MockMap() { ... })`のように`function`宣言を使うこと（アロー関数は`new`で呼び出せないため`is not a constructor`エラーになる）。例: `frontend/src/components/__tests__/MapView.tests.tsx`。
 - **共有モック・フィクスチャ**: 複数のテストファイルで共有するモック（例: Electronの`window.api`のスタブ、地図データのダミーフィクスチャ）やヘルパー（`renderWithChakra`等）は `frontend/src/test-utils/` に配置する。このディレクトリのファイルはテスト対象そのものではないため `*.tests.*` という命名は使わない（Vitestの実行対象に含めないため）。
 - **`vi.restoreAllMocks()` は `vi.spyOn` で作成したモックにしか効かない**: `vi.mock('module', () => ({ fn: vi.fn() }))` のようにモックファクトリ内で作成した `vi.fn()` は、`vi.restoreAllMocks()` では呼び出し履歴も実装もクリアされず、次のテストへ持ち越されてしまう。モックファクトリで作成した関数のクリーンアップには `vi.resetAllMocks()`（または `vi.clearAllMocks()`）を使うこと。`vi.spyOn(window, 'alert')` のように実オブジェクトをスパイした場合は `vi.restoreAllMocks()` で元の実装に戻せるため、そちらは引き続き使用してよい。
-- **実行コマンド**: `pnpm run test:unit`（対象は `frontend/src/**/*.tests.*`）
+- **実行コマンド**: `pnpm run test:unit`（`frontend/src/**/*.tests.*`と`backend/src/**/*.tests.*`の両方を実行する）
 
-> **TODO**: バックエンド（NestJS + PostgreSQL/PostGIS）のテスト方針は未検討。ORM選定、テスト用DB（例: testcontainers、専用テストスキーマ等）の用意方法、PostGISを含む空間クエリのテスト方法は、バックエンド雛形構築時にあわせて本セクションに追記すること。
+### バックエンド（backend/, NestJS）
+
+- **テストフレームワーク**: Vitest（`@nestjs/testing`の`Test.createTestingModule`でテスト対象のモジュール/コントローラ/サービスを組み立てる）
+- **設定ファイル**: `backend/vitest.config.ts`
+  - vitestの既定トランスフォーム（esbuild、およびvitest v4で既定化されたOxc）は`emitDecoratorMetadata`をサポートしないため、`unplugin-swc`（`@swc/core`）をpluginとして使い、`oxc: false`を明示的に設定してOxcトランスフォームを無効化すること。これを怠るとNestJSのコンストラクタインジェクション（DI）が正しく動作しない。
+  - コンストラクタで注入するクラス（例: `constructor(private readonly appService: AppService) {}`）はBiomeの`lint/style/useImportType`から「型としてのみ使用」と誤検知され`import type`への変換を提案されることがあるが、実行時の型メタデータ解決に実体の参照が必要なため、提案を鵜呑みにせず通常の`import`のまま残すこと（詳細は`rules.md`参照）。
+- **命名・配置規約**: NestJS既定の`.spec.ts`ではなく、フロントエンドと同じ`__tests__`配置・`<対象ファイル名>.tests.ts`命名を使う（例: `backend/src/app.service.ts` → `backend/src/__tests__/app.service.tests.ts`）。
+- **実行コマンド**: `pnpm --filter backend test:unit`
+- **DB（PostgreSQL/PostGIS, TypeORM）を伴うサービスのテスト**: 実DBには接続せず、`@nestjs/typeorm`の`getRepositoryToken(Entity)`を使い`Repository<Entity>`を`vi.fn()`でモック化する（`find`/`save`/`findOneBy`等）。実際のSQL・PostGIS空間クエリの振る舞い自体はこの方法では検証できないため、マイグレーション適用やPostGISジオメトリの保存・取得結果は、ルートの`docker-compose.yml`（PostGIS同梱のPostgreSQLコンテナ、ポート`5433`）を`docker-compose up -d`で起動した上で手動確認すること（詳細はREADME.md参照）。
+  - コンストラクタ引数に複数の`@InjectRepository(...)`のようなパラメータデコレータを使う場合、Biomeの既定設定ではパース時に`Decorators are not valid here`エラーになる。`biome.json`の`javascript.parser.unsafeParameterDecoratorsEnabled: true`を設定すること。
+- **TypeORM Entity固有の注意点**:
+  - Entityクラスのプロパティは`strictPropertyInitialization`により初期化必須と判定されるため、`id!: string`のように definite assignment assertion (`!`) を付与する（TypeORMはデコレータ・リフレクションでプロパティを設定するため、コンストラクタでの初期化は行わない）。
+  - `TypeOrmModuleOptions`/`DataSourceOptions`はDBドライバごとの判別可能共用体になっているため、設定を組み立てるヘルパー関数の戻り値に`DataSourceOptions`等の広い型を明示的に注釈すると、`type: 'postgres'`のようなリテラルが`string`に幅拡張され、共用体のどのメンバーにも一致しなくなり型エラーになることがある。戻り値の型注釈を省略しTypeScriptに具体的な型を推論させるか、`as const`でリテラル型を保持すること。
+- **fire-and-forgetな非同期処理（バックグラウンドジョブ等）のテスト**: `start()`のようなメソッドが内部で`await`せず非同期処理を裏で走らせる（例: `this.runJob().finally(...)`を呼び出し元では待たない）設計の場合、以下の2パターンで書き分けること。
+  - 「実行中であること」自体を検証したいテスト（例: 二重起動防止、`isRunning()`がtrueになる）は、依存するモックの一つ（例: 外部API呼び出し）を`new Promise(() => {})`（意図的に解決しないPromise）にして、ジョブを確実に「実行中のまま」で止める。`await service.start()`直後に非同期チェーンがどこまで進んでいるかはPromiseのマイクロタスク解決順に依存し予測できないため、タイミング競合を避けるにはこの方法が確実。
+  - 「ジョブが完了した後の結果」を検証したいテスト（例: DBへの保存内容、完了後に`isRunning()`がfalseに戻ること）は、`await service.start()`の後に`await new Promise((resolve) => setTimeout(resolve, 0))`（マクロタスクへの切り替え）を挟んでから検証する。これにより、内部の`await`連鎖（マイクロタスク）が全て解決されたことを保証できる。
+- **モックの戻り値を呼び出しごとに変える場合**: 同じモック関数（`Repository.count()`/`find()`やHTTPクライアント等）が複数の異なる意味の呼び出しをする場合、`mockResolvedValueOnce().mockResolvedValueOnce()...`のように**呼ばれた順番**で戻り値を変えると、「何回目の呼び出しが何を意味するか」を説明するコメントが必要になり可読性が下がる上、実装の呼び出し順序が変わるだけで容易に壊れる。呼び出し**引数の中身**で意味を区別できる場合は、`mockImplementation`で引数の形に応じた値を返すこと（例: TypeORMの`IsNull()`/`Not(IsNull())`は`FindOperator`インスタンスで`.type`から種別判定できるため、`where`句の中身に応じて`count()`の戻り値を出し分ける）。一方、呼び出し引数が毎回同一で「時間の経過」等それ自体が区別材料にならない場合（例: トークン失効の前後で同じリフレッシュリクエストを2回投げるテスト）は、順序依存のモックが唯一の手段であり無理に引数ベース化する必要は無い。

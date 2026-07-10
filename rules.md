@@ -7,6 +7,8 @@
 
 **Biomeが指摘しないからといって、規約に準拠しているとは限らない。** 新規コード作成時・既存コードの見直し時は、Biomeのlint結果だけに頼らず、本ファイルの各ルールと照らし合わせて確認すること。
 
+逆に、**Biomeの指摘が誤りである場合もある**。例えばNestJSのコンストラクタインジェクションで使うクラス（例: `constructor(private readonly appService: AppService) {}`）は、Biomeの`lint/style/useImportType`からは「型としてしか使われていない」ように見え`import type`への変換を提案されるが、実際には`emitDecoratorMetadata`が実行時にこのクラスの参照（値）を必要とするため、`import type`に変換すると依存性注入が壊れる。この種の警告（`Found N warning(s)`、exit code 0）は自動修正を鵜呑みにせず、フレームワークの実行時要件を優先すること。
+
 ---
 
 # 使用しない引数は_(アンダースコア)にする
@@ -963,3 +965,26 @@ OK
 ```
 
 `README.md`・`specs/`配下の仕様書・`.agents/skills/`のスキル定義等に、`/Users/<ユーザー名>/...`のような特定のPC・ユーザー環境に依存したフルパスを書き込まないこと。このリポジトリは複数人・複数PC（異なるOS・異なるユーザー名・異なる配置場所）で扱われる可能性があるため、フルパスを書くとリンク切れや誤解を招く。プロジェクト内のファイルを参照する場合は、常に参照元からの相対パス（例: `./test_rules.md`、`../../../commit_rules.md`）を使うこと。ディレクトリ構成図等で「プロジェクトルート」を示したい場合も、絶対パスではなく`./`や「プロジェクトルート」といった環境非依存の表現を使う。
+
+---
+
+# IDのような識別子は、数値比較・演算の予定が無いならstring型で持つ
+
+NG
+```ts
+@PrimaryColumn({ type: 'bigint', transformer: bigintNumberTransformer })
+id!: number;
+```
+
+OK
+```ts
+@PrimaryColumn({ type: 'bigint' })
+id!: string;
+```
+
+外部サービスのIDやDBの主キーなど、値そのものに対して大小比較・加算等の数値演算を行う予定が無い識別子は、素直に`string`型で扱うこと。「数値っぽい見た目」というだけで`number`型にすると、以下のような不要な複雑さが生まれる。
+
+- PostgreSQLの`bigint`型カラムはJSの`number`（`Number.MAX_SAFE_INTEGER`）で安全に表現できない桁数を許容するため、pgドライバは`bigint`列を文字列で返す。`number`として扱うにはTypeORMのtransformerで相互変換する実装が必要になり、その分のコード・見落としリスクが増える。
+- 識別子は本来「値が一致するかどうか」だけが意味を持ち、大小比較や算術演算の対象にはならない。`string`のまま扱えばDBドライバの自然な表現と一致し、変換コードが一切不要になる。
+
+数値型の外部API（例: Strava API）から取得したIDを取り込む場合は、その境界（Entity等への変換処理）でのみ`String(...)`変換を行い、自分たちのDB・DTO・フロントエンドの内部では一貫して`string`として扱う。

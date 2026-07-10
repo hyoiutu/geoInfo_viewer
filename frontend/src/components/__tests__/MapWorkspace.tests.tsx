@@ -4,6 +4,19 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { MapWorkspace } from '../MapWorkspace';
 
+vi.mock('../../api/activitiesApi', () => ({
+  fetchCyclingActivities: vi.fn().mockResolvedValue([]),
+  syncCyclingActivities: vi.fn().mockResolvedValue({ success: true }),
+  startBackfill: vi.fn().mockResolvedValue({ started: true }),
+  getBackfillStatus: vi.fn().mockResolvedValue({
+    isRunning: false,
+    totalCount: 0,
+    completedCount: 0,
+    progressPercent: 0,
+    estimatedRemainingSeconds: null
+  })
+}));
+
 const FIXTURE_STYLE_LAYERS = [
   { id: 'background', type: 'background' },
   { id: 'road_motorway', type: 'line', 'source-layer': 'transportation' },
@@ -59,5 +72,14 @@ describe('MapWorkspaceに関するテスト', () => {
     await waitFor(() =>
       expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('aerial-photo-layer', 'visibility', 'visible')
     );
+  });
+
+  test('初期取り込みボタンをクリックすると、startBackfillが呼ばれる', async () => {
+    const { startBackfill } = await import('../../api/activitiesApi');
+    const { getByRole } = renderWithChakra(<MapWorkspace />);
+
+    fireEvent.click(getByRole('button', { name: '自転車ログ初期取り込み' }));
+
+    await waitFor(() => expect(startBackfill).toHaveBeenCalledTimes(1));
   });
 });
