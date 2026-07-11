@@ -3,7 +3,12 @@ import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
-import { fetchCyclingActivities, getBackfillStatus, syncCyclingActivities } from '../api/activitiesApi';
+import {
+  fetchCyclingActivities,
+  getBackfillStatus,
+  type SyncResult,
+  syncCyclingActivities
+} from '../api/activitiesApi';
 import {
   AERIAL_PHOTO_ATTRIBUTION,
   AERIAL_PHOTO_LAYER_ID,
@@ -18,7 +23,9 @@ import {
   BICYCLE_LOG_LINE_WIDTH,
   BICYCLE_LOG_SOURCE_ID
 } from '../constants/bicycleLog';
+import type { AppErrorInfo } from '../types/apiError';
 import type { LayerVisibility, ToggleableLayerId } from '../types/layer';
+import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
 import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
 
@@ -31,6 +38,7 @@ const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection',
 
 type MapViewProps = {
   layerVisibility: LayerVisibility;
+  onError: (error: AppErrorInfo) => void;
 };
 
 type CategorizedLayerIds = Record<ToggleableLayerId, string[]>;
@@ -58,13 +66,20 @@ const addBicycleLogLayer = (map: maplibregl.Map) => {
   });
 };
 
-const syncAndLoadBicycleLog = async (map: maplibregl.Map) => {
+const syncAndLoadBicycleLog = async (map: maplibregl.Map, onError: (error: AppErrorInfo) => void) => {
   // 初期取り込み(バックフィル)実行中は更新用APIを呼ばず、その時点でDBに取得済みの分だけ表示する
   const backfillStatus = await getBackfillStatus().catch(() => null);
   if (!backfillStatus?.isRunning) {
-    const syncResult = await syncCyclingActivities();
+    let syncResult: SyncResult;
+    try {
+      syncResult = await syncCyclingActivities();
+    } catch (error) {
+      onError(toAppErrorInfo(error));
+      return;
+    }
+    // success:falseはバックエンド側の「バックフィル実行中ガード」を踏んだ場合のみ返る（レースコンディション）。
+    // エラーではないため、静かに（ダイアログ無しで）参照APIの呼び出しをスキップする
     if (!syncResult.success) {
-      console.error('自転車ログの同期に失敗しました');
       return;
     }
   }
@@ -74,7 +89,7 @@ const syncAndLoadBicycleLog = async (map: maplibregl.Map) => {
     const source = map.getSource(BICYCLE_LOG_SOURCE_ID) as maplibregl.GeoJSONSource;
     source.setData(cyclingActivityToGeoJson(activities));
   } catch (error) {
-    console.error('自転車ログの取得に失敗しました', error);
+    onError(toAppErrorInfo(error));
   }
 };
 
@@ -104,7 +119,7 @@ const applyLayerVisibility = (
   }
 };
 
-export const MapView = ({ layerVisibility }: MapViewProps) => {
+export const MapView = ({ layerVisibility, onError }: MapViewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
@@ -152,9 +167,9 @@ export const MapView = ({ layerVisibility }: MapViewProps) => {
     wasBicycleLogVisibleRef.current = isBicycleLogVisible;
 
     if (!wasBicycleLogVisible && isBicycleLogVisible) {
-      void syncAndLoadBicycleLog(map);
+      void syncAndLoadBicycleLog(map, onError);
     }
-  }, [layerVisibility, isStyleLoaded]);
+  }, [layerVisibility, isStyleLoaded, onError]);
 
   return <Box ref={containerRef} flex="1" minWidth="0" height="100vh" data-testid="map-container" />;
 };

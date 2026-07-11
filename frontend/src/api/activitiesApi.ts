@@ -1,3 +1,6 @@
+import type { AppErrorInfo } from '../types/apiError';
+import { buildApiError } from '../utils/apiError';
+
 export type CyclingActivity = {
   id: string;
   name: string;
@@ -21,6 +24,7 @@ export type BackfillStatus = {
   completedCount: number;
   progressPercent: number;
   estimatedRemainingSeconds: number | null;
+  lastError: AppErrorInfo | null;
 };
 
 const BACKEND_BASE_URL = 'http://localhost:3000';
@@ -34,45 +38,39 @@ export const fetchCyclingActivities = async (): Promise<CyclingActivity[]> => {
   const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_PATH}`);
 
   if (!response.ok) {
-    throw new Error(`アクティビティの取得に失敗しました (status: ${response.status})`);
+    throw await buildApiError(response);
   }
 
   return response.json();
 };
 
+// バックエンド側のisRunningガード（自転車ログ表示中に既にバックフィルが動いている場合）はエラーではなく
+// success:falseで表現するため、それ以外の失敗（Strava APIエラー等）のみをApiErrorとして投げる。
 export const syncCyclingActivities = async (): Promise<SyncResult> => {
-  try {
-    const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_SYNC_PATH}`, { method: HTTP_METHOD_POST });
+  const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_SYNC_PATH}`, { method: HTTP_METHOD_POST });
 
-    if (!response.ok) {
-      return { success: false };
-    }
-
-    return await response.json();
-  } catch {
-    return { success: false };
+  if (!response.ok) {
+    throw await buildApiError(response);
   }
+
+  return response.json();
 };
 
 export const startBackfill = async (): Promise<BackfillStartResult> => {
-  try {
-    const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_BACKFILL_PATH}`, { method: HTTP_METHOD_POST });
+  const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_BACKFILL_PATH}`, { method: HTTP_METHOD_POST });
 
-    if (!response.ok) {
-      return { started: false };
-    }
-
-    return await response.json();
-  } catch {
-    return { started: false };
+  if (!response.ok) {
+    throw await buildApiError(response);
   }
+
+  return response.json();
 };
 
 export const getBackfillStatus = async (): Promise<BackfillStatus> => {
   const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_BACKFILL_STATUS_PATH}`);
 
   if (!response.ok) {
-    throw new Error(`初期取り込み状況の取得に失敗しました (status: ${response.status})`);
+    throw await buildApiError(response);
   }
 
   return response.json();

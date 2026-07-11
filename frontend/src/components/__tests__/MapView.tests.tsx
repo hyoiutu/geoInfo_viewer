@@ -25,7 +25,8 @@ const NOT_RUNNING_BACKFILL_STATUS = {
   totalCount: 0,
   completedCount: 0,
   progressPercent: 0,
-  estimatedRemainingSeconds: null
+  estimatedRemainingSeconds: null,
+  lastError: null
 };
 
 const FIXTURE_STYLE_LAYERS = [
@@ -78,7 +79,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('マウントされたとき、コンテナ要素を指定して地図が生成される', () => {
-    const { getByTestId } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    const { getByTestId } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
 
     const container = getByTestId('map-container');
 
@@ -86,7 +87,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('アンマウントされたとき、地図のremoveが呼ばれる', () => {
-    const { unmount } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    const { unmount } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
     const mapInstance = getMapInstance();
 
     unmount();
@@ -95,7 +96,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('スタイルロード時、GSI航空写真のソースが追加される', () => {
-    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
     const mapInstance = getMapInstance();
 
     expect(mapInstance.addSource).toHaveBeenCalledWith(AERIAL_PHOTO_SOURCE_ID, {
@@ -108,7 +109,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('スタイルロード時、GSI航空写真のレイヤーが道路カテゴリの最初のレイヤーより手前に追加される', () => {
-    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
     const mapInstance = getMapInstance();
 
     expect(mapInstance.addLayer).toHaveBeenCalledWith(
@@ -118,7 +119,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('スタイルロード時、ONのカテゴリに属するレイヤーはvisibility:visibleになる', () => {
-    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
     const mapInstance = getMapInstance();
 
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_motorway', 'visibility', 'visible');
@@ -128,7 +129,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('スタイルロード時、OFFのカテゴリに属するレイヤーはvisibility:noneになる', () => {
-    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
     const mapInstance = getMapInstance();
 
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(AERIAL_PHOTO_LAYER_ID, 'visibility', 'none');
@@ -136,18 +137,18 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('layerVisibilityが変化したとき、該当レイヤーのvisibilityが更新される', () => {
-    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
     const mapInstance = getMapInstance();
     mapInstance.setLayoutProperty.mockClear();
 
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'osm-road': false }} />);
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'osm-road': false }} onError={vi.fn()} />);
 
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_motorway', 'visibility', 'none');
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_minor', 'visibility', 'none');
   });
 
   test('スタイルロード時、自転車ログの空のGeoJSONソース・ラインレイヤーが追加される', () => {
-    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
     const mapInstance = getMapInstance();
 
     expect(mapInstance.addSource).toHaveBeenCalledWith(BICYCLE_LOG_SOURCE_ID, {
@@ -173,10 +174,10 @@ describe('MapViewに関するテスト', () => {
         ]
       }
     ]);
-    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
     const mapInstance = getMapInstance();
 
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} onError={vi.fn()} />);
 
     await waitFor(() => {
       expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
@@ -197,9 +198,9 @@ describe('MapViewに関するテスト', () => {
 
   test('自転車ログレイヤーがOFF→ONに変化したとき、同期に失敗した場合は参照APIを呼ばない', async () => {
     vi.mocked(syncCyclingActivities).mockResolvedValue({ success: false });
-    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
 
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} onError={vi.fn()} />);
 
     await waitFor(() => {
       expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
@@ -213,11 +214,12 @@ describe('MapViewに関するテスト', () => {
       totalCount: 4,
       completedCount: 1,
       progressPercent: 25,
-      estimatedRemainingSeconds: 27
+      estimatedRemainingSeconds: 27,
+      lastError: null
     });
-    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
 
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} onError={vi.fn()} />);
 
     await waitFor(() => {
       expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
@@ -226,27 +228,54 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('自転車ログレイヤーがON→OFFに変化したときは、同期用APIを呼ばない', () => {
-    const { rerender } = renderWithChakra(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+    const { rerender } = renderWithChakra(
+      <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} onError={vi.fn()} />
+    );
     vi.mocked(syncCyclingActivities).mockClear();
 
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }} />);
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }} onError={vi.fn()} />);
 
     expect(syncCyclingActivities).not.toHaveBeenCalled();
   });
 
   test('自転車ログレイヤーがOFF→ON→OFF→ONと変化した場合、ONになる度に同期用APIが呼ばれる', async () => {
-    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} />);
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} />);
 
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} onError={vi.fn()} />);
     await waitFor(() => {
       expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
     });
 
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }} />);
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} />);
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }} onError={vi.fn()} />);
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} onError={vi.fn()} />);
 
     await waitFor(() => {
       expect(syncCyclingActivities).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  test('同期用APIの呼び出しが失敗した場合、onErrorが呼ばれる', async () => {
+    vi.mocked(syncCyclingActivities).mockRejectedValue(new Error('sync failed'));
+    const onError = vi.fn();
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={onError} />);
+
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} onError={onError} />);
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'sync failed' }));
+    });
+    expect(fetchCyclingActivities).not.toHaveBeenCalled();
+  });
+
+  test('参照用APIの呼び出しが失敗した場合、onErrorが呼ばれる', async () => {
+    vi.mocked(fetchCyclingActivities).mockRejectedValue(new Error('fetch failed'));
+    const onError = vi.fn();
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={onError} />);
+
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} onError={onError} />);
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'fetch failed' }));
     });
   });
 });

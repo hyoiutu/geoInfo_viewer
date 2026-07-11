@@ -13,7 +13,8 @@ vi.mock('../../api/activitiesApi', () => ({
     totalCount: 0,
     completedCount: 0,
     progressPercent: 0,
-    estimatedRemainingSeconds: null
+    estimatedRemainingSeconds: null,
+    lastError: null
   })
 }));
 
