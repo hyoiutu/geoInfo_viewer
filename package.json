@@ -27,10 +27,12 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.2",
     "@playwright/test": "^1.61.1",
+    "@types/pg": "^8.20.0",
     "cross-env": "^10.1.0",
     "electron": "^43.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
+    "pg": "^8.22.0",
     "typescript": "^6.0.3",
     "wait-on": "^9.0.10"
   }
