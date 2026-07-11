@@ -6,19 +6,29 @@ import type { ToggleableLayerId } from '../types/layer';
 
 const SECONDS_PER_MINUTE = 60;
 
+/** サイドバーに表示する1レイヤー分の情報 */
 type LayerSidebarLayer = {
+  /** レイヤーID */
   id: ToggleableLayerId;
+  /** 表示名 */
   name: string;
+  /** 現在の表示/非表示状態 */
   checked: boolean;
 };
 
+/** LayerSidebarのprops */
 type LayerSidebarProps = {
+  /** サイドバーに表示するレイヤー一覧 */
   layers: LayerSidebarLayer[];
+  /** レイヤーのスイッチが操作されたときに呼ばれるコールバック */
   onToggleLayer: (id: ToggleableLayerId) => void;
+  /** 初期取り込み(バックフィル)の進捗状況。未取得の間はnull */
   backfillStatus: BackfillStatus | null;
+  /** 初期取り込みボタンが押されたときに呼ばれるコールバック */
   onStartBackfill: () => void;
 };
 
+/** レイヤーの一覧表示・ON/OFF切り替え・初期取り込みボタンを提供するサイドバー */
 export const LayerSidebar = ({ layers, onToggleLayer, backfillStatus, onStartBackfill }: LayerSidebarProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
 

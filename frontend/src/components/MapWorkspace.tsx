@@ -8,6 +8,10 @@ import { ErrorDialog } from './ErrorDialog';
 import { LayerSidebar } from './LayerSidebar';
 import { MapView } from './MapView';
 
+/**
+ * サイドバー・地図・エラーダイアログを組み合わせたアプリのメイン画面。
+ * レイヤーの表示状態・初期取り込み進捗・エラー状態をここで一元管理し、各コンポーネントへpropsとして渡す
+ */
 export const MapWorkspace = () => {
   const { visibility, toggleLayer } = useLayerVisibility();
   const [error, setError] = useState<AppErrorInfo | null>(null);
