@@ -1,8 +1,10 @@
 // biome-ignore-all lint/style/useNamingConvention: Strava APIレスポンス形式(snake_case)に合わせたテストダブル
 import { HttpService } from '@nestjs/axios';
 import { Test } from '@nestjs/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { describe, expect, test, vi } from 'vitest';
+import { AppException } from '../../common/errors/app.exception';
+import { APP_ERROR_CODE } from '../../common/errors/app-error-code.constants';
 import { StravaActivitiesService } from '../strava-activities.service';
 import { StravaAuthService } from '../strava-auth.service';
 import { StravaRateLimiterService } from '../strava-rate-limiter.service';
@@ -74,6 +76,23 @@ describe('StravaActivitiesServiceに関するテスト', () => {
     );
   });
 
+  test('fetchCyclingActivitiesが失敗した場合、errorCode: STRAVA_API_ERRORのAppExceptionを投げる', async () => {
+    const httpServiceGet = vi
+      .fn()
+      .mockReturnValue(throwError(() => ({ isAxiosError: true, response: { status: 500 } })));
+    const { service } = await createService(httpServiceGet);
+
+    try {
+      await service.fetchCyclingActivities();
+      expect.unreachable('例外が投げられるはず');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AppException);
+      expect((error as AppException).getResponse()).toEqual(
+        expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaApiError })
+      );
+    }
+  });
+
   describe('fetchAllCyclingActivities', () => {
     test('ページを最終ページ（空配列）まで辿り、全ページの自転車アクティビティを結合して返す', async () => {
       // 呼び出し順ではなく、リクエストのpageパラメータの値に応じてそのページのデータを返す
@@ -111,6 +130,23 @@ describe('StravaActivitiesServiceに関するテスト', () => {
 
       expect(waitForSlot).toHaveBeenCalledTimes(1);
     });
+
+    test('ページ取得に失敗した場合、errorCode: STRAVA_RATE_LIMITEDのAppExceptionを投げる', async () => {
+      const httpServiceGet = vi
+        .fn()
+        .mockReturnValue(throwError(() => ({ isAxiosError: true, response: { status: 429 } })));
+      const { service } = await createService(httpServiceGet);
+
+      try {
+        await service.fetchAllCyclingActivities();
+        expect.unreachable('例外が投げられるはず');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppException);
+        expect((error as AppException).getResponse()).toEqual(
+          expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaRateLimited })
+        );
+      }
+    });
   });
 
   describe('fetchCyclingActivityDetail', () => {
@@ -135,6 +171,21 @@ describe('StravaActivitiesServiceに関するテスト', () => {
       await service.fetchCyclingActivityDetail(1);
 
       expect(waitForSlot).toHaveBeenCalledTimes(1);
+    });
+
+    test('取得に失敗した場合、errorCode: STRAVA_API_ERRORのAppExceptionを投げる', async () => {
+      const httpServiceGet = vi.fn().mockReturnValue(throwError(() => new Error('network error')));
+      const { service } = await createService(httpServiceGet);
+
+      try {
+        await service.fetchCyclingActivityDetail(1);
+        expect.unreachable('例外が投げられるはず');
+      } catch (error) {
+        expect(error).toBeInstanceOf(AppException);
+        expect((error as AppException).getResponse()).toEqual(
+          expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaApiError })
+        );
+      }
     });
   });
 });

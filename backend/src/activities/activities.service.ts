@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import type { Repository } from 'typeorm';
 import { StravaActivitiesService } from '../strava/strava-activities.service';
 import { ActivitiesBackfillService } from './activities-backfill.service';
 import { toCyclingActivityDto } from './cycling-activity-dto.util';
@@ -37,30 +37,26 @@ export class ActivitiesService {
       return { success: false };
     }
 
-    try {
-      const syncState = await this.getOrCreateSyncState();
-      const afterEpochSeconds =
-        syncState.lastSyncedAt === null
-          ? undefined
-          : Math.floor(syncState.lastSyncedAt.getTime() / MILLISECONDS_PER_SECOND);
+    const syncState = await this.getOrCreateSyncState();
+    const afterEpochSeconds =
+      syncState.lastSyncedAt === null
+        ? undefined
+        : Math.floor(syncState.lastSyncedAt.getTime() / MILLISECONDS_PER_SECOND);
 
-      const activities = await this.stravaActivitiesService.fetchCyclingActivities({ afterEpochSeconds });
-      const entities: CyclingActivityEntity[] = [];
-      for (const activity of activities) {
-        const detail = await this.stravaActivitiesService.fetchCyclingActivityDetail(activity.id);
-        entities.push(toCyclingActivityEntityFromDetail(detail));
-      }
-      if (entities.length > NO_ACTIVITIES) {
-        await this.cyclingActivityRepository.save(entities);
-      }
-
-      syncState.lastSyncedAt = new Date();
-      await this.syncStateRepository.save(syncState);
-
-      return { success: true };
-    } catch {
-      return { success: false };
+    const activities = await this.stravaActivitiesService.fetchCyclingActivities({ afterEpochSeconds });
+    const entities: CyclingActivityEntity[] = [];
+    for (const activity of activities) {
+      const detail = await this.stravaActivitiesService.fetchCyclingActivityDetail(activity.id);
+      entities.push(toCyclingActivityEntityFromDetail(detail));
     }
+    if (entities.length > NO_ACTIVITIES) {
+      await this.cyclingActivityRepository.save(entities);
+    }
+
+    syncState.lastSyncedAt = new Date();
+    await this.syncStateRepository.save(syncState);
+
+    return { success: true };
   }
 
   private async getOrCreateSyncState(): Promise<SyncStateEntity> {

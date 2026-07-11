@@ -197,6 +197,32 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
 
       expect(service.isRunning()).toBe(false);
     });
+
+    test('途中でエラーが発生した場合、getStatus()のlastErrorに記録される', async () => {
+      fetchAllCyclingActivities.mockRejectedValue(new Error('Strava API error'));
+      const service = await createService();
+
+      await service.start();
+      await flushMicrotasks();
+      const status = await service.getStatus();
+
+      expect(status.lastError).toEqual(
+        expect.objectContaining({ errorCode: 'INTERNAL_ERROR', message: 'Strava API error' })
+      );
+    });
+
+    test('前回エラーが記録されていても、再度startすればlastErrorがリセットされる', async () => {
+      fetchAllCyclingActivities.mockRejectedValueOnce(new Error('Strava API error'));
+      const service = await createService();
+      await service.start();
+      await flushMicrotasks();
+
+      await service.start();
+      await flushMicrotasks();
+      const status = await service.getStatus();
+
+      expect(status.lastError).toBeNull();
+    });
   });
 
   describe('getStatus', () => {
@@ -227,6 +253,14 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
       const status = await service.getStatus();
 
       expect(status.estimatedRemainingSeconds).toBeNull();
+    });
+
+    test('エラーが発生していない場合、lastErrorはnullを返す', async () => {
+      const service = await createService();
+
+      const status = await service.getStatus();
+
+      expect(status.lastError).toBeNull();
     });
 
     test('実行中の場合、残件数とレート制限間隔から残り秒数を見積もる', async () => {
