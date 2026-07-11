@@ -48,10 +48,21 @@ const ROUTE_NEAR_DEFAULT_CENTER = [
   [35.287, 139.195]
 ];
 
-const ENCODED_ROUTE = encodePolyline(ROUTE_NEAR_DEFAULT_CENTER);
+// sync()の新規アクティビティ検出シナリオ用に、初期フィクスチャとは視覚的に区別できる別ルート
+// （同じデフォルト中心付近だが逆方向・オフセット済み）。
+const ROUTE_NEW_UPLOAD = [
+  [35.2756364, 139.1798829],
+  [35.273, 139.177],
+  [35.27, 139.173],
+  [35.267, 139.169],
+  [35.264, 139.165]
+];
 
-// id: number, name: string, startDate: string(ISO8601) を渡してフィクスチャ1件分を作る。
-function createFixtureActivity({ id, name, startDate }) {
+const ENCODED_ROUTE = encodePolyline(ROUTE_NEAR_DEFAULT_CENTER);
+const ENCODED_ROUTE_NEW_UPLOAD = encodePolyline(ROUTE_NEW_UPLOAD);
+
+// id: number, name: string, startDate: string(ISO8601), encodedRoute?: string を渡してフィクスチャ1件分を作る。
+function createFixtureActivity({ id, name, startDate, encodedRoute = ENCODED_ROUTE }) {
   return {
     id,
     name,
@@ -60,8 +71,8 @@ function createFixtureActivity({ id, name, startDate }) {
     moving_time: 3600,
     start_date: startDate,
     map: {
-      summary_polyline: ENCODED_ROUTE,
-      polyline: ENCODED_ROUTE
+      summary_polyline: encodedRoute,
+      polyline: encodedRoute
     }
   };
 }
@@ -75,9 +86,20 @@ function createInitialFixtures() {
   ];
 }
 
-// sync()が新規アクティビティを検出できるかのシナリオ用に、初期フィクスチャより新しい日時の1件を作る。
+const NEW_UPLOAD_FUTURE_MARGIN_MS = 60_000;
+
+// sync()が新規アクティビティを検出できるかのシナリオ用の1件を作る。
+// sync()は「前回同期時刻(実時刻)より後のstart_date」を新規判定に使う（afterはepoch秒に丸められるため、
+// 単なる現在時刻だと前回同期時刻と同じ秒に丸められ「新規」と判定されないことがある）。
+// 固定の過去日時にすると、テスト実行時の前回同期時刻より前になり確実に新規と判定されなくなるため、
+// 呼び出し時点より十分先の未来時刻を使う。視覚的に初期フィクスチャと区別できるよう別ルートも使う。
 function createNewUploadFixture() {
-  return createFixtureActivity({ id: 900000004, name: 'E2E新規アップロードライド', startDate: '2026-01-10T00:00:00Z' });
+  return createFixtureActivity({
+    id: 900000004,
+    name: 'E2E新規アップロードライド',
+    startDate: new Date(Date.now() + NEW_UPLOAD_FUTURE_MARGIN_MS).toISOString(),
+    encodedRoute: ENCODED_ROUTE_NEW_UPLOAD
+  });
 }
 
 module.exports = {

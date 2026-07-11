@@ -11,6 +11,9 @@ const SCREENSHOT_MAX_DIFF_PIXEL_RATIO = 0.02;
 export default defineConfig({
   testDir: './electron/tests',
   timeout: 30_000,
+  // 全テストファイルがE2E用DB・モックStravaサーバーという単一の共有状態を操作するため、
+  // ファイル間で並列実行すると互いのデータを壊し合う。必ず直列実行する。
+  workers: 1,
   expect: {
     timeout: 5_000,
     toHaveScreenshot: { maxDiffPixelRatio: SCREENSHOT_MAX_DIFF_PIXEL_RATIO }
