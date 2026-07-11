@@ -83,4 +83,19 @@ describe('MapWorkspaceに関するテスト', () => {
 
     await waitFor(() => expect(startBackfill).toHaveBeenCalledTimes(1));
   });
+
+  test('複数のエラーが発生した場合、エラーダイアログにスタックして表示される', async () => {
+    // モーダルダイアログが一度開くと背後の要素はaria-hiddenになり操作できなくなるため、
+    // ダイアログが開くより前（マウント直後）に2つの独立した非同期処理を同時に走らせて検証する。
+    const { getBackfillStatus, fetchCyclingActivities } = await import('../../api/activitiesApi');
+    vi.mocked(getBackfillStatus).mockRejectedValue(new Error('status fetch failed'));
+    vi.mocked(fetchCyclingActivities).mockRejectedValue(new Error('fetch failed'));
+    const { getByRole } = renderWithChakra(<MapWorkspace />);
+
+    fireEvent.click(getByRole('checkbox', { name: '自転車ログ' }));
+
+    await waitFor(() => {
+      expect(getByRole('heading', { name: 'エラーが発生しました（1/2）' })).toBeInTheDocument();
+    });
+  });
 });
