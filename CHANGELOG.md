@@ -14,6 +14,23 @@
 
 ## 変更履歴
 
+### [2026-07-11] GitHub Issue #7としてSwaggerを導入した
+* **修正の動機・概要**:
+  - バックエンドにSwaggerを導入し、それぞれのAPIの仕様を確認しやすくしてほしいという依頼（Issue #7）。
+  - `@nestjs/swagger`を導入し、`GET /api`でSwagger UIを閲覧できるようにした。各APIのレスポンス形式は、`nest-cli.json`に設定した`@nestjs/swagger`のコンパイラプラグイン（`introspectComments: true`）により、コントローラーメソッド・DTOの型定義とTSDocコメント（Issue #5で追加済み）から自動抽出される。
+  - 当初はレスポンスDTO（`CyclingActivityDto`・`SyncResult`・`BackfillStartResult`・`BackfillStatus`・`HealthStatus`・`AppErrorInfo`）を`type`のまま試したが、`@nestjs/swagger`のスキーマ自動抽出は`type`エイリアスからはプロパティ単位の詳細（`{"type": "object"}`のみで中身が空）を取得できないことが実機確認で判明した。rules.mdの「型定義には原則typeを使用する」規約の例外として、これら6つのレスポンスDTOのみ`class`+`@ApiProperty()`デコレータへ変換し、Swaggerが実際に有用なスキーマ（プロパティ・型・説明文）を出力できることを`/api-json`のレスポンスで確認した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/swagger.config.ts`（新規）: `DocumentBuilder`・`SwaggerModule`を使ったSwagger UIセットアップ関数。単体テストも追加。
+    - `backend/nest-cli.json`: `@nestjs/swagger`のコンパイラプラグイン（`introspectComments: true`）を設定。
+    - `backend/src/main.ts`: `setupSwagger(app)`の呼び出しを追加。
+    - `backend/src/activities/activities.controller.ts`・`backend/src/app.controller.ts`: `@ApiTags`でSwagger UI上のグルーピングを追加。
+    - `backend/src/activities/types/cycling-activity.dto.ts`・`activities.service.ts`(`SyncResult`)・`activities-backfill.service.ts`(`BackfillStartResult`/`BackfillStatus`)・`app.service.ts`(`HealthStatus`)・`common/errors/app-error-info.type.ts`(`AppErrorInfo`): `type`から`class`+`@ApiProperty()`へ変換（Swaggerのスキーマ自動抽出のための技術的例外。既存の呼び出し元は構造的部分型により無変更で動作）。
+    - `backend/package.json`: `@nestjs/swagger`を追加。
+    - 単体テスト（バックエンド78件）・lint・typecheckは全てGreen。`backend/src/**`のみの変更のためE2Eテストは対象外（commit_rules.md参照）。
+  * **README.md**: 変更なし（Swagger UIの起動方法は`pnpm --filter backend run dev`後に`/api`へアクセスするだけであり、既存の起動手順に追加の前提条件は無いため）。
+  * **仕様書**: 変更なし（バックエンドのAPI仕様を可視化する開発者向けツールの追加であり、アプリの機能仕様自体に変更は無いため）。
+
 ### [2026-07-11] GitHub Issue #6としてコメントを増やした
 * **修正の動機・概要**:
   - TSDoc（Issue #5）以外にも、コンポーネントの役割やuseEffectの意図が読み取りにくい箇所があったため、「コンポーネントの1行目に1行程度のコンポーネントの説明」「useEffectの上に1行程度の説明」を追加してほしいという依頼（Issue #6）。

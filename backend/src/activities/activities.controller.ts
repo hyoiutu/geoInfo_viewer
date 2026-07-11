@@ -1,4 +1,5 @@
 import { Controller, Get, Post } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import {
   ACTIVITIES_BACKFILL_ROUTE,
   ACTIVITIES_BACKFILL_STATUS_ROUTE,
@@ -14,6 +15,7 @@ import {
 import type { CyclingActivityDto } from './types/cycling-activity.dto';
 
 /** 自転車ログ(サイクリングアクティビティ)の参照・同期・初期取り込みに関するHTTP APIを提供するコントローラー */
+@ApiTags('activities')
 @Controller(ACTIVITIES_ROUTE)
 export class ActivitiesController {
   constructor(

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ApiProperty } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { StravaActivitiesService } from '../strava/strava-activities.service';
@@ -12,11 +13,18 @@ import type { CyclingActivityDto } from './types/cycling-activity.dto';
 const MILLISECONDS_PER_SECOND = 1000;
 const NO_ACTIVITIES = 0;
 
+// Swaggerのスキーマ自動抽出(@ApiProperty)がプロパティ単位のメタデータを付与できるよう、
+// 本プロジェクトの「型定義にはtypeを使う」規約の例外としてclassを使う（app-error-info.type.ts参照）。
+
 /** sync()の実行結果 */
-export type SyncResult = {
+export class SyncResult {
   /** 同期処理が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げる） */
-  success: boolean;
-};
+  @ApiProperty({
+    description:
+      '同期処理が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げる）'
+  })
+  success!: boolean;
+}
 
 /** 自転車ログ(サイクリングアクティビティ)の参照・Strava同期を行うサービス */
 @Injectable()

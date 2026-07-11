@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { ApiProperty } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, type Repository } from 'typeorm';
-import type { AppErrorInfo } from '../common/errors/app-error-info.type';
+import { AppErrorInfo } from '../common/errors/app-error-info.type';
 import { toAppErrorInfo } from '../common/errors/app-error-info.util';
 import { StravaActivitiesService } from '../strava/strava-activities.service';
 import { StravaRateLimiterService } from '../strava/strava-rate-limiter.service';
@@ -11,27 +12,46 @@ import { CyclingActivityEntity } from './entities/cycling-activity.entity';
 const MILLISECONDS_PER_SECOND = 1000;
 const NO_ACTIVITIES = 0;
 
+// Swaggerのスキーマ自動抽出(@ApiProperty)がプロパティ単位のメタデータを付与できるよう、
+// 本プロジェクトの「型定義にはtypeを使う」規約の例外としてclassを使う（app-error-info.type.ts参照）。
+
 /** start()の実行結果 */
-export type BackfillStartResult = {
+export class BackfillStartResult {
   /** 新たに初期取り込みを開始したか（既に実行中だった場合はfalse） */
-  started: boolean;
-};
+  @ApiProperty({ description: '新たに初期取り込みを開始したか（既に実行中だった場合はfalse）' })
+  started!: boolean;
+}
 
 /** getStatus()が返す初期取り込みの進捗状況 */
-export type BackfillStatus = {
+export class BackfillStatus {
   /** 現在実行中かどうか */
-  isRunning: boolean;
+  @ApiProperty({ description: '現在実行中かどうか' })
+  isRunning!: boolean;
+
   /** DBに存在するアクティビティの総数 */
-  totalCount: number;
+  @ApiProperty({ description: 'DBに存在するアクティビティの総数' })
+  totalCount!: number;
+
   /** うち詳細取得が完了した件数 */
-  completedCount: number;
+  @ApiProperty({ description: 'うち詳細取得が完了した件数' })
+  completedCount!: number;
+
   /** 進捗率（%） */
-  progressPercent: number;
+  @ApiProperty({ description: '進捗率（%）' })
+  progressPercent!: number;
+
   /** 完了までの推定残り秒数。実行中でない場合はnull */
-  estimatedRemainingSeconds: number | null;
+  @ApiProperty({ description: '完了までの推定残り秒数。実行中でない場合はnull', nullable: true, type: Number })
+  estimatedRemainingSeconds!: number | null;
+
   /** 直近の実行で発生したエラー。発生していない場合はnull */
-  lastError: AppErrorInfo | null;
-};
+  @ApiProperty({
+    description: '直近の実行で発生したエラー。発生していない場合はnull',
+    type: AppErrorInfo,
+    nullable: true
+  })
+  lastError!: AppErrorInfo | null;
+}
 
 /** 自転車ログの初期取り込み(バックフィル)を行うサービス */
 @Injectable()
