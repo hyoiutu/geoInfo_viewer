@@ -1030,3 +1030,50 @@ try {
 バックエンドは、意図的に発生しうるエラー（外部API呼び出し失敗等）を`AppException`（`backend/src/common/errors/`参照）として投げ、グローバル例外フィルタ（`AllExceptionsFilter`）が全エンドポイント共通の`{errorCode, message, hint}`形式にレスポンスを統一する。個別のtry/catchで`{success: false}`のような真偽値に握りつぶし、エラーの種別・原因を消してしまわないこと（ただし「バックフィル実行中だから同期をスキップした」のような、エラーではない正常系のガードは真偽値の戻り値のままでよい）。
 
 フロントエンドは、APIレスポンスが異常な場合`ApiError`（`frontend/src/utils/apiError.ts`参照）としてthrowし、呼び出し元でconsole.error等に記録するだけで終わらせず、エラーダイアログ等でユーザーに`message`（内容）と`hint`（対処法）を提示すること。詳細は[system_specification.md](./specs/system_specification.md)の「エラーハンドリング機構」節を参照。
+
+---
+
+# テスト以外の全ての関数にTSDocを書く
+
+NG
+```typescript
+/**
+ * アクティビティ詳細を取得する
+ * @param activityId 対象のアクティビティID
+ * @param options 取得オプション（includeSegments: セグメント情報を含めるか, unit: 距離の単位）
+ * @return 取得結果（activity: 取得したアクティビティ, cached: キャッシュから返したか）
+ */
+const fetchActivityDetail = (
+  activityId: number,
+  options: { includeSegments: boolean; unit: 'km' | 'mile' }
+): { activity: Activity; cached: boolean } => {...};
+```
+
+OK
+```typescript
+/** fetchActivityDetailの取得オプション */
+type FetchActivityDetailOptions = {
+  /** セグメント情報を含めるか */
+  includeSegments: boolean;
+  /** 距離の単位 */
+  unit: 'km' | 'mile';
+};
+
+/** fetchActivityDetailの戻り値 */
+type FetchActivityDetailResult = {
+  /** 取得したアクティビティ */
+  activity: Activity;
+  /** キャッシュから返したか */
+  cached: boolean;
+};
+
+/** アクティビティ詳細を取得する */
+const fetchActivityDetail = (activityId: number, options: FetchActivityDetailOptions): FetchActivityDetailResult => {...};
+```
+
+テストコード（`__tests__/`配下・`*.tests.ts(x)`・E2Eテストの`*.spec.ts(x)`）を除く、全ての関数（`export`の有無・アロー関数/`function`宣言/クラスメソッドを問わない）に、その役割を説明するTSDocコメント（`/** ... */`）を書くこと。テストコードそのもの（アサーションを書くテストケース・spec）は対象外だが、`test-utils/`・`electron/tests/support/`・`electron/tests/global-setup.ts`のようなテストを支えるヘルパー・セットアップ処理は「テストコード」ではなく通常の関数として扱い、TSDocの対象に含める。
+
+- 引数・戻り値が**オブジェクト型でない**場合は、通常通り`@param`・`@returns`を使ってよい。
+- 引数・戻り値が**オブジェクト型の場合**は、インライン（`{ a: number; b: string }`のような直書き）のままにせず、名前付きの`type`として抽出し、各プロパティに対して個別にTSDocを書くこと。関数本体側は`@param`/`@returns`でプロパティ単位の説明を書き並べない（NG例のように「かっこ書きで列挙」しない）。
+- 抽出した型の命名は、関数名を接頭辞にした`<関数名>Params`/`<関数名>Result`のような、他の型と衝突しない具体的な名前にする。
+- Reactコンポーネント（`export const Foo = (props: FooProps) => {...}`）も関数の一種として扱い、コンポーネント自体の役割を1行のTSDocで説明する（個々のJSX要素にはTSDocを書かない）。

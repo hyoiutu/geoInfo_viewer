@@ -8,7 +8,21 @@ import { toAppErrorInfo } from '../utils/apiError';
 // 進捗表示が数秒ごとに更新されれば体感上十分という判断で決めた値。
 const BACKFILL_STATUS_POLL_INTERVAL_MS = 5000;
 
-export const useBackfillStatus = (onError?: (error: AppErrorInfo) => void) => {
+/** useBackfillStatusの戻り値 */
+type UseBackfillStatusResult = {
+  /** 現在の初期取り込み進捗状況（未取得の間はnull） */
+  backfillStatus: BackfillStatus | null;
+  /** 初期取り込みを開始する関数 */
+  start: () => Promise<BackfillStartResult | null>;
+};
+
+/**
+ * 初期取り込み(バックフィル)の進捗状況を取得・ポーリングし、開始操作を提供するフック。
+ * 実行中は一定間隔で進捗状況を自動的に再取得する
+ * @param onError APIエラー発生時に呼ばれるコールバック
+ * @returns 進捗状況と開始関数
+ */
+export const useBackfillStatus = (onError?: (error: AppErrorInfo) => void): UseBackfillStatusResult => {
   const [backfillStatus, setBackfillStatus] = useState<BackfillStatus | null>(null);
 
   const refresh = useCallback(async () => {

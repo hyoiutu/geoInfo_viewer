@@ -4,6 +4,10 @@ import { app, BrowserWindow } from 'electron';
 const WINDOW_WIDTH = 1200;
 const WINDOW_HEIGHT = 800;
 
+/**
+ * メインウィンドウを生成する。開発時（`ELECTRON_RENDERER_URL`設定時）はViteのdevサーバーを、
+ * それ以外は`frontend/dist`のビルド済みindex.htmlを読み込む
+ */
 const createMainWindow = () => {
   const mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,

@@ -11,19 +11,29 @@ import { CyclingActivityEntity } from './entities/cycling-activity.entity';
 const MILLISECONDS_PER_SECOND = 1000;
 const NO_ACTIVITIES = 0;
 
+/** start()の実行結果 */
 export type BackfillStartResult = {
+  /** 新たに初期取り込みを開始したか（既に実行中だった場合はfalse） */
   started: boolean;
 };
 
+/** getStatus()が返す初期取り込みの進捗状況 */
 export type BackfillStatus = {
+  /** 現在実行中かどうか */
   isRunning: boolean;
+  /** DBに存在するアクティビティの総数 */
   totalCount: number;
+  /** うち詳細取得が完了した件数 */
   completedCount: number;
+  /** 進捗率（%） */
   progressPercent: number;
+  /** 完了までの推定残り秒数。実行中でない場合はnull */
   estimatedRemainingSeconds: number | null;
+  /** 直近の実行で発生したエラー。発生していない場合はnull */
   lastError: AppErrorInfo | null;
 };
 
+/** 自転車ログの初期取り込み(バックフィル)を行うサービス */
 @Injectable()
 export class ActivitiesBackfillService {
   private running = false;
@@ -36,10 +46,16 @@ export class ActivitiesBackfillService {
     private readonly cyclingActivityRepository: Repository<CyclingActivityEntity>
   ) {}
 
+  /** @returns 初期取り込みが実行中かどうか */
   isRunning(): boolean {
     return this.running;
   }
 
+  /**
+   * 初期取り込みを開始する。既に実行中の場合は何もしない（二重起動防止）。
+   * 処理自体はfire-and-forget（このメソッドは開始できたかどうかのみを返し、完了を待たない）
+   * @returns 開始結果
+   */
   async start(): Promise<BackfillStartResult> {
     if (this.running) {
       return { started: false };
@@ -60,6 +76,7 @@ export class ActivitiesBackfillService {
     return { started: true };
   }
 
+  /** @returns 現在の初期取り込み進捗状況 */
   async getStatus(): Promise<BackfillStatus> {
     const totalCount = await this.cyclingActivityRepository.count();
     const completedCount = await this.cyclingActivityRepository.count({
@@ -80,6 +97,7 @@ export class ActivitiesBackfillService {
     };
   }
 
+  /** プレースホルダーの作成（未実施の場合）と、未取得分の詳細取得を順に行う */
   private async runBackfill(): Promise<void> {
     if (!(await this.isFullyBackfilled())) {
       await this.fetchAndSavePlaceholders();
@@ -92,9 +110,12 @@ export class ActivitiesBackfillService {
     }
   }
 
-  // 既に全件のdetailFetchedAtが埋まっている場合、Stravaへの全件一覧再取得（レート制限で数十秒かかる）は
-  // 新規アクティビティの検出という意味しか持たない。新規アクティビティの検出は通常のsync()が担うため、
-  // 一度完了した後の再実行はこれをスキップし即座に完了させる。
+  /**
+   * 既に全件のdetailFetchedAtが埋まっている場合、Stravaへの全件一覧再取得（レート制限で数十秒かかる）は
+   * 新規アクティビティの検出という意味しか持たない。新規アクティビティの検出は通常のsync()が担うため、
+   * 一度完了した後の再実行はこれをスキップし即座に完了させる。
+   * @returns 未取得のアクティビティが1件も無ければtrue
+   */
   private async isFullyBackfilled(): Promise<boolean> {
     const totalCount = await this.cyclingActivityRepository.count();
     if (totalCount === NO_ACTIVITIES) {
@@ -104,6 +125,7 @@ export class ActivitiesBackfillService {
     return pendingCount === NO_ACTIVITIES;
   }
 
+  /** Stravaのアクティビティ一覧を取得し、DB未登録の分だけプレースホルダーとして保存する */
   private async fetchAndSavePlaceholders(): Promise<void> {
     const activities = await this.stravaActivitiesService.fetchAllCyclingActivities();
     const existingIds = new Set((await this.cyclingActivityRepository.find()).map((entity) => entity.id));

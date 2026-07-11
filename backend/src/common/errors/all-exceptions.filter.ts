@@ -8,10 +8,16 @@ type MinimalHttpResponse = {
   status: (code: number) => { json: (body: unknown) => void };
 };
 
-// アプリ全体の例外を捕捉し、レスポンス形式をAppErrorInfo（errorCode/message/hint）に統一する。
-// AppExceptionはそのボディをそのまま使い、それ以外のHttpException・未知のエラーもこの形式に整形する。
+/**
+ * アプリ全体の例外を捕捉し、レスポンス形式をAppErrorInfo（errorCode/message/hint）に統一する。
+ * AppExceptionはそのボディをそのまま使い、それ以外のHttpException・未知のエラーもこの形式に整形する。
+ */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
+  /**
+   * @param exception 捕捉した例外・エラー
+   * @param host NestJSが渡す実行コンテキスト（レスポンスオブジェクトの取得に使う）
+   */
   catch(exception: unknown, host: ArgumentsHost): void {
     const response = host.switchToHttp().getResponse<MinimalHttpResponse>();
 

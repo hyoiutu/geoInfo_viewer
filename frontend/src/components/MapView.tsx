@@ -36,13 +36,21 @@ const VISIBLE_VALUE = 'visible';
 const HIDDEN_VALUE = 'none';
 const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
+/** MapViewのprops */
 type MapViewProps = {
+  /** レイヤーIDごとの表示/非表示状態 */
   layerVisibility: LayerVisibility;
+  /** API呼び出し等でエラーが発生したときに呼ばれるコールバック */
   onError: (error: AppErrorInfo) => void;
 };
 
 type CategorizedLayerIds = Record<ToggleableLayerId, string[]>;
 
+/**
+ * 航空写真のラスタータイルレイヤーを地図に追加する
+ * @param map 追加先のMapLibre地図インスタンス
+ * @param categorizedLayerIds カテゴリごとに分類されたスタイルレイヤーIDの一覧
+ */
 const addAerialPhotoLayer = (map: maplibregl.Map, categorizedLayerIds: CategorizedLayerIds) => {
   map.addSource(AERIAL_PHOTO_SOURCE_ID, {
     type: 'raster',
@@ -56,6 +64,10 @@ const addAerialPhotoLayer = (map: maplibregl.Map, categorizedLayerIds: Categoriz
   map.addLayer({ id: AERIAL_PHOTO_LAYER_ID, type: 'raster', source: AERIAL_PHOTO_SOURCE_ID }, beforeId);
 };
 
+/**
+ * 自転車ログ用の空のGeoJSONソース・ラインレイヤーを地図に追加する
+ * @param map 追加先のMapLibre地図インスタンス
+ */
 const addBicycleLogLayer = (map: maplibregl.Map) => {
   map.addSource(BICYCLE_LOG_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
   map.addLayer({
@@ -66,6 +78,11 @@ const addBicycleLogLayer = (map: maplibregl.Map) => {
   });
 };
 
+/**
+ * Strava上の新規アクティビティを同期し、自転車ログのGeoJSONソースを最新のデータで更新する
+ * @param map 更新対象のMapLibre地図インスタンス
+ * @param onError API呼び出し失敗時に呼ばれるコールバック
+ */
 const syncAndLoadBicycleLog = async (map: maplibregl.Map, onError: (error: AppErrorInfo) => void) => {
   // 初期取り込み(バックフィル)実行中は更新用APIを呼ばず、その時点でDBに取得済みの分だけ表示する
   const backfillStatus = await getBackfillStatus().catch(() => null);
@@ -93,6 +110,12 @@ const syncAndLoadBicycleLog = async (map: maplibregl.Map, onError: (error: AppEr
   }
 };
 
+/**
+ * トグル可能なレイヤーIDに対応する、実際のMapLibreスタイルレイヤーIDの一覧を求める
+ * @param layerId トグル可能なレイヤーID
+ * @param categorizedLayerIds カテゴリごとに分類されたスタイルレイヤーIDの一覧
+ * @returns 対応するスタイルレイヤーIDの配列
+ */
 const resolveStyleLayerIds = (layerId: ToggleableLayerId, categorizedLayerIds: CategorizedLayerIds): string[] => {
   if (layerId === 'aerial-photo') {
     return [AERIAL_PHOTO_LAYER_ID];
@@ -103,6 +126,12 @@ const resolveStyleLayerIds = (layerId: ToggleableLayerId, categorizedLayerIds: C
   return categorizedLayerIds[layerId];
 };
 
+/**
+ * 現在の表示/非表示状態を、対応するMapLibreスタイルレイヤーへ反映する
+ * @param map 反映先のMapLibre地図インスタンス
+ * @param categorizedLayerIds カテゴリごとに分類されたスタイルレイヤーIDの一覧
+ * @param layerVisibility レイヤーIDごとの表示/非表示状態
+ */
 const applyLayerVisibility = (
   map: maplibregl.Map,
   categorizedLayerIds: CategorizedLayerIds,
@@ -119,6 +148,7 @@ const applyLayerVisibility = (
   }
 };
 
+/** MapLibreの地図本体を表示し、レイヤーの表示/非表示・自転車ログの同期を行うコンポーネント */
 export const MapView = ({ layerVisibility, onError }: MapViewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);

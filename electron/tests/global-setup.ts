@@ -14,8 +14,13 @@ const E2E_DB_NAME = 'geo_info_viewer_e2e';
 const DB_CONNECTION_RETRY_COUNT = 20;
 const DB_CONNECTION_RETRY_INTERVAL_MS = 500;
 
+/**
+ * 指定したミリ秒だけ待機する
+ * @param ms 待機時間（ミリ秒）
+ */
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** E2E用DBに接続可能になるまでリトライしながら待機する */
 const waitForDatabase = async (): Promise<void> => {
   for (let attempt = 1; attempt <= DB_CONNECTION_RETRY_COUNT; attempt++) {
     const client = new Client({
@@ -37,6 +42,7 @@ const waitForDatabase = async (): Promise<void> => {
   throw new Error(`E2E用DB(${E2E_DB_HOST}:${E2E_DB_PORT})に接続できませんでした`);
 };
 
+/** 各テスト実行前に、前回実行の残留データをクリアするためテーブルを空にする */
 const truncateTables = async (): Promise<void> => {
   const client = new Client({
     host: E2E_DB_HOST,
@@ -53,6 +59,10 @@ const truncateTables = async (): Promise<void> => {
   }
 };
 
+/**
+ * Playwrightの`globalSetup`として実行される、E2Eテスト実行前の準備処理。
+ * E2E用DBの起動・接続待ち・マイグレーション実行・テーブルのTRUNCATEを行う
+ */
 async function globalSetup(): Promise<void> {
   execSync(`docker-compose -p ${E2E_COMPOSE_PROJECT_NAME} -f docker-compose.e2e.yml up -d`, { stdio: 'inherit' });
 

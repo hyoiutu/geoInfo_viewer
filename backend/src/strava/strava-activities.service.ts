@@ -13,13 +13,16 @@ import { StravaAuthService } from './strava-auth.service';
 import { StravaRateLimiterService } from './strava-rate-limiter.service';
 import type { StravaActivity, StravaActivityDetail } from './types/strava-activity.type';
 
+/** fetchCyclingActivitiesの取得オプション */
 export type FetchActivitiesOptions = {
+  /** 指定した場合、このepoch秒以降に更新されたアクティビティのみを取得する（未指定の場合は全件） */
   afterEpochSeconds?: number;
 };
 
 const FIRST_PAGE = 1;
 const EMPTY_PAGE_LENGTH = 0;
 
+/** Strava APIからサイクリング系アクティビティの一覧・詳細を取得するサービス */
 @Injectable()
 export class StravaActivitiesService {
   constructor(
@@ -28,6 +31,11 @@ export class StravaActivitiesService {
     private readonly stravaRateLimiterService: StravaRateLimiterService
   ) {}
 
+  /**
+   * アクティビティ一覧を取得し、サイクリング系（Ride/VirtualRide）のみに絞り込んで返す
+   * @param options 取得オプション
+   * @returns サイクリング系アクティビティの一覧
+   */
   async fetchCyclingActivities(options: FetchActivitiesOptions = {}): Promise<StravaActivity[]> {
     const accessToken = await this.stravaAuthService.getAccessToken();
 
@@ -46,6 +54,11 @@ export class StravaActivitiesService {
     }
   }
 
+  /**
+   * レート制限を守りながら、全ページを辿ってサイクリング系アクティビティを全件取得する。
+   * 初期取り込み(バックフィル)のプレースホルダー作成に使う
+   * @returns サイクリング系アクティビティの全件一覧
+   */
   async fetchAllCyclingActivities(): Promise<StravaActivity[]> {
     const accessToken = await this.stravaAuthService.getAccessToken();
     const allActivities: StravaActivity[] = [];
@@ -76,6 +89,11 @@ export class StravaActivitiesService {
     return allActivities;
   }
 
+  /**
+   * 指定したアクティビティの詳細（高解像度の軌跡を含む）を取得する
+   * @param activityId 対象のStravaアクティビティID
+   * @returns アクティビティ詳細
+   */
   async fetchCyclingActivityDetail(activityId: number): Promise<StravaActivityDetail> {
     const accessToken = await this.stravaAuthService.getAccessToken();
     await this.stravaRateLimiterService.waitForSlot();
