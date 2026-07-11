@@ -14,6 +14,23 @@
 
 ## 変更履歴
 
+### [2026-07-11] GitHub Issue #5としてTSDocを導入した
+* **修正の動機・概要**:
+  - 様々な関数が定義されているが、どの関数がどんな役割でどんな引数を取りどんな返り値を返すか分からない状態だった（Issue #5）。
+  - テストコード（`__tests__/`配下・`*.tests.ts(x)`・E2Eテストの`*.spec.ts(x)`）を除く、backend/src・frontend/src・electron配下の全関数（`export`の有無・アロー関数/`function`宣言/クラスメソッドを問わない）にTSDocコメントを追加した。
+  - Issueの指示に従い、引数・戻り値がオブジェクト型の場合はインラインの型直書きのまま`@param`/`@returns`で列挙するのではなく、名前付きの`type`として抽出しプロパティ単位でTSDocを書く方針を採用した（`backend/src/database/database.config.ts`の`createDataSourceOptions`等、これまでインラインオブジェクトを返していた関数は本対応で戻り値を名前付き型に抽出した）。
+  - 上記のTSDocの書き方をルールとして`rules.md`に追加した。追加作業中、既存のテスト除外パターン（`__tests__/`・`*.tests.ts(x)`）がPlaywrightのE2Eテスト（`*.spec.ts(x)`）や`electron/tests/global-setup.ts`等のテスト支援コードを想定していなかった不備に気づき、あわせて修正した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/`配下（`common/errors`・`strava`・`activities`・`app.*`・`main.ts`・`data-source.ts`・`database/`・`migrations/`）の全関数・クラスメソッドにTSDocを追加。
+    - `frontend/src/`配下（`api`・`types`・`utils`・`hooks`・`components`・`App.tsx`・`test-utils/`）の全関数・コンポーネントにTSDocを追加。
+    - `electron/main/main.ts`・`electron/tests/global-setup.ts`・`electron/tests/support/electron-app.ts`にTSDocを追加。
+    - `backend/src/database/database.config.ts`の`createDataSourceOptions`は戻り値がインラインオブジェクトリテラルだったため、`DataSourceOptions`型として抽出（型抽出に伴い`entities`フィールドの型を`unknown[]`からタプル型へ修正し、TypeORMの型定義との不整合を解消）。
+    - コメント・型抽出のみで振る舞いの変更は無い。単体テスト（バックエンド76件・フロントエンド76件）・lint・typecheck・E2Eテスト（4シナリオ）は全てGreenのまま。
+  * **README.md**: 変更なし（環境構築手順のみを扱っており、コード規約は`rules.md`が担当するため）。
+  * **仕様書**: 変更なし（アプリの機能仕様ではなく、コードドキュメント規約の変更のため）。
+  * **その他**: `rules.md`に「テスト以外の全ての関数にTSDocを書く」規約を新設し、オブジェクト型引数・戻り値の型抽出方針とテストコードの除外パターン（E2E含む）を明記した。
+
 ### [2026-07-11] GitHub Issue #4としてエラーハンドリング機構を実装した
 * **修正の動機・概要**:
   - これまでエラーはconsole.logでの記録や、`{success: false}`のようなfalthyな値の返却、または何も処理せずに例外を素通しにする実装が混在しており、ユーザーはエラー発生時に何が起きたか・どう対応すべきかを知る手段が無かった（Issue #4）。
