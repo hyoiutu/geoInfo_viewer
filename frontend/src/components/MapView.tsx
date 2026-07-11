@@ -156,6 +156,7 @@ export const MapView = ({ layerVisibility, onError }: MapViewProps) => {
   const wasBicycleLogVisibleRef = useRef(false);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
 
+  // マウント時に一度だけMapLibreの地図を生成し、スタイル読み込み完了後に航空写真・自転車ログレイヤーを追加する
   useEffect(() => {
     if (!containerRef.current) {
       return;
@@ -183,6 +184,8 @@ export const MapView = ({ layerVisibility, onError }: MapViewProps) => {
     };
   }, []);
 
+  // layerVisibilityが変化するたびに各レイヤーの表示/非表示を反映し、
+  // 自転車ログレイヤーがOFF→ONに変化した場合はStrava同期・データ取得を行う
   useEffect(() => {
     const map = mapRef.current;
     const categorizedLayerIds = categorizedLayerIdsRef.current;

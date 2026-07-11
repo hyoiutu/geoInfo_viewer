@@ -36,10 +36,12 @@ export const useBackfillStatus = (onError?: (error: AppErrorInfo) => void): UseB
     }
   }, [onError]);
 
+  // マウント時に一度だけ現在の進捗状況を取得する
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
+  // 実行中の間だけ、一定間隔で進捗状況をポーリングして再取得する
   useEffect(() => {
     if (!backfillStatus?.isRunning) {
       return;

@@ -1077,3 +1077,34 @@ const fetchActivityDetail = (activityId: number, options: FetchActivityDetailOpt
 - 引数・戻り値が**オブジェクト型の場合**は、インライン（`{ a: number; b: string }`のような直書き）のままにせず、名前付きの`type`として抽出し、各プロパティに対して個別にTSDocを書くこと。関数本体側は`@param`/`@returns`でプロパティ単位の説明を書き並べない（NG例のように「かっこ書きで列挙」しない）。
 - 抽出した型の命名は、関数名を接頭辞にした`<関数名>Params`/`<関数名>Result`のような、他の型と衝突しない具体的な名前にする。
 - Reactコンポーネント（`export const Foo = (props: FooProps) => {...}`）も関数の一種として扱い、コンポーネント自体の役割を1行のTSDocで説明する（個々のJSX要素にはTSDocを書かない）。
+
+---
+
+# useEffectの直前に1行程度の説明コメントを書く
+
+NG
+```typescript
+useEffect(() => {
+  if (!backfillStatus?.isRunning) {
+    return;
+  }
+  const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
+  return () => clearInterval(timer);
+}, [backfillStatus?.isRunning, refresh]);
+```
+
+OK
+```typescript
+// 実行中の間だけ、一定間隔で進捗状況をポーリングして再取得する
+useEffect(() => {
+  if (!backfillStatus?.isRunning) {
+    return;
+  }
+  const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
+  return () => clearInterval(timer);
+}, [backfillStatus?.isRunning, refresh]);
+```
+
+`useEffect`は「いつ・何をきっかけに実行されるか」が依存配列や外側の条件分岐から読み取りにくいことが多い。全ての`useEffect`呼び出しの直前に、`//`によるコメントで「何をするeffectか」を1行程度で説明すること（TSDocの`/** */`ではなく、通常の`//`コメントでよい）。
+
+なお、Reactコンポーネント自体の役割説明は、直前の項目（テスト以外の全ての関数にTSDocを書く）で追加するコンポーネント直上のTSDocコメントがこれを兼ねる。コンポーネントの説明を別途重複して書く必要は無い。
