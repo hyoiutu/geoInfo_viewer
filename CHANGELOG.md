@@ -27,6 +27,20 @@
   * **README.md**: 「バックエンドAPIの仕様確認（Swagger）」節を新設し、`/api`（Swagger UI）・`/api-json`（OpenAPI JSON）へのアクセス方法を追記。
   * **仕様書**: 変更なし（開発者向けドキュメントツールの調整のため）。
 
+### [2026-07-11] GitHub Issue #8としてE2Eテストを並列実行できるようにした
+* **修正の動機・概要**:
+  - E2Eテストが常に直列実行（`playwright.config.ts`の`workers: 1`）で、テストケース同士が参照するテーブルが重複しないものについても並列化されておらず、実行時間が長くなっていた（Issue #8）。
+  - 4つのE2Eテストファイルのうち、`bicycle-log-backfill.spec.ts`と`bicycle-log-sync.spec.ts`はどちらも`cycling_activities`・`sync_state`テーブルとモックStravaサーバーの状態（`__test__/reset`等）を共有・変更するため、並列実行すると互いのデータを壊し合う。一方`app.spec.ts`・`aerial-photo.spec.ts`はそれらのテーブル・状態に一切触れない。
+  - この分析に基づき、テーブル・状態が重複する2ファイルを`bicycle-log.spec.ts`に統合し`test.describe.serial()`で順序を保証、それ以外は別ファイルのまま`workers`を2以上に引き上げることでファイル間の並列実行を有効にした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `electron/tests/bicycle-log-backfill.spec.ts`・`electron/tests/bicycle-log-sync.spec.ts`を`electron/tests/bicycle-log.spec.ts`へ統合（`test.describe.serial()`で2シナリオを直列実行）。重複していたモックサーバーのreset/seed処理を1箇所にまとめた。スクリーンショットのベースライン画像も新しいファイル名のディレクトリへ移動。
+    - `playwright.config.ts`: `workers: 1`（直列固定）を`workers: 2`に変更。
+    - E2Eテスト4シナリオ（統合後3ファイル）は実機で全てGreenであることを確認。
+  * **README.md**: 変更なし（具体的なテストファイル名や並列設定には言及していないため）。
+  * **仕様書**: 変更なし（テスト基盤の変更でありアプリの機能仕様には影響しないため）。
+  * **その他**: `test_rules.md`の「テストファイル間の並列実行を許可しない」記述を、「参照するテーブル・状態が重複しないファイルに限って並列実行を許可する」方針に更新し、新規E2Eシナリオ追加時の判断基準（既存のテーブル・モック状態を参照する場合は該当ファイルへ追加）を明記した。
+
 ### [2026-07-11] GitHub Issue #7としてSwaggerを導入した
 * **修正の動機・概要**:
   - バックエンドにSwaggerを導入し、それぞれのAPIの仕様を確認しやすくしてほしいという依頼（Issue #7）。
