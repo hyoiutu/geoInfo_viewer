@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ApiProperty } from '@nestjs/swagger';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { StravaActivitiesService } from '../strava/strava-activities.service';
@@ -13,10 +14,14 @@ const MILLISECONDS_PER_SECOND = 1000;
 const NO_ACTIVITIES = 0;
 
 /** sync()の実行結果 */
-export type SyncResult = {
+export class SyncResult {
   /** 同期処理が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げる） */
-  success: boolean;
-};
+  @ApiProperty({
+    description:
+      '同期処理が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げる）'
+  })
+  success!: boolean;
+}
 
 /** 自転車ログ(サイクリングアクティビティ)の参照・Strava同期を行うサービス */
 @Injectable()

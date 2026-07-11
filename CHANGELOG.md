@@ -14,6 +14,36 @@
 
 ## 変更履歴
 
+### [2026-07-11] PR #13のレビュー対応としてSwaggerレスポンス型のルールを正式化した
+* **修正の動機・概要**:
+  - PR #13（Issue #7対応）のレビューで3点の指摘・依頼を受けた。(1) `type`→`class`変換について、一時的な例外ではなく「レスポンスに使う型はclassにする」という正式なルールにし、各ファイルの説明コメントは削除してよい。(2) 先祖ブランチ（Issue #4〜#6のレビュー対応等）の変更を取り込んだ後、Swaggerの適用漏れが無いかチェックすること。(3) Swagger UI（APIの一覧）の見方がREADME.mdに書かれていない。
+  - (1)は`rules.md`に正式なルールとして追記し、5ファイルにあった説明コメントを削除した。(2)は現在マージ済みの全レスポンス型を再点検した結果、`AppErrorInfo.errorCode`が取りうる値（`STRAVA_AUTH_FAILED`等）にも関わらず`@ApiProperty`に`enum`が指定されていない適用漏れを発見し修正した（`/api-json`のレスポンスで`enum`が正しく出力されることを実機確認）。(3)はREADME.mdにSwagger UI（`/api`）・OpenAPI JSON（`/api-json`）へのアクセス方法を追記した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `rules.md`: 「型定義には原則typeを使用する」ルールに、HTTPレスポンス型は`class`+`@ApiProperty()`とする例外を正式なルールとして追記。マージ後のSwagger適用漏れ確認の指針も追記。
+    - `backend/src/app.service.ts`・`activities/activities-backfill.service.ts`・`activities/activities.service.ts`・`activities/types/cycling-activity.dto.ts`・`common/errors/app-error-info.type.ts`: 「例外としてclassを使う」説明コメントを削除（正式なルールになったため不要）。
+    - `backend/src/common/errors/app-error-info.type.ts`: `AppErrorInfo.errorCode`の`@ApiProperty`に`enum: Object.values(APP_ERROR_CODE)`を追加。
+    - 単体テスト（バックエンド80件）・lint・typecheckは全てGreen。
+  * **README.md**: 「バックエンドAPIの仕様確認（Swagger）」節を新設し、`/api`（Swagger UI）・`/api-json`（OpenAPI JSON）へのアクセス方法を追記。
+  * **仕様書**: 変更なし（開発者向けドキュメントツールの調整のため）。
+
+### [2026-07-11] GitHub Issue #7としてSwaggerを導入した
+* **修正の動機・概要**:
+  - バックエンドにSwaggerを導入し、それぞれのAPIの仕様を確認しやすくしてほしいという依頼（Issue #7）。
+  - `@nestjs/swagger`を導入し、`GET /api`でSwagger UIを閲覧できるようにした。各APIのレスポンス形式は、`nest-cli.json`に設定した`@nestjs/swagger`のコンパイラプラグイン（`introspectComments: true`）により、コントローラーメソッド・DTOの型定義とTSDocコメント（Issue #5で追加済み）から自動抽出される。
+  - 当初はレスポンスDTO（`CyclingActivityDto`・`SyncResult`・`BackfillStartResult`・`BackfillStatus`・`HealthStatus`・`AppErrorInfo`）を`type`のまま試したが、`@nestjs/swagger`のスキーマ自動抽出は`type`エイリアスからはプロパティ単位の詳細（`{"type": "object"}`のみで中身が空）を取得できないことが実機確認で判明した。rules.mdの「型定義には原則typeを使用する」規約の例外として、これら6つのレスポンスDTOのみ`class`+`@ApiProperty()`デコレータへ変換し、Swaggerが実際に有用なスキーマ（プロパティ・型・説明文）を出力できることを`/api-json`のレスポンスで確認した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/swagger.config.ts`（新規）: `DocumentBuilder`・`SwaggerModule`を使ったSwagger UIセットアップ関数。単体テストも追加。
+    - `backend/nest-cli.json`: `@nestjs/swagger`のコンパイラプラグイン（`introspectComments: true`）を設定。
+    - `backend/src/main.ts`: `setupSwagger(app)`の呼び出しを追加。
+    - `backend/src/activities/activities.controller.ts`・`backend/src/app.controller.ts`: `@ApiTags`でSwagger UI上のグルーピングを追加。
+    - `backend/src/activities/types/cycling-activity.dto.ts`・`activities.service.ts`(`SyncResult`)・`activities-backfill.service.ts`(`BackfillStartResult`/`BackfillStatus`)・`app.service.ts`(`HealthStatus`)・`common/errors/app-error-info.type.ts`(`AppErrorInfo`): `type`から`class`+`@ApiProperty()`へ変換（Swaggerのスキーマ自動抽出のための技術的例外。既存の呼び出し元は構造的部分型により無変更で動作）。
+    - `backend/package.json`: `@nestjs/swagger`を追加。
+    - 単体テスト（バックエンド78件）・lint・typecheckは全てGreen。`backend/src/**`のみの変更のためE2Eテストは対象外（commit_rules.md参照）。
+  * **README.md**: 変更なし（Swagger UIの起動方法は`pnpm --filter backend run dev`後に`/api`へアクセスするだけであり、既存の起動手順に追加の前提条件は無いため）。
+  * **仕様書**: 変更なし（バックエンドのAPI仕様を可視化する開発者向けツールの追加であり、アプリの機能仕様自体に変更は無いため）。
+
 ### [2026-07-11] PR #10のレビュー対応としてエラーダイアログの複数スタック対応・lastError表示修正を行った
 * **修正の動機・概要**:
   - PR #10（Issue #4対応）のレビュー中、ユーザーから2つの指摘を受けた。(1) `BackfillStatus.lastError`がDB上には記録されるものの、フロントエンドのどこからも参照されずエラーダイアログに表示されていなかった。(2) 複数のエラーが同時に発生した場合、エラーダイアログの状態が単一の`AppErrorInfo | null`だったため後発のエラーが先発のエラーを上書きしてしまい、また初期取り込みが1回のエラーで停止し再度ボタンを押すと未処理分から再開する設計になっているかどうかが実装から読み取りにくいという指摘があった。

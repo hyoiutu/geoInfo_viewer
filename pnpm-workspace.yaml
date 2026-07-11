@@ -2,4 +2,5 @@ packages:
   - frontend
   - backend
 allowBuilds:
+  '@scarf/scarf': false
   '@swc/core': true

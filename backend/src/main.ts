@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
+import { setupSwagger } from './swagger.config';
 
 const PORT = 3000;
 
@@ -13,6 +14,7 @@ const bootstrap = async () => {
   app.enableCors();
   // 全エンドポイントのエラーレスポンス形式をAppErrorInfo（errorCode/message/hint）に統一する
   app.useGlobalFilters(new AllExceptionsFilter());
+  setupSwagger(app);
   await app.listen(PORT);
 };
 
