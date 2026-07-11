@@ -109,5 +109,17 @@
 - この機能が動いている間は自転車ログレイヤを表示しても更新系APIは走らずに取得できているところまでのアクティビティのみ表示する
 - 初期取り込みが既に完了している状態（未取得のアクティビティが1件も無い状態）で再度ボタンを押した場合は、Stravaへの一覧の再取得は行わず即座に完了する。新規アクティビティの検出は通常の同期（レイヤON時）側が担うため
 
+## エラーハンドリング機構
+- バックエンドの全エンドポイントは、エラー発生時のレスポンスボディを`{ errorCode, message, hint }`形式（`AppErrorInfo`）に統一する
+  - `errorCode`: エラー種別を表す識別子。`STRAVA_AUTH_FAILED`（Strava認証失敗）・`STRAVA_RATE_LIMITED`（Strava APIレート制限）・`STRAVA_API_ERROR`（その他のStrava API通信エラー）・`INTERNAL_ERROR`（DBエラー等、上記以外の予期しないエラー）の4種類とする
+  - `message`: ユーザーに表示する日本語のエラー内容
+  - `hint`: ユーザーが取るべき対応（無い場合は`null`）
+- 上記の統一形式は、NestJSのグローバル例外フィルタ（`AllExceptionsFilter`）によって実現する。個別のエンドポイント・サービスは意図的に投げる例外を`AppException`（またはそのサブクラスである`StravaApiException`）として扱い、フィルタがこれをそのままレスポンスボディとして返す。それ以外の予期しない例外は`INTERNAL_ERROR`として整形して返す
+- Strava API呼び出し（`StravaAuthService`・`StravaActivitiesService`）は、axiosのエラーレスポンスのHTTPステータス（401→認証失敗、429→レート制限、それ以外→通信エラー）に応じて`StravaApiException`へ変換して投げる。console.logでの記録や、エラーを握りつぶしてfalsyな値を返す実装は行わない
+- `POST /activities/sync`は、初期取り込み(バックフィル)実行中のガード（既に実行中のため同期をスキップした場合）に限り`{ success: false }`をエラーではない200レスポンスとして返す。それ以外の失敗（Strava APIエラー等）は例外として投げ、上記のエラーレスポンス形式で返す
+- 初期取り込み(バックフィル)は非同期のfire-and-forget処理であるため、実行中に発生したエラーはHTTPレスポンスとしては返せない。代わりに直近のエラーを`lastError`としてサービス内に保持し、`GET /activities/backfill/status`のレスポンスに含めることで、ポーリングしているフロントエンドが参照できるようにする。新たに`start()`が呼ばれた時点で`lastError`はリセットされる
+- フロントエンドはAPIレスポンスが異常な場合、レスポンスボディを`AppErrorInfo`としてパースし、`ApiError`（`errorCode`/`hint`を保持する`Error`のサブクラス）としてthrowする。呼び出し元でconsole.error等に記録するだけで終わらせず、エラーダイアログ（`ErrorDialog`、Chakra UIの`Dialog`コンポーネントを使用）でユーザーに`message`と`hint`を表示する
+  - 自転車ログの同期・初期取り込み状況のポーリング等、複数箇所からエラーが起こりうるため、エラー状態はワークスペース（`MapWorkspace`）でひとつ管理し、各箇所からのエラーをコールバック（`onError`）で通知する構成とする
+
 ## 位置情報付きメディア表示機能
 WIP
