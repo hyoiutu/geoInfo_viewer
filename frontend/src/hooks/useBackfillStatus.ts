@@ -29,6 +29,11 @@ export const useBackfillStatus = (onError?: (error: AppErrorInfo) => void): UseB
     try {
       const result = await getBackfillStatus();
       setBackfillStatus(result);
+      // 初期取り込みはfire-and-forgetのため、発生したエラーはHTTPレスポンスの成否ではなく
+      // レスポンスボディのlastErrorフィールドとして返ってくる。ポーリング側で明示的にチェックする。
+      if (result.lastError !== null) {
+        onError?.(result.lastError);
+      }
       return result;
     } catch (error) {
       onError?.(toAppErrorInfo(error));

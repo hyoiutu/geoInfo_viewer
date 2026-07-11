@@ -3,9 +3,6 @@ import { ApiProperty } from '@nestjs/swagger';
 
 const HEALTH_STATUS_OK = 'ok';
 
-// Swaggerのスキーマ自動抽出(@ApiProperty)がプロパティ単位のメタデータを付与できるよう、
-// 本プロジェクトの「型定義にはtypeを使う」規約の例外としてclassを使う（app-error-info.type.ts参照）。
-
 /** ヘルスチェックAPIのレスポンス */
 export class HealthStatus {
   /** サーバーが正常に起動していることを表す固定値 */

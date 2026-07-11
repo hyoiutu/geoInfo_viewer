@@ -115,4 +115,27 @@ describe('useBackfillStatusに関するテスト', () => {
 
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'backfill start failed' }));
   });
+
+  test('取得結果にlastErrorが含まれる場合、onErrorを呼び出す', async () => {
+    const lastError = { errorCode: 'STRAVA_API_ERROR' as const, message: 'Strava APIエラー', hint: null };
+    vi.mocked(getBackfillStatus).mockResolvedValue({ ...NOT_RUNNING_STATUS, lastError });
+    const onError = vi.fn();
+
+    renderHook(() => useBackfillStatus(onError));
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(lastError);
+    });
+  });
+
+  test('取得結果のlastErrorがnullの場合、onErrorを呼び出さない', async () => {
+    const onError = vi.fn();
+
+    renderHook(() => useBackfillStatus(onError));
+
+    await waitFor(() => {
+      expect(getBackfillStatus).toHaveBeenCalled();
+    });
+    expect(onError).not.toHaveBeenCalled();
+  });
 });

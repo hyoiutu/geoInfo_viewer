@@ -12,9 +12,6 @@ import { CyclingActivityEntity } from './entities/cycling-activity.entity';
 const MILLISECONDS_PER_SECOND = 1000;
 const NO_ACTIVITIES = 0;
 
-// Swaggerのスキーマ自動抽出(@ApiProperty)がプロパティ単位のメタデータを付与できるよう、
-// 本プロジェクトの「型定義にはtypeを使う」規約の例外としてclassを使う（app-error-info.type.ts参照）。
-
 /** start()の実行結果 */
 export class BackfillStartResult {
   /** 新たに初期取り込みを開始したか（既に実行中だった場合はfalse） */

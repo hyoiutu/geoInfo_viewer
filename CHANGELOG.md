@@ -14,6 +14,19 @@
 
 ## 変更履歴
 
+### [2026-07-11] PR #13のレビュー対応としてSwaggerレスポンス型のルールを正式化した
+* **修正の動機・概要**:
+  - PR #13（Issue #7対応）のレビューで3点の指摘・依頼を受けた。(1) `type`→`class`変換について、一時的な例外ではなく「レスポンスに使う型はclassにする」という正式なルールにし、各ファイルの説明コメントは削除してよい。(2) 先祖ブランチ（Issue #4〜#6のレビュー対応等）の変更を取り込んだ後、Swaggerの適用漏れが無いかチェックすること。(3) Swagger UI（APIの一覧）の見方がREADME.mdに書かれていない。
+  - (1)は`rules.md`に正式なルールとして追記し、5ファイルにあった説明コメントを削除した。(2)は現在マージ済みの全レスポンス型を再点検した結果、`AppErrorInfo.errorCode`が取りうる値（`STRAVA_AUTH_FAILED`等）にも関わらず`@ApiProperty`に`enum`が指定されていない適用漏れを発見し修正した（`/api-json`のレスポンスで`enum`が正しく出力されることを実機確認）。(3)はREADME.mdにSwagger UI（`/api`）・OpenAPI JSON（`/api-json`）へのアクセス方法を追記した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `rules.md`: 「型定義には原則typeを使用する」ルールに、HTTPレスポンス型は`class`+`@ApiProperty()`とする例外を正式なルールとして追記。マージ後のSwagger適用漏れ確認の指針も追記。
+    - `backend/src/app.service.ts`・`activities/activities-backfill.service.ts`・`activities/activities.service.ts`・`activities/types/cycling-activity.dto.ts`・`common/errors/app-error-info.type.ts`: 「例外としてclassを使う」説明コメントを削除（正式なルールになったため不要）。
+    - `backend/src/common/errors/app-error-info.type.ts`: `AppErrorInfo.errorCode`の`@ApiProperty`に`enum: Object.values(APP_ERROR_CODE)`を追加。
+    - 単体テスト（バックエンド80件）・lint・typecheckは全てGreen。
+  * **README.md**: 「バックエンドAPIの仕様確認（Swagger）」節を新設し、`/api`（Swagger UI）・`/api-json`（OpenAPI JSON）へのアクセス方法を追記。
+  * **仕様書**: 変更なし（開発者向けドキュメントツールの調整のため）。
+
 ### [2026-07-11] GitHub Issue #8としてE2Eテストを並列実行できるようにした
 * **修正の動機・概要**:
   - E2Eテストが常に直列実行（`playwright.config.ts`の`workers: 1`）で、テストケース同士が参照するテーブルが重複しないものについても並列化されておらず、実行時間が長くなっていた（Issue #8）。
@@ -44,6 +57,21 @@
     - 単体テスト（バックエンド78件）・lint・typecheckは全てGreen。`backend/src/**`のみの変更のためE2Eテストは対象外（commit_rules.md参照）。
   * **README.md**: 変更なし（Swagger UIの起動方法は`pnpm --filter backend run dev`後に`/api`へアクセスするだけであり、既存の起動手順に追加の前提条件は無いため）。
   * **仕様書**: 変更なし（バックエンドのAPI仕様を可視化する開発者向けツールの追加であり、アプリの機能仕様自体に変更は無いため）。
+
+### [2026-07-11] PR #10のレビュー対応としてエラーダイアログの複数スタック対応・lastError表示修正を行った
+* **修正の動機・概要**:
+  - PR #10（Issue #4対応）のレビュー中、ユーザーから2つの指摘を受けた。(1) `BackfillStatus.lastError`がDB上には記録されるものの、フロントエンドのどこからも参照されずエラーダイアログに表示されていなかった。(2) 複数のエラーが同時に発生した場合、エラーダイアログの状態が単一の`AppErrorInfo | null`だったため後発のエラーが先発のエラーを上書きしてしまい、また初期取り込みが1回のエラーで停止し再度ボタンを押すと未処理分から再開する設計になっているかどうかが実装から読み取りにくいという指摘があった。
+  - (1)は`useBackfillStatus`の`refresh()`が`result.lastError`をチェックしていなかった実装漏れであり、修正した。
+  - (2)前半（複数エラーのスタック）は`ErrorDialog`のprops設計を単一エラーから配列（スタック）へ変更し、1つのダイアログ内で「前へ/次へ」により切り替えて閲覧できるようにした。(2)後半（バックフィルの停止・再開）は調査の結果、`runBackfill()`内のfor文がエラーで即座に中断し、再度`start()`を呼ぶとDB上の未取得分のみを対象に再開する設計が既に実装されていたことを確認し、この挙動を明示的に検証するテストを追加してロックした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/hooks/useBackfillStatus.ts`: `refresh()`が`result.lastError`をチェックし、非nullの場合`onError`を呼び出すよう修正。
+    - `frontend/src/components/ErrorDialog.tsx`: props を`error: AppErrorInfo | null`から`errors: AppErrorInfo[]`・`onDismiss: (index: number) => void`へ変更。前へ/次へボタン・件数表示を追加。
+    - `frontend/src/components/MapWorkspace.tsx`: エラー状態を`AppErrorInfo[]`の配列で管理し、`onError`は末尾に追加（スタック）、`ErrorDialog`へは配列と`onDismiss`を渡すよう変更。
+    - `backend/src/activities/__tests__/activities-backfill.service.tests.ts`: 「詳細API取得中にエラーが発生した場合、それ以降の未取得アクティビティの処理を中断する」「エラー発生後に再度startすると未処理分のみを取得する」の2件を追加（実装変更は無し、既存挙動の確認・ロック）。
+    - 単体テスト（バックエンド78件・フロントエンド82件）・lint・typecheck・E2Eテスト4件は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「自転車ログ初期取り込み機能」に、エラー発生時に処理を中断し再開ボタンで未取得分から再開する仕様を追記。「エラーハンドリング機構」に、エラーが複数発生した場合は上書きせずスタックし1つのダイアログ内で切り替えて閲覧できる仕様を追記。
 
 ### [2026-07-11] GitHub Issue #6としてコメントを増やした
 * **修正の動機・概要**:
