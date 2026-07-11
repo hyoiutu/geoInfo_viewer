@@ -5,6 +5,7 @@ import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 
 const PORT = 3000;
 
+/** NestJSアプリケーションを起動する */
 const bootstrap = async () => {
   const app = await NestFactory.create(AppModule);
   // 開発時はElectronレンダラー(file://)・Viteのdevサーバー(http://localhost:5173)など
