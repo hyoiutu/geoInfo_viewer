@@ -12,5 +12,6 @@
 - 人間からの指摘でコードを修正する場合、rules.mdに新しくルールを追加する
 - git commitはauto-commitスキル（.agents/skills/auto-commit/SKILL.md）を経由してのみ実行し、スキルを介さずに直接git commitを実行してはならない
 - 単体テスト・E2Eテストを作成または実行する場合はtest_rules.mdに記載されたルールに従う
-- GitHub Issueをもとに実装・修正を行う場合はissue-implementスキル（.agents/skills/issue-implement/SKILL.md）を経由し、対象Issue・ブランチ名・派生元ブランチをユーザーに確認したうえで、branch_rules.mdに記載された「1 Issue = 1 Branch」の原則に従ってブランチを作成する
-- GitHub PRのレビューコメントに対応する場合はpr-review-respondスキル（.agents/skills/pr-review-respond/SKILL.md）を経由し、1コメント=1コミットの原則でauto-commitスキル経由でコミットした上で、各コメントへ対応内容（コミットへのリンク、または質問への回答・対応不要の理由）を返信する
+- GitHub Issueをもとに実装・修正を行う場合はissue-implementスキル（.agents/skills/issue-implement/SKILL.md）を経由し、branch_rules.mdに記載された「1 Issue = 1 Branch」の原則に従ってブランチを作成する。対話モードでは対象Issue・ブランチ名・派生元ブランチをユーザーに確認するが、/loop等による自律モードでは確認を省略して自己判断し、実装完了後にpush・PR作成まで行う（詳細はスキル本文参照）
+- GitHub PRのレビューコメントに対応する場合はpr-review-respondスキル（.agents/skills/pr-review-respond/SKILL.md）を経由し、1コメント=1コミットの原則でauto-commitスキル経由でコミットした上で、各コメントへ対応内容（コミットへのリンク、または質問への回答・対応不要の理由）を返信する。自律モードでは全対応完了後にpushしユーザーへ通知する
+- `git push`は原則ユーザー自身が行うが、issue-implement・pr-review-respondの自律モードに限り、完了後の最終ステップとしてAIが通常のpushを行ってよい。**force push（`--force`/`-f`）はいかなる場合も絶対に禁止**（branch_rules.md参照）
