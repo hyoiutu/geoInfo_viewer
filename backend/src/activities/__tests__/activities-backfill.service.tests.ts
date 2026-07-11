@@ -223,6 +223,52 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
 
       expect(status.lastError).toBeNull();
     });
+
+    test('詳細API取得中にエラーが発生した場合、それ以降の未取得アクティビティの処理を中断する', async () => {
+      mockCyclingActivityFind({
+        existingEntities: [],
+        pendingEntities: [
+          Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null }),
+          Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null }),
+          Object.assign(new CyclingActivityEntity(), { id: '3', detailFetchedAt: null })
+        ]
+      });
+      fetchCyclingActivityDetail.mockImplementation((id: number) => {
+        if (id === 2) {
+          return Promise.reject(new Error('Strava API error'));
+        }
+        return Promise.resolve(createActivityDetail({ id }));
+      });
+      const service = await createService();
+
+      await service.start();
+      await flushMicrotasks();
+
+      expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(1);
+      expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(2);
+      expect(fetchCyclingActivityDetail).not.toHaveBeenCalledWith(3);
+      expect(service.isRunning()).toBe(false);
+    });
+
+    test('エラー発生後に再度startすると、未処理のまま残ったアクティビティ(DB上でdetailFetchedAtがnullのもの)のみを取得する', async () => {
+      // id:1は既に取得済み(detailFetchedAt設定済み)、id:2・3が前回のエラーで未取得のまま残っている状況を想定
+      mockCyclingActivityFind({
+        existingEntities: [],
+        pendingEntities: [
+          Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null }),
+          Object.assign(new CyclingActivityEntity(), { id: '3', detailFetchedAt: null })
+        ]
+      });
+      fetchCyclingActivityDetail.mockImplementation((id: number) => Promise.resolve(createActivityDetail({ id })));
+      const service = await createService();
+
+      await service.start();
+      await flushMicrotasks();
+
+      expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(2);
+      expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(3);
+      expect(fetchCyclingActivityDetail).not.toHaveBeenCalledWith(1);
+    });
   });
 
   describe('getStatus', () => {

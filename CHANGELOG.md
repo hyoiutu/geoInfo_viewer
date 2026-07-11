@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-07-11] PR #10のレビュー対応としてエラーダイアログの複数スタック対応・lastError表示修正を行った
+* **修正の動機・概要**:
+  - PR #10（Issue #4対応）のレビュー中、ユーザーから2つの指摘を受けた。(1) `BackfillStatus.lastError`がDB上には記録されるものの、フロントエンドのどこからも参照されずエラーダイアログに表示されていなかった。(2) 複数のエラーが同時に発生した場合、エラーダイアログの状態が単一の`AppErrorInfo | null`だったため後発のエラーが先発のエラーを上書きしてしまい、また初期取り込みが1回のエラーで停止し再度ボタンを押すと未処理分から再開する設計になっているかどうかが実装から読み取りにくいという指摘があった。
+  - (1)は`useBackfillStatus`の`refresh()`が`result.lastError`をチェックしていなかった実装漏れであり、修正した。
+  - (2)前半（複数エラーのスタック）は`ErrorDialog`のprops設計を単一エラーから配列（スタック）へ変更し、1つのダイアログ内で「前へ/次へ」により切り替えて閲覧できるようにした。(2)後半（バックフィルの停止・再開）は調査の結果、`runBackfill()`内のfor文がエラーで即座に中断し、再度`start()`を呼ぶとDB上の未取得分のみを対象に再開する設計が既に実装されていたことを確認し、この挙動を明示的に検証するテストを追加してロックした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/hooks/useBackfillStatus.ts`: `refresh()`が`result.lastError`をチェックし、非nullの場合`onError`を呼び出すよう修正。
+    - `frontend/src/components/ErrorDialog.tsx`: props を`error: AppErrorInfo | null`から`errors: AppErrorInfo[]`・`onDismiss: (index: number) => void`へ変更。前へ/次へボタン・件数表示を追加。
+    - `frontend/src/components/MapWorkspace.tsx`: エラー状態を`AppErrorInfo[]`の配列で管理し、`onError`は末尾に追加（スタック）、`ErrorDialog`へは配列と`onDismiss`を渡すよう変更。
+    - `backend/src/activities/__tests__/activities-backfill.service.tests.ts`: 「詳細API取得中にエラーが発生した場合、それ以降の未取得アクティビティの処理を中断する」「エラー発生後に再度startすると未処理分のみを取得する」の2件を追加（実装変更は無し、既存挙動の確認・ロック）。
+    - 単体テスト（バックエンド78件・フロントエンド82件）・lint・typecheck・E2Eテスト4件は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「自転車ログ初期取り込み機能」に、エラー発生時に処理を中断し再開ボタンで未取得分から再開する仕様を追記。「エラーハンドリング機構」に、エラーが複数発生した場合は上書きせずスタックし1つのダイアログ内で切り替えて閲覧できる仕様を追記。
+
 ### [2026-07-11] GitHub Issue #6としてコメントを増やした
 * **修正の動機・概要**:
   - TSDoc（Issue #5）以外にも、コンポーネントの役割やuseEffectの意図が読み取りにくい箇所があったため、「コンポーネントの1行目に1行程度のコンポーネントの説明」「useEffectの上に1行程度の説明」を追加してほしいという依頼（Issue #6）。
