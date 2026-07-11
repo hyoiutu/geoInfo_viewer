@@ -5,7 +5,11 @@ const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => set
 
 @Injectable()
 export class StravaRateLimiterService {
-  private readonly intervalMs = STRAVA_NON_UPLOAD_RATE_LIMIT_WINDOW_MS / STRAVA_NON_UPLOAD_RATE_LIMIT_PER_WINDOW;
+  // E2Eテストではバックフィルの待機時間を実用的な長さに抑えるため環境変数で上書き可能にしている
+  // （通常は未設定でStravaの実レート制限に基づく間隔を使う）。
+  private readonly intervalMs =
+    Number(process.env.STRAVA_RATE_LIMIT_INTERVAL_MS) ||
+    STRAVA_NON_UPLOAD_RATE_LIMIT_WINDOW_MS / STRAVA_NON_UPLOAD_RATE_LIMIT_PER_WINDOW;
   private nextAvailableAt = 0;
   private readonly sleepFn: (ms: number) => Promise<void> = defaultSleep;
 

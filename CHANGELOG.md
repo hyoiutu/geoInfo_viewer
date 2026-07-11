@@ -14,6 +14,28 @@
 
 ## 変更履歴
 
+### [2026-07-11] GitHub Issue #3としてE2Eテストを実装した
+* **修正の動機・概要**:
+  - E2Eテストが1件も存在しなかった（`playwright.config.ts`・`test:e2e`スクリプトは以前から用意されていたが未使用）ため、Issue #3で実装を依頼された。Issueは合わせて「テスト用DB・テスト用Strava アカウントの用意方法について、他に良い方法がないか調査してほしい」と依頼していた。
+  - 調査の結果、`StravaActivitiesService`/`StravaAuthService`は`HttpService`を直接注入するだけの薄い層で抽象化が無く、URLがコード中に直接ハードコードされていたため、実Stravaアカウントを用意する代わりに、Strava APIを再現するローカルのモックサーバーを新規実装し、環境変数でバックエンドの向き先をそちらに切り替える方式を採用した（ユーザーと合意）。テスト用DBは開発用DBとは完全に分離した専用のDocker Composeサービスを新規に用意した（ユーザーと合意）。地図タイル（OSM/航空写真）は実サーバーへ接続し、スクリーンショット比較は微小な差分を許容する閾値を設定した（ユーザーと合意）。
+  - 実装中に、Chakra UI `Switch`への`force`クリックがReactの制御状態を切り替えない、`waitForLoadState('networkidle')`がクリック直後のタイミング競合で早期に解決してしまう、`sync()`の新規判定が実行時刻ベース＋秒丸めのためフィクスチャの日時設計に注意が必要、docker-composeのプロジェクト名を省略すると開発用DBコンテナを上書きしてしまう、等の複数の非自明な問題を発見し都度対処した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/strava/strava.constants.ts`: `STRAVA_API_BASE_URL`/`STRAVA_OAUTH_TOKEN_URL`を環境変数で上書き可能にした（未設定時は従来通りStrava公式URL）。
+    - `backend/src/strava/strava-rate-limiter.service.ts`: レート制限間隔を`STRAVA_RATE_LIMIT_INTERVAL_MS`環境変数で上書き可能にし、E2E実行時はバックフィル待機を実用的な長さに抑えられるようにした。
+    - `docker-compose.e2e.yml`（新規）: E2E専用のPostGIS入りPostgreSQLサービス（ポート`5434`、DB名`geo_info_viewer_e2e`）。
+    - `electron/tests/support/mock-strava-server.js`（新規）: Node標準`http`のみで実装したStrava APIモックサーバー。`oauth/token`・`athlete/activities`（ページネーション・`after`フィルタ対応）・`activities/:id`に加え、テスト側から状態操作するための`__test__/reset`・`__test__/activities`を持つ。
+    - `electron/tests/fixtures/activities.js`（新規）: E2E用のダミーアクティビティ（自作のポリラインエンコーダ付き）を生成するヘルパー。
+    - `electron/tests/global-setup.ts`（新規）: E2E用DBの起動・接続待ち・マイグレーション・TRUNCATEを行う`playwright.config.ts`の`globalSetup`。
+    - `electron/tests/support/electron-app.ts`（新規）: Playwrightの`_electron`でElectronアプリを起動する共通ヘルパー。
+    - `electron/tests/*.spec.ts`（新規、4ファイル）: 起動確認・自転車ログ初期取り込み・`sync()`による新規アクティビティ検出・航空写真レイヤーの4シナリオ。いずれもスクリーンショット比較を含み、ベースライン画像は目視確認済み。
+    - `playwright.config.ts`: `webServer`（モックサーバー・バックエンド）・`globalSetup`・スクリーンショット許容閾値・`workers: 1`（テストファイル間で共有DB/モックサーバーを奪い合わないよう直列実行に固定）を追加。
+    - `package.json`（ルート）: `pg`・`@types/pg`・`playwright`を新規追加（`electron/tests`はpnpmワークスペースに属さないため）。
+    - 単体テスト（バックエンド59件・フロントエンド63件）・lint・typecheckは全てGreenのまま。E2Eテスト4件全て実機で成功確認済み。
+  * **README.md**: 「E2Eテスト」節を新設し、`pnpm run test:e2e`の実行方法とスクリーンショットベースラインの更新・目視確認の必要性を記載。
+  * **仕様書**: 変更なし（アプリの機能仕様ではなくテスト基盤の変更のため）。
+  * **その他**: `test_rules.md`に「E2Eテスト」節を新設し、実装中に発見した知見（モックサーバー・専用DB構成の理由、Chakra Switchのクリック方法、`waitForResponse`の使い方、フィクスチャの日時設計、直列実行の必要性）を記録した。
+
 ### [2026-07-09] 初期取り込み(バックフィル)完了後の再実行を高速化した
 * **修正の動機・概要**:
   - フェーズ6実装後の動作確認で、初期取り込みが100%完了した状態でボタンを再度押すと、ボタンが1〜2分disabledのまま戻らない現象をユーザーが発見した。

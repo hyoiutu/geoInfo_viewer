@@ -74,3 +74,17 @@ pnpm --filter backend run migration:run
 pnpm --filter backend run migration:generate  # Entityの変更差分からマイグレーションファイルを生成
 pnpm --filter backend run migration:revert    # 直近のマイグレーションを1件分ロールバック
 ```
+
+## E2Eテスト
+
+```bash
+pnpm run test:e2e
+```
+
+このコマンド1つで、ビルド・E2E専用DB（`docker-compose.e2e.yml`、開発用DBとは別、ポート`5434`）の起動・マイグレーション・モックStravaサーバーの起動・バックエンド起動・Electronアプリの起動・テスト実行までを自動で行います（実Stravaアカウントは不要。テスト用DB・地図タイル以外の外部依存はモックサーバーに置き換えています）。詳細な設計・注意点は[test_rules.md](test_rules.md)の「E2Eテスト」節を参照してください。
+
+初回実行時やUIを変更した場合、スクリーンショットのベースライン画像が無い（または古い）とテストが失敗します。以下のコマンドで生成・更新し、**生成された画像を必ず目視確認してから**コミットしてください。
+
+```bash
+npx playwright test --update-snapshots
+```
