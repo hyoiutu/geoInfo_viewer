@@ -1,5 +1,5 @@
 import { Flex } from '@chakra-ui/react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { LAYER_DEFINITIONS } from '../constants/layerDefinitions';
 import { useBackfillStatus } from '../hooks/useBackfillStatus';
 import { useLayerVisibility } from '../hooks/useLayerVisibility';
@@ -8,10 +8,22 @@ import { ErrorDialog } from './ErrorDialog';
 import { LayerSidebar } from './LayerSidebar';
 import { MapView } from './MapView';
 
+/**
+ * サイドバー・地図・エラーダイアログを組み合わせたアプリのメイン画面。
+ * レイヤーの表示状態・初期取り込み進捗・エラー状態をここで一元管理し、各コンポーネントへpropsとして渡す
+ */
 export const MapWorkspace = () => {
   const { visibility, toggleLayer } = useLayerVisibility();
-  const [error, setError] = useState<AppErrorInfo | null>(null);
-  const { backfillStatus, start: startBackfill } = useBackfillStatus(setError);
+  const [errors, setErrors] = useState<AppErrorInfo[]>([]);
+  // 複数箇所（同期・初期取り込み等）で同時にエラーが発生してもどれも見失わないよう、
+  // 上書きせずスタック（配列末尾に追加）する。表示・切り替えはErrorDialog側が担う。
+  const addError = useCallback((error: AppErrorInfo) => {
+    setErrors((current) => [...current, error]);
+  }, []);
+  const dismissError = useCallback((index: number) => {
+    setErrors((current) => current.filter((_, currentIndex) => currentIndex !== index));
+  }, []);
+  const { backfillStatus, start: startBackfill } = useBackfillStatus(addError);
 
   const layers = LAYER_DEFINITIONS.map((layerDefinition) => ({
     id: layerDefinition.id,
@@ -29,8 +41,8 @@ export const MapWorkspace = () => {
           void startBackfill();
         }}
       />
-      <MapView layerVisibility={visibility} onError={setError} />
-      <ErrorDialog error={error} onClose={() => setError(null)} />
+      <MapView layerVisibility={visibility} onError={addError} />
+      <ErrorDialog errors={errors} onDismiss={dismissError} />
     </Flex>
   );
 };
