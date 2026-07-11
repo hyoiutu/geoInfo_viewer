@@ -12,10 +12,13 @@ import type { CyclingActivityDto } from './types/cycling-activity.dto';
 const MILLISECONDS_PER_SECOND = 1000;
 const NO_ACTIVITIES = 0;
 
+/** sync()の実行結果 */
 export type SyncResult = {
+  /** 同期処理が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げる） */
   success: boolean;
 };
 
+/** 自転車ログ(サイクリングアクティビティ)の参照・Strava同期を行うサービス */
 @Injectable()
 export class ActivitiesService {
   constructor(
@@ -27,11 +30,17 @@ export class ActivitiesService {
     private readonly syncStateRepository: Repository<SyncStateEntity>
   ) {}
 
+  /** @returns DBに保存済みの全自転車ログ */
   async findAll(): Promise<CyclingActivityDto[]> {
     const entities = await this.cyclingActivityRepository.find();
     return entities.map((entity) => toCyclingActivityDto(entity));
   }
 
+  /**
+   * 前回同期時刻以降にStravaへ追加されたアクティビティを取得し、DBへ反映する。
+   * 初期取り込み(バックフィル)実行中の場合は、二重取得を避けるため何もせず終了する
+   * @returns 同期結果
+   */
   async sync(): Promise<SyncResult> {
     if (this.activitiesBackfillService.isRunning()) {
       return { success: false };
@@ -59,6 +68,7 @@ export class ActivitiesService {
     return { success: true };
   }
 
+  /** @returns 既存の同期状態。存在しない場合は初回同期を表す未保存のEntity */
   private async getOrCreateSyncState(): Promise<SyncStateEntity> {
     const existing = await this.syncStateRepository.findOneBy({ id: SYNC_STATE_SINGLETON_ID });
     if (existing !== null) {
