@@ -128,6 +128,34 @@ type User = {
 };
 ```
 
+**例外: バックエンドのHTTPレスポンスとして返す型は`class`とし`@ApiProperty()`を付与する。**
+
+NG
+```typescript
+// レスポンスとして使う型をtypeのままにすると、Swaggerのスキーマ自動抽出(@nestjs/swagger)が
+// プロパティ単位の詳細を取得できず、生成されるSwagger UIのスキーマが{"type": "object"}という
+// 空の情報になってしまう。
+export type HealthStatus = {
+  status: 'ok';
+};
+```
+
+OK
+```typescript
+import { ApiProperty } from '@nestjs/swagger';
+
+export class HealthStatus {
+  @ApiProperty({ description: 'サーバーが正常に起動していることを表す固定値', enum: ['ok'] })
+  status!: 'ok';
+}
+```
+
+NestJSのコントローラーメソッドが返す型（DTO）は、`@nestjs/swagger`のコンパイラプラグインによるスキーマ自動抽出のため、原則として`class`で定義し各プロパティに`@ApiProperty()`を付与すること。これは一時的な例外ではなく標準のルールであるため、`class`を使う理由をコード中にコメントで説明する必要は無い（TypeORM Entityが同じ理由で`class`を使っているのと同様の技術的制約であり、本ルールの対象は「HTTPレスポンスとして直接返る型」のみ。それ以外の内部的な型定義には引き続き`type`を使う）。
+
+限定された文字列・数値の集合を取りうるプロパティ（例: `errorCode`のようなUnion型）は、`@ApiProperty()`に`enum`オプションを付与し、取りうる値をSwagger上でも確認できるようにすること。
+
+他ブランチの変更（他Issue対応・レビュー対応等）をマージ・rebaseで取り込んだ際は、新たに追加・変更されたレスポンス型に`@ApiProperty()`の付与漏れが無いか確認すること。マージ作業を終えたら、`nest build`後にバックエンドを実際に起動し`/api-json`のレスポンスで該当スキーマ（`components.schemas`）の中身が空になっていないか確認するのが確実。
+
 # 三項演算子はネストしない
 
 NG

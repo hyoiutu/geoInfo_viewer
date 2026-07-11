@@ -14,6 +14,19 @@
 
 ## 変更履歴
 
+### [2026-07-11] PR #13のレビュー対応としてSwaggerレスポンス型のルールを正式化した
+* **修正の動機・概要**:
+  - PR #13（Issue #7対応）のレビューで3点の指摘・依頼を受けた。(1) `type`→`class`変換について、一時的な例外ではなく「レスポンスに使う型はclassにする」という正式なルールにし、各ファイルの説明コメントは削除してよい。(2) 先祖ブランチ（Issue #4〜#6のレビュー対応等）の変更を取り込んだ後、Swaggerの適用漏れが無いかチェックすること。(3) Swagger UI（APIの一覧）の見方がREADME.mdに書かれていない。
+  - (1)は`rules.md`に正式なルールとして追記し、5ファイルにあった説明コメントを削除した。(2)は現在マージ済みの全レスポンス型を再点検した結果、`AppErrorInfo.errorCode`が取りうる値（`STRAVA_AUTH_FAILED`等）にも関わらず`@ApiProperty`に`enum`が指定されていない適用漏れを発見し修正した（`/api-json`のレスポンスで`enum`が正しく出力されることを実機確認）。(3)はREADME.mdにSwagger UI（`/api`）・OpenAPI JSON（`/api-json`）へのアクセス方法を追記した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `rules.md`: 「型定義には原則typeを使用する」ルールに、HTTPレスポンス型は`class`+`@ApiProperty()`とする例外を正式なルールとして追記。マージ後のSwagger適用漏れ確認の指針も追記。
+    - `backend/src/app.service.ts`・`activities/activities-backfill.service.ts`・`activities/activities.service.ts`・`activities/types/cycling-activity.dto.ts`・`common/errors/app-error-info.type.ts`: 「例外としてclassを使う」説明コメントを削除（正式なルールになったため不要）。
+    - `backend/src/common/errors/app-error-info.type.ts`: `AppErrorInfo.errorCode`の`@ApiProperty`に`enum: Object.values(APP_ERROR_CODE)`を追加。
+    - 単体テスト（バックエンド80件）・lint・typecheckは全てGreen。
+  * **README.md**: 「バックエンドAPIの仕様確認（Swagger）」節を新設し、`/api`（Swagger UI）・`/api-json`（OpenAPI JSON）へのアクセス方法を追記。
+  * **仕様書**: 変更なし（開発者向けドキュメントツールの調整のため）。
+
 ### [2026-07-11] GitHub Issue #7としてSwaggerを導入した
 * **修正の動機・概要**:
   - バックエンドにSwaggerを導入し、それぞれのAPIの仕様を確認しやすくしてほしいという依頼（Issue #7）。

@@ -1,8 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-// Swaggerのスキーマ自動抽出(@ApiProperty)がプロパティ単位のメタデータを付与できるよう、
-// 本プロジェクトの「型定義にはtypeを使う」規約の例外としてclassを使う（app-error-info.type.ts参照）。
-
 /** フロントエンドへ返す自転車ログ（アクティビティ）1件分 */
 export class CyclingActivityDto {
   /** StravaのアクティビティID */

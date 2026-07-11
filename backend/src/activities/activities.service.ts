@@ -13,9 +13,6 @@ import type { CyclingActivityDto } from './types/cycling-activity.dto';
 const MILLISECONDS_PER_SECOND = 1000;
 const NO_ACTIVITIES = 0;
 
-// Swaggerのスキーマ自動抽出(@ApiProperty)がプロパティ単位のメタデータを付与できるよう、
-// 本プロジェクトの「型定義にはtypeを使う」規約の例外としてclassを使う（app-error-info.type.ts参照）。
-
 /** sync()の実行結果 */
 export class SyncResult {
   /** 同期処理が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げる） */
