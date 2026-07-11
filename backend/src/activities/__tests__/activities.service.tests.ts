@@ -162,41 +162,35 @@ describe('ActivitiesServiceに関するテスト', () => {
       expect(syncStateRepository.save).toHaveBeenCalled();
     });
 
-    test('一覧APIの呼び出しが失敗した場合、success:falseを返しDBを更新しない', async () => {
+    test('一覧APIの呼び出しが失敗した場合、エラーを投げDBを更新しない', async () => {
       syncStateRepository.findOneBy.mockResolvedValue(null);
       fetchCyclingActivities.mockRejectedValue(new Error('Strava API error'));
       const service = await createService();
 
-      const result = await service.sync();
-
-      expect(result).toEqual({ success: false });
+      await expect(service.sync()).rejects.toThrow('Strava API error');
       expect(cyclingActivityRepository.save).not.toHaveBeenCalled();
       expect(syncStateRepository.save).not.toHaveBeenCalled();
     });
 
-    test('詳細APIの呼び出しが失敗した場合、success:falseを返しDBを更新しない', async () => {
+    test('詳細APIの呼び出しが失敗した場合、エラーを投げDBを更新しない', async () => {
       syncStateRepository.findOneBy.mockResolvedValue(null);
       fetchCyclingActivities.mockResolvedValue([createActivity({ id: 1 })]);
       fetchCyclingActivityDetail.mockRejectedValue(new Error('Strava API error'));
       const service = await createService();
 
-      const result = await service.sync();
-
-      expect(result).toEqual({ success: false });
+      await expect(service.sync()).rejects.toThrow('Strava API error');
       expect(cyclingActivityRepository.save).not.toHaveBeenCalled();
       expect(syncStateRepository.save).not.toHaveBeenCalled();
     });
 
-    test('DBへの保存が失敗した場合、success:falseを返す', async () => {
+    test('DBへの保存が失敗した場合、エラーを投げる', async () => {
       syncStateRepository.findOneBy.mockResolvedValue(null);
       fetchCyclingActivities.mockResolvedValue([createActivity({ id: 1 })]);
       fetchCyclingActivityDetail.mockResolvedValue(createActivityDetail({ id: 1 }));
       cyclingActivityRepository.save.mockRejectedValue(new Error('DB error'));
       const service = await createService();
 
-      const result = await service.sync();
-
-      expect(result).toEqual({ success: false });
+      await expect(service.sync()).rejects.toThrow('DB error');
     });
   });
 });

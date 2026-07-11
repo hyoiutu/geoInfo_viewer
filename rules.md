@@ -988,3 +988,45 @@ id!: string;
 - 識別子は本来「値が一致するかどうか」だけが意味を持ち、大小比較や算術演算の対象にはならない。`string`のまま扱えばDBドライバの自然な表現と一致し、変換コードが一切不要になる。
 
 数値型の外部API（例: Strava API）から取得したIDを取り込む場合は、その境界（Entity等への変換処理）でのみ`String(...)`変換を行い、自分たちのDB・DTO・フロントエンドの内部では一貫して`string`として扱う。
+
+---
+
+# エラーはconsole.logや握りつぶしで終わらせず、型付きの例外として伝播させる
+
+NG
+```ts
+// バックエンド
+try {
+  await this.stravaActivitiesService.fetchCyclingActivities();
+} catch {
+  return { success: false }; // 何が起きたか呼び出し元には分からない
+}
+
+// フロントエンド
+try {
+  await fetchCyclingActivities();
+} catch (error) {
+  console.error('取得に失敗しました', error); // ユーザーには何も伝わらない
+}
+```
+
+OK
+```ts
+// バックエンド: 意図的に投げる例外はAppException(またはそのサブクラス)として扱う
+try {
+  await this.httpService.get(url);
+} catch (error) {
+  throw toStravaApiException(error); // errorCode/message/hintを持つ例外に変換
+}
+
+// フロントエンド: エラーダイアログ等でユーザーに種別・対処法を提示する
+try {
+  await fetchCyclingActivities();
+} catch (error) {
+  onError(toAppErrorInfo(error));
+}
+```
+
+バックエンドは、意図的に発生しうるエラー（外部API呼び出し失敗等）を`AppException`（`backend/src/common/errors/`参照）として投げ、グローバル例外フィルタ（`AllExceptionsFilter`）が全エンドポイント共通の`{errorCode, message, hint}`形式にレスポンスを統一する。個別のtry/catchで`{success: false}`のような真偽値に握りつぶし、エラーの種別・原因を消してしまわないこと（ただし「バックフィル実行中だから同期をスキップした」のような、エラーではない正常系のガードは真偽値の戻り値のままでよい）。
+
+フロントエンドは、APIレスポンスが異常な場合`ApiError`（`frontend/src/utils/apiError.ts`参照）としてthrowし、呼び出し元でconsole.error等に記録するだけで終わらせず、エラーダイアログ等でユーザーに`message`（内容）と`hint`（対処法）を提示すること。詳細は[system_specification.md](./specs/system_specification.md)の「エラーハンドリング機構」節を参照。

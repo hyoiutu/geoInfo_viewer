@@ -73,7 +73,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       totalCount: 4,
       completedCount: 1,
       progressPercent: 25,
-      estimatedRemainingSeconds: 27
+      estimatedRemainingSeconds: 27,
+      lastError: null
     };
     const getStatus = vi.fn().mockResolvedValue(status);
     const moduleRef = await Test.createTestingModule({

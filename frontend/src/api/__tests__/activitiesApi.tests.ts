@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { ApiError } from '../../utils/apiError';
 import { fetchCyclingActivities, getBackfillStatus, startBackfill, syncCyclingActivities } from '../activitiesApi';
 
 describe('fetchCyclingActivitiesに関するテスト', () => {
@@ -28,11 +29,11 @@ describe('fetchCyclingActivitiesに関するテスト', () => {
     expect(result).toEqual(activities);
   });
 
-  test('レスポンスが異常なとき、エラーを投げる', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+  test('レスポンスが異常なとき、ApiErrorを投げる', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.reject(new Error()) });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(fetchCyclingActivities()).rejects.toThrow();
+    await expect(fetchCyclingActivities()).rejects.toBeInstanceOf(ApiError);
   });
 });
 
@@ -54,22 +55,18 @@ describe('syncCyclingActivitiesに関するテスト', () => {
     expect(result).toEqual({ success: true });
   });
 
-  test('レスポンスが異常なとき、success:falseを返す', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+  test('レスポンスが異常なとき、ApiErrorを投げる', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.reject(new Error()) });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await syncCyclingActivities();
-
-    expect(result).toEqual({ success: false });
+    await expect(syncCyclingActivities()).rejects.toBeInstanceOf(ApiError);
   });
 
-  test('fetch自体が失敗したとき、success:falseを返す', async () => {
+  test('fetch自体が失敗したとき、エラーを投げる', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('network error'));
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await syncCyclingActivities();
-
-    expect(result).toEqual({ success: false });
+    await expect(syncCyclingActivities()).rejects.toThrow('network error');
   });
 });
 
@@ -91,22 +88,18 @@ describe('startBackfillに関するテスト', () => {
     expect(result).toEqual({ started: true });
   });
 
-  test('レスポンスが異常なとき、started:falseを返す', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+  test('レスポンスが異常なとき、ApiErrorを投げる', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.reject(new Error()) });
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await startBackfill();
-
-    expect(result).toEqual({ started: false });
+    await expect(startBackfill()).rejects.toBeInstanceOf(ApiError);
   });
 
-  test('fetch自体が失敗したとき、started:falseを返す', async () => {
+  test('fetch自体が失敗したとき、エラーを投げる', async () => {
     const fetchMock = vi.fn().mockRejectedValue(new Error('network error'));
     vi.stubGlobal('fetch', fetchMock);
 
-    const result = await startBackfill();
-
-    expect(result).toEqual({ started: false });
+    await expect(startBackfill()).rejects.toThrow('network error');
   });
 });
 
@@ -121,7 +114,8 @@ describe('getBackfillStatusに関するテスト', () => {
       totalCount: 4,
       completedCount: 1,
       progressPercent: 25,
-      estimatedRemainingSeconds: 27
+      estimatedRemainingSeconds: 27,
+      lastError: null
     };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -135,10 +129,10 @@ describe('getBackfillStatusに関するテスト', () => {
     expect(result).toEqual(status);
   });
 
-  test('レスポンスが異常なとき、エラーを投げる', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500 });
+  test('レスポンスが異常なとき、ApiErrorを投げる', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.reject(new Error()) });
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(getBackfillStatus()).rejects.toThrow();
+    await expect(getBackfillStatus()).rejects.toBeInstanceOf(ApiError);
   });
 });

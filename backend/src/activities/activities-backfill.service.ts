@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { IsNull, Not, type Repository } from 'typeorm';
+import type { AppErrorInfo } from '../common/errors/app-error-info.type';
+import { toAppErrorInfo } from '../common/errors/app-error-info.util';
 import { StravaActivitiesService } from '../strava/strava-activities.service';
 import { StravaRateLimiterService } from '../strava/strava-rate-limiter.service';
 import { toCyclingActivityEntityFromDetail, toPlaceholderCyclingActivityEntity } from './cycling-activity-entity.util';
@@ -19,11 +21,13 @@ export type BackfillStatus = {
   completedCount: number;
   progressPercent: number;
   estimatedRemainingSeconds: number | null;
+  lastError: AppErrorInfo | null;
 };
 
 @Injectable()
 export class ActivitiesBackfillService {
   private running = false;
+  private lastError: AppErrorInfo | null = null;
 
   constructor(
     private readonly stravaActivitiesService: StravaActivitiesService,
@@ -42,9 +46,13 @@ export class ActivitiesBackfillService {
     }
 
     this.running = true;
-    // fire-and-forget: エラーはHTTPレスポンスには返さず握りつぶし、isRunningを戻して次回startを可能にする
+    this.lastError = null;
+    // fire-and-forget: エラーはHTTPレスポンスには返さず、lastErrorに記録した上でgetStatus()経由で参照可能にする。
+    // isRunningは戻して次回startを可能にする
     this.runBackfill()
-      .catch(() => {})
+      .catch((error: unknown) => {
+        this.lastError = toAppErrorInfo(error);
+      })
       .finally(() => {
         this.running = false;
       });
@@ -62,7 +70,14 @@ export class ActivitiesBackfillService {
       ? ((totalCount - completedCount) * this.stravaRateLimiterService.getIntervalMs()) / MILLISECONDS_PER_SECOND
       : null;
 
-    return { isRunning: this.running, totalCount, completedCount, progressPercent, estimatedRemainingSeconds };
+    return {
+      isRunning: this.running,
+      totalCount,
+      completedCount,
+      progressPercent,
+      estimatedRemainingSeconds,
+      lastError: this.lastError
+    };
   }
 
   private async runBackfill(): Promise<void> {

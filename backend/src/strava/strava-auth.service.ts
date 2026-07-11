@@ -2,6 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import { toStravaApiException } from '../common/errors/strava-api.exception';
 import {
   STRAVA_GRANT_TYPE_REFRESH_TOKEN,
   STRAVA_OAUTH_TOKEN_URL,
@@ -38,22 +39,26 @@ export class StravaAuthService {
   }
 
   private async refreshAccessToken(): Promise<TokenState> {
-    const response = await firstValueFrom(
-      this.httpService.post<StravaTokenResponse>(STRAVA_OAUTH_TOKEN_URL, {
-        // biome-ignore lint/style/useNamingConvention: Strava APIのリクエストボディ形式(snake_case)に合わせる
-        client_id: this.configService.get<string>('STRAVA_CLIENT_ID'),
-        // biome-ignore lint/style/useNamingConvention: Strava APIのリクエストボディ形式(snake_case)に合わせる
-        client_secret: this.configService.get<string>('STRAVA_CLIENT_SECRET'),
-        // biome-ignore lint/style/useNamingConvention: Strava APIのリクエストボディ形式(snake_case)に合わせる
-        refresh_token: this.configService.get<string>('STRAVA_REFRESH_TOKEN'),
-        // biome-ignore lint/style/useNamingConvention: Strava APIのリクエストボディ形式(snake_case)に合わせる
-        grant_type: STRAVA_GRANT_TYPE_REFRESH_TOKEN
-      })
-    );
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<StravaTokenResponse>(STRAVA_OAUTH_TOKEN_URL, {
+          // biome-ignore lint/style/useNamingConvention: Strava APIのリクエストボディ形式(snake_case)に合わせる
+          client_id: this.configService.get<string>('STRAVA_CLIENT_ID'),
+          // biome-ignore lint/style/useNamingConvention: Strava APIのリクエストボディ形式(snake_case)に合わせる
+          client_secret: this.configService.get<string>('STRAVA_CLIENT_SECRET'),
+          // biome-ignore lint/style/useNamingConvention: Strava APIのリクエストボディ形式(snake_case)に合わせる
+          refresh_token: this.configService.get<string>('STRAVA_REFRESH_TOKEN'),
+          // biome-ignore lint/style/useNamingConvention: Strava APIのリクエストボディ形式(snake_case)に合わせる
+          grant_type: STRAVA_GRANT_TYPE_REFRESH_TOKEN
+        })
+      );
 
-    return {
-      accessToken: response.data.access_token,
-      expiresAtEpochSeconds: response.data.expires_at
-    };
+      return {
+        accessToken: response.data.access_token,
+        expiresAtEpochSeconds: response.data.expires_at
+      };
+    } catch (error) {
+      throw toStravaApiException(error);
+    }
   }
 }

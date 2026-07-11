@@ -14,7 +14,8 @@ const NOT_RUNNING_BACKFILL_STATUS = {
   totalCount: 0,
   completedCount: 0,
   progressPercent: 0,
-  estimatedRemainingSeconds: null
+  estimatedRemainingSeconds: null,
+  lastError: null
 };
 
 const RUNNING_BACKFILL_STATUS = {
@@ -22,7 +23,8 @@ const RUNNING_BACKFILL_STATUS = {
   totalCount: 4,
   completedCount: 1,
   progressPercent: 25,
-  estimatedRemainingSeconds: 27
+  estimatedRemainingSeconds: 27,
+  lastError: null
 };
 
 const renderSidebar = (overrides: Partial<Parameters<typeof LayerSidebar>[0]> = {}) =>

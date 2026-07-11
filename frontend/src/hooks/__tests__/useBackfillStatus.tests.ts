@@ -13,7 +13,8 @@ const NOT_RUNNING_STATUS = {
   totalCount: 0,
   completedCount: 0,
   progressPercent: 0,
-  estimatedRemainingSeconds: null
+  estimatedRemainingSeconds: null,
+  lastError: null
 };
 
 const RUNNING_STATUS = {
@@ -21,7 +22,8 @@ const RUNNING_STATUS = {
   totalCount: 4,
   completedCount: 1,
   progressPercent: 25,
-  estimatedRemainingSeconds: 27
+  estimatedRemainingSeconds: 27,
+  lastError: null
 };
 
 describe('useBackfillStatusに関するテスト', () => {
@@ -86,5 +88,54 @@ describe('useBackfillStatusに関するテスト', () => {
     });
 
     expect(getBackfillStatus).not.toHaveBeenCalled();
+  });
+
+  test('状態取得に失敗した場合、onErrorを呼び出す', async () => {
+    vi.mocked(getBackfillStatus).mockRejectedValue(new Error('network error'));
+    const onError = vi.fn();
+
+    renderHook(() => useBackfillStatus(onError));
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'network error' }));
+    });
+  });
+
+  test('startBackfillに失敗した場合、onErrorを呼び出す', async () => {
+    vi.mocked(startBackfill).mockRejectedValue(new Error('backfill start failed'));
+    const onError = vi.fn();
+    const { result } = renderHook(() => useBackfillStatus(onError));
+    await waitFor(() => {
+      expect(result.current.backfillStatus).toEqual(NOT_RUNNING_STATUS);
+    });
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'backfill start failed' }));
+  });
+
+  test('取得結果にlastErrorが含まれる場合、onErrorを呼び出す', async () => {
+    const lastError = { errorCode: 'STRAVA_API_ERROR' as const, message: 'Strava APIエラー', hint: null };
+    vi.mocked(getBackfillStatus).mockResolvedValue({ ...NOT_RUNNING_STATUS, lastError });
+    const onError = vi.fn();
+
+    renderHook(() => useBackfillStatus(onError));
+
+    await waitFor(() => {
+      expect(onError).toHaveBeenCalledWith(lastError);
+    });
+  });
+
+  test('取得結果のlastErrorがnullの場合、onErrorを呼び出さない', async () => {
+    const onError = vi.fn();
+
+    renderHook(() => useBackfillStatus(onError));
+
+    await waitFor(() => {
+      expect(getBackfillStatus).toHaveBeenCalled();
+    });
+    expect(onError).not.toHaveBeenCalled();
   });
 });

@@ -2,8 +2,10 @@
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { describe, expect, test, vi } from 'vitest';
+import { AppException } from '../../common/errors/app.exception';
+import { APP_ERROR_CODE } from '../../common/errors/app-error-code.constants';
 import { StravaAuthService } from '../strava-auth.service';
 
 const ENV_VALUES: Record<string, string> = {
@@ -69,5 +71,22 @@ describe('StravaAuthServiceに関するテスト', () => {
 
     expect(secondAccessToken).toBe('access-token-2');
     expect(httpServicePost).toHaveBeenCalledTimes(2);
+  });
+
+  test('トークンリフレッシュに失敗した場合、errorCode: STRAVA_AUTH_FAILEDのAppExceptionを投げる', async () => {
+    const httpServicePost = vi
+      .fn()
+      .mockReturnValue(throwError(() => ({ isAxiosError: true, response: { status: 401 } })));
+    const service = await createService(httpServicePost);
+
+    try {
+      await service.getAccessToken();
+      expect.unreachable('例外が投げられるはず');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AppException);
+      expect((error as AppException).getResponse()).toEqual(
+        expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaAuthFailed })
+      );
+    }
   });
 });
