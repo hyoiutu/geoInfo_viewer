@@ -9,6 +9,11 @@ const WATERWAY_SOURCE_LAYER = 'waterway';
 const BUILDING_SOURCE_LAYER = 'building';
 const POI_SOURCE_LAYER = 'poi';
 
+/**
+ * MapLibreのスタイルレイヤーが、どのトグル可能なレイヤーカテゴリに属するかを判定する
+ * @param layer 判定対象のMapLibreスタイルレイヤー定義
+ * @returns 属するカテゴリのID。どのカテゴリにも属さない場合はnull
+ */
 export const categorizeStyleLayer = (layer: LayerSpecification): ToggleableLayerId | null => {
   const sourceLayer = 'source-layer' in layer ? layer['source-layer'] : undefined;
 
@@ -31,6 +36,11 @@ export const categorizeStyleLayer = (layer: LayerSpecification): ToggleableLayer
   return null;
 };
 
+/**
+ * MapLibreのスタイルレイヤー一覧を、トグル可能なレイヤーカテゴリごとのレイヤーIDリストへ分類する
+ * @param layers MapLibreのスタイルレイヤー定義一覧
+ * @returns カテゴリIDをキーとした、そのカテゴリに属するレイヤーIDの配列
+ */
 export const groupLayerIdsByCategory = (layers: LayerSpecification[]): Record<ToggleableLayerId, string[]> => {
   const grouped: Record<ToggleableLayerId, string[]> = {
     'osm-poi': [],
