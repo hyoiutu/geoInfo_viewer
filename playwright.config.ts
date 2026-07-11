@@ -11,9 +11,12 @@ const SCREENSHOT_MAX_DIFF_PIXEL_RATIO = 0.02;
 export default defineConfig({
   testDir: './electron/tests',
   timeout: 30_000,
-  // 全テストファイルがE2E用DB・モックStravaサーバーという単一の共有状態を操作するため、
-  // ファイル間で並列実行すると互いのデータを壊し合う。必ず直列実行する。
-  workers: 1,
+  // E2E用DB・モックStravaサーバーの状態を操作するテスト（cycling_activities・sync_stateテーブルを
+  // 参照する自転車ログ関連シナリオ）は、互いのデータを壊し合わないよう1ファイル(bicycle-log.spec.ts)へ
+  // まとめ、test.describe.serial()でファイル内の実行順序を保証している（Issue #8）。
+  // それらのテーブル・モック状態に触れないapp.spec.ts・aerial-photo.spec.ts等の他ファイルとは
+  // 競合しないため、ファイル間の並列実行(workers)を許可する。
+  workers: 2,
   expect: {
     timeout: 5_000,
     toHaveScreenshot: { maxDiffPixelRatio: SCREENSHOT_MAX_DIFF_PIXEL_RATIO }
