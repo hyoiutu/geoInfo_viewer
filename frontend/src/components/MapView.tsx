@@ -1,5 +1,4 @@
 import { Box } from '@chakra-ui/react';
-import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec';
 import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -20,11 +19,15 @@ import {
   AERIAL_PHOTO_TILE_URL
 } from '../constants/aerialPhoto';
 import {
+  BICYCLE_LOG_FOCUSED_LAYER_ID,
+  BICYCLE_LOG_FOCUSED_SOURCE_ID,
   BICYCLE_LOG_LAYER_ID,
   BICYCLE_LOG_LINE_COLOR_DEFAULT,
   BICYCLE_LOG_LINE_COLOR_FOCUSED,
   BICYCLE_LOG_LINE_COLOR_SELECTED,
   BICYCLE_LOG_LINE_WIDTH,
+  BICYCLE_LOG_SELECTED_LAYER_ID,
+  BICYCLE_LOG_SELECTED_SOURCE_ID,
   BICYCLE_LOG_SOURCE_ID
 } from '../constants/bicycleLog';
 import type { AppErrorInfo } from '../types/apiError';
@@ -42,14 +45,6 @@ const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection',
 // 自転車ログの線は太さ3pxと細く正確なクリックが難しいため、クリック地点を中心とした
 // 10px四方(片側5px)のバウンディングボックスでヒットテストする
 const HIT_TEST_RADIUS_PX = 5;
-const BICYCLE_LOG_LINE_COLOR_EXPRESSION: ExpressionSpecification = [
-  'case',
-  ['boolean', ['feature-state', 'focused'], false],
-  BICYCLE_LOG_LINE_COLOR_FOCUSED,
-  ['boolean', ['feature-state', 'selected'], false],
-  BICYCLE_LOG_LINE_COLOR_SELECTED,
-  BICYCLE_LOG_LINE_COLOR_DEFAULT
-];
 
 /** MapViewのprops */
 type MapViewProps = {
@@ -88,26 +83,26 @@ const addAerialPhotoLayer = (map: maplibregl.Map, categorizedLayerIds: Categoriz
 };
 
 /**
- * 自転車ログ用の空のGeoJSONソース・ラインレイヤーを地図に追加する
+ * 自転車ログ用の空のGeoJSONソース・ラインレイヤーを地図に追加する。
+ * 通常状態(全アクティビティ)・選択状態・フォーカス状態をそれぞれ別のソース・レイヤーとして持つ。
+ * 単一のline層には描画順を制御する仕組みが無いため、レイヤーを追加した順（=描画順、後から追加した方が手前）で
+ * 「通常→選択→フォーカス」の手前関係を実現する
  * @param map 追加先のMapLibre地図インスタンス
  */
 const addBicycleLogLayer = (map: maplibregl.Map) => {
-  // feature-state(selected/focused)によるクリックごとの再描画をline-color式で軽量に行うため、
-  // アクティビティIDをフィーチャーIDに昇格させる（毎回GeoJSON全体を作り直さずに済む）
-  map.addSource(BICYCLE_LOG_SOURCE_ID, {
-    type: 'geojson',
-    data: EMPTY_FEATURE_COLLECTION,
-    promoteId: 'id'
-  });
-  map.addLayer({
-    id: BICYCLE_LOG_LAYER_ID,
-    type: 'line',
-    source: BICYCLE_LOG_SOURCE_ID,
-    paint: {
-      'line-color': BICYCLE_LOG_LINE_COLOR_EXPRESSION,
-      'line-width': BICYCLE_LOG_LINE_WIDTH
-    }
-  });
+  const addLineLayer = (sourceId: string, layerId: string, color: string) => {
+    map.addSource(sourceId, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+    map.addLayer({
+      id: layerId,
+      type: 'line',
+      source: sourceId,
+      paint: { 'line-color': color, 'line-width': BICYCLE_LOG_LINE_WIDTH }
+    });
+  };
+
+  addLineLayer(BICYCLE_LOG_SOURCE_ID, BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_LINE_COLOR_DEFAULT);
+  addLineLayer(BICYCLE_LOG_SELECTED_SOURCE_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_LINE_COLOR_SELECTED);
+  addLineLayer(BICYCLE_LOG_FOCUSED_SOURCE_ID, BICYCLE_LOG_FOCUSED_LAYER_ID, BICYCLE_LOG_LINE_COLOR_FOCUSED);
 };
 
 /**
@@ -149,18 +144,30 @@ const syncAndLoadBicycleLog = async (
 };
 
 /**
- * 自転車ログレイヤーのクリックを検出し、選択中アクティビティに追加する。
- * 線が細く正確なクリックが難しいため、クリック地点を中心としたバウンディングボックスでヒットテストする
+ * 自転車ログレイヤーのクリックを検出し、選択中アクティビティを置き換える。
+ * 線が細く正確なクリックが難しいため、クリック地点を中心としたバウンディングボックスでヒットテストする。
+ * フォーカス中はクリックによる選択変更を無効にする
  * @param map クリックを監視するMapLibre地図インスタンス
  * @param onSelectActivities 検出したアクティビティID一覧を渡すコールバック
+ * @param isFocused 呼び出し時点でフォーカス中かどうかを返す関数
  */
-const registerBicycleLogClickHandler = (map: maplibregl.Map, onSelectActivities: (ids: string[]) => void) => {
+const registerBicycleLogClickHandler = (
+  map: maplibregl.Map,
+  onSelectActivities: (ids: string[]) => void,
+  isFocused: () => boolean
+) => {
   map.on('click', (event) => {
+    if (isFocused()) {
+      return;
+    }
+
     const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
       [event.point.x - HIT_TEST_RADIUS_PX, event.point.y - HIT_TEST_RADIUS_PX],
       [event.point.x + HIT_TEST_RADIUS_PX, event.point.y + HIT_TEST_RADIUS_PX]
     ];
-    const features = map.queryRenderedFeatures(bbox, { layers: [BICYCLE_LOG_LAYER_ID] });
+    const features = map.queryRenderedFeatures(bbox, {
+      layers: [BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_FOCUSED_LAYER_ID]
+    });
     // 同一クリックでも複数の描画フィーチャーが同一アクティビティIDを指しうるため重複排除する
     const ids = [...new Set(features.map((feature) => String(feature.properties?.id)))];
     if (ids.length > 0) {
@@ -170,25 +177,33 @@ const registerBicycleLogClickHandler = (map: maplibregl.Map, onSelectActivities:
 };
 
 /**
- * 選択・フォーカス状態を、自転車ログの各アクティビティのfeature-stateへ反映する
+ * 選択・フォーカス状態を、自転車ログの選択用・フォーカス用レイヤーのGeoJSONデータへ反映する。
+ * selectedIdsの並び順（通し番号の昇順）をそのままfeatures配列の並びとして使う。MapLibreは
+ * 単一ソース内で後の要素ほど手前に描画するため、これにより「通し番号が大きいものほど手前」というdraw順が実現される
  * @param map 反映先のMapLibre地図インスタンス
  * @param activities 現在地図に描画されているアクティビティ一覧
- * @param selectedIds 選択中のアクティビティID一覧
+ * @param selectedIds 選択中のアクティビティID一覧（通し番号の昇順）
  * @param focusedId フォーカス中のアクティビティID。未フォーカスの場合はnull
  */
-const applyActivitySelectionState = (
+const applySelectionLayers = (
   map: maplibregl.Map,
   activities: CyclingActivity[],
   selectedIds: string[],
   focusedId: string | null
 ) => {
-  const selectedIdSet = new Set(selectedIds);
-  for (const activity of activities) {
-    map.setFeatureState(
-      { source: BICYCLE_LOG_SOURCE_ID, id: activity.id },
-      { selected: selectedIdSet.has(activity.id), focused: activity.id === focusedId }
-    );
-  }
+  const activityById = new Map(activities.map((activity) => [activity.id, activity]));
+  const focusedActivity = focusedId === null ? null : (activityById.get(focusedId) ?? null);
+
+  const selectedActivities = selectedIds
+    .filter((id) => id !== focusedId)
+    .map((id) => activityById.get(id))
+    .filter((activity): activity is CyclingActivity => activity !== undefined);
+
+  const selectedSource = map.getSource(BICYCLE_LOG_SELECTED_SOURCE_ID) as maplibregl.GeoJSONSource;
+  selectedSource.setData(cyclingActivityToGeoJson(selectedActivities));
+
+  const focusedSource = map.getSource(BICYCLE_LOG_FOCUSED_SOURCE_ID) as maplibregl.GeoJSONSource;
+  focusedSource.setData(cyclingActivityToGeoJson(focusedActivity ? [focusedActivity] : []));
 };
 
 /**
@@ -202,7 +217,7 @@ const resolveStyleLayerIds = (layerId: ToggleableLayerId, categorizedLayerIds: C
     return [AERIAL_PHOTO_LAYER_ID];
   }
   if (layerId === 'bicycle-log') {
-    return [BICYCLE_LOG_LAYER_ID];
+    return [BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_FOCUSED_LAYER_ID];
   }
   return categorizedLayerIds[layerId];
 };
@@ -244,9 +259,11 @@ export const MapView = ({
   const wasBicycleLogVisibleRef = useRef(false);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
-  // クリックハンドラはマウント時に一度だけ登録するため、最新のコールバックをrefで参照する（クロージャの陳腐化対策）
+  // クリックハンドラはマウント時に一度だけ登録するため、最新の値をrefで参照する（クロージャの陳腐化対策）
   const onSelectActivitiesRef = useRef(onSelectActivities);
   onSelectActivitiesRef.current = onSelectActivities;
+  const focusedIdRef = useRef(focusedId);
+  focusedIdRef.current = focusedId;
 
   // マウント時に一度だけMapLibreの地図を生成し、スタイル読み込み完了後に航空写真・自転車ログレイヤーを追加する
   useEffect(() => {
@@ -267,7 +284,11 @@ export const MapView = ({
       categorizedLayerIdsRef.current = categorizedLayerIds;
       addAerialPhotoLayer(map, categorizedLayerIds);
       addBicycleLogLayer(map);
-      registerBicycleLogClickHandler(map, (ids) => onSelectActivitiesRef.current(ids));
+      registerBicycleLogClickHandler(
+        map,
+        (ids) => onSelectActivitiesRef.current(ids),
+        () => focusedIdRef.current !== null
+      );
       setIsStyleLoaded(true);
     });
 
@@ -277,14 +298,14 @@ export const MapView = ({
     };
   }, []);
 
-  // 選択中・フォーカス中のアクティビティが変化するたびに、対応するfeature-stateを更新し線の色に反映する
+  // 選択中・フォーカス中のアクティビティが変化するたびに、選択用・フォーカス用レイヤーのデータを更新する
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isStyleLoaded) {
       return;
     }
 
-    applyActivitySelectionState(map, activities, selectedIds, focusedId);
+    applySelectionLayers(map, activities, selectedIds, focusedId);
   }, [activities, selectedIds, focusedId, isStyleLoaded]);
 
   // layerVisibilityが変化するたびに各レイヤーの表示/非表示を反映し、

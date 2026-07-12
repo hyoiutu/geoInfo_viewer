@@ -10,7 +10,7 @@ describe('useActivitySelectionに関するテスト', () => {
     expect(result.current.focusedIndex).toBeNull();
   });
 
-  test('selectActivitiesを呼ぶと、指定したID一覧が末尾に追加される', () => {
+  test('selectActivitiesを呼ぶと、指定したID一覧が選択される', () => {
     const { result } = renderHook(() => useActivitySelection());
 
     act(() => {
@@ -20,17 +20,17 @@ describe('useActivitySelectionに関するテスト', () => {
     expect(result.current.selectedIds).toEqual(['1', '2']);
   });
 
-  test('selectActivitiesを複数回呼ぶと、既存の選択に追加される（重複も許容する）', () => {
+  test('selectActivitiesを複数回呼ぶと、既存の選択が新しいID一覧で置き換わる（累積しない）', () => {
     const { result } = renderHook(() => useActivitySelection());
     act(() => {
       result.current.selectActivities(['1']);
     });
 
     act(() => {
-      result.current.selectActivities(['1', '2']);
+      result.current.selectActivities(['2', '3']);
     });
 
-    expect(result.current.selectedIds).toEqual(['1', '1', '2']);
+    expect(result.current.selectedIds).toEqual(['2', '3']);
   });
 
   test('focusActivityを呼ぶと、指定したインデックスがfocusedIndexになる', () => {

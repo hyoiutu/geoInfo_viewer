@@ -14,6 +14,22 @@
 
 ## 変更履歴
 
+### [2026-07-13] PR #16のレビュー対応としてアクティビティ選択・フォーカスの仕様を修正した
+* **修正の動機・概要**:
+  - PR #16の動作確認で、Issue #15の仕様に記載していなかった5点の修正依頼を受けた。(1) 選択中・フォーカス中のアクティビティが他より手前に描画されるようにする。選択中同士は通し番号の降順（＝最後にクリックしたものが最前面）で描画する。(2) 選択済みの状態で別の箇所をクリックすると、既存の選択を解除して新たな選択に置き換える（累積しない）。(3) フォーカス中は地図クリックによる選択操作を無効化する。(4) 選択数が多くウィンドウ高さを超える場合、右サイドバー内のみスクロールする。
+  - (1)について、「通し番号の降順」の具体的な向き（最大番号が最前面か最背面か）が曖昧だったためユーザーに確認し、「最後にクリックした（最大の通し番号）ものが最前面」で合意した。MapLibreの単一line層には描画順を制御する仕組みが無いため、通常・選択・フォーカスの3つを独立したGeoJSONソース・レイヤーに分離し、レイヤーを追加した順（＝描画順）で手前関係を実現する方式に変更した。これに伴い、前回導入したfeature-state（`case`式によるline-color切り替え）は不要になったため削除し、`@maplibre/maplibre-gl-style-spec`への依存も撤去した。
+  - (2)は`useActivitySelection.selectActivities`を「既存配列への追加」から「置き換え」に変更するだけで対応できた。(3)によりフォーカス中は選択変更ができなくなるため、(2)の置き換えロジックにフォーカス中の考慮は不要（フォーカス中はそもそもクリックが無視される）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/constants/bicycleLog.ts`: 選択用・フォーカス用のソースID・レイヤーIDを追加。
+    - `frontend/src/components/MapView.tsx`: `addBicycleLogLayer`が3つのソース・レイヤー（通常・選択・フォーカス）を追加するよう変更。feature-state関連のコード（`applyActivitySelectionState`・`promoteId`・`ExpressionSpecification`）を削除し、`applySelectionLayers`（選択用・フォーカス用レイヤーのGeoJSONデータを再構築する関数）に置き換え。クリックハンドラはフォーカス中（`focusedIdRef.current !== null`）の場合は`queryRenderedFeatures`自体を呼ばず早期リターンするよう変更。
+    - `frontend/src/hooks/useActivitySelection.ts`: `selectActivities`を`setSelectedIds((current) => [...current, ...ids])`から`setSelectedIds(ids)`（置き換え）に変更。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: ルートの`Box`に`minHeight={0}`・`overflowY="auto"`を追加し、内容がウィンドウ高さを超える場合にサイドバー内でスクロールするよう変更。
+    - `frontend/package.json`・`pnpm-lock.yaml`: 不要になった`@maplibre/maplibre-gl-style-spec`を削除。
+    - 単体テスト（フロントエンド114件）・lint・typecheck・E2Eテスト4件は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「アクティビティ詳細閲覧機能」に、選択の置き換え仕様・フォーカス中のクリック無効化・描画の手前関係（3レイヤー構成・通し番号降順）・サイドバーの内部スクロールを追記。
+
 ### [2026-07-12] PR #16のレビュー対応としてE2Eテストのバックエンドポート衝突を解消した
 * **修正の動機・概要**:
   - PR #16のレビューで「E2Eテストをスキップしないでほしい。ポートが占有されないようE2Eテストのポートをずらせないか」との指摘を受けた。PR作成時点では開発用バックエンド（`nest start --watch`、3000番ポート、実Strava接続・実DB）がローカルで常駐していたため、Playwrightの`webServer`（`reuseExistingServer: !process.env.CI`）がこれを「起動済みのE2E用サーバー」として誤って再利用してしまい、E2E向けのモックStrava・E2E専用DBへの向き先設定が一切適用されないままテストが実行され、バックフィルボタンの状態確認に失敗する事故が発生していた。

@@ -9,7 +9,17 @@ import {
   AERIAL_PHOTO_TILE_SIZE,
   AERIAL_PHOTO_TILE_URL
 } from '../../constants/aerialPhoto';
-import { BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_SOURCE_ID } from '../../constants/bicycleLog';
+import {
+  BICYCLE_LOG_FOCUSED_LAYER_ID,
+  BICYCLE_LOG_FOCUSED_SOURCE_ID,
+  BICYCLE_LOG_LAYER_ID,
+  BICYCLE_LOG_LINE_COLOR_DEFAULT,
+  BICYCLE_LOG_LINE_COLOR_FOCUSED,
+  BICYCLE_LOG_LINE_COLOR_SELECTED,
+  BICYCLE_LOG_SELECTED_LAYER_ID,
+  BICYCLE_LOG_SELECTED_SOURCE_ID,
+  BICYCLE_LOG_SOURCE_ID
+} from '../../constants/bicycleLog';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import type { LayerVisibility } from '../../types/layer';
 import { MapView } from '../MapView';
@@ -55,6 +65,9 @@ const DEFAULT_SELECTION_PROPS = {
   onActivitiesLoaded: vi.fn()
 };
 
+// ソースIDごとに独立したsetDataスパイを返す（BICYCLE_LOG_SOURCE_ID等、複数ソースを区別して検証するため）
+const setDataMocksBySourceId: Record<string, ReturnType<typeof vi.fn>> = {};
+
 vi.mock('maplibre-gl', () => {
   const remove = vi.fn();
   const once = vi.fn((event: string, callback: () => void) => {
@@ -66,24 +79,16 @@ vi.mock('maplibre-gl', () => {
   const addSource = vi.fn();
   const addLayer = vi.fn();
   const setLayoutProperty = vi.fn();
-  const setData = vi.fn();
-  const getSource = vi.fn(() => ({ setData }));
+  const getSource = vi.fn((sourceId: string) => {
+    if (!setDataMocksBySourceId[sourceId]) {
+      setDataMocksBySourceId[sourceId] = vi.fn();
+    }
+    return { setData: setDataMocksBySourceId[sourceId] };
+  });
   const on = vi.fn();
   const queryRenderedFeatures = vi.fn(() => []);
-  const setFeatureState = vi.fn();
   const MapMock = vi.fn().mockImplementation(function MockMap() {
-    return {
-      remove,
-      once,
-      getStyle,
-      addSource,
-      addLayer,
-      setLayoutProperty,
-      getSource,
-      on,
-      queryRenderedFeatures,
-      setFeatureState
-    };
+    return { remove, once, getStyle, addSource, addLayer, setLayoutProperty, getSource, on, queryRenderedFeatures };
   });
   // biome-ignore lint/style/useNamingConvention: maplibre-glの実APIに合わせクラス名(Map)をPascalCaseのまま公開する
   return { default: { Map: MapMock } };
@@ -96,6 +101,8 @@ const getClickHandler = (mapInstance: ReturnType<typeof getMapInstance>) => {
   const call = mapInstance.on.mock.calls.find(([event]: [string]) => event === 'click');
   return call?.[1];
 };
+
+const getSetDataMock = (sourceId: string) => setDataMocksBySourceId[sourceId];
 
 describe('MapViewに関するテスト', () => {
   beforeEach(() => {
@@ -165,6 +172,8 @@ describe('MapViewに関するテスト', () => {
 
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(AERIAL_PHOTO_LAYER_ID, 'visibility', 'none');
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(BICYCLE_LOG_LAYER_ID, 'visibility', 'none');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(BICYCLE_LOG_SELECTED_LAYER_ID, 'visibility', 'none');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(BICYCLE_LOG_FOCUSED_LAYER_ID, 'visibility', 'none');
   });
 
   test('layerVisibilityが変化したとき、該当レイヤーのvisibilityが更新される', () => {
@@ -186,17 +195,51 @@ describe('MapViewに関するテスト', () => {
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_minor', 'visibility', 'none');
   });
 
-  test('スタイルロード時、自転車ログの空のGeoJSONソース・ラインレイヤーが追加される', () => {
+  test('スタイルロード時、自転車ログの通常・選択・フォーカス用の空のGeoJSONソース・ラインレイヤーが追加される', () => {
     renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />);
     const mapInstance = getMapInstance();
+    const emptyData = { type: 'FeatureCollection', features: [] };
 
-    expect(mapInstance.addSource).toHaveBeenCalledWith(BICYCLE_LOG_SOURCE_ID, {
+    expect(mapInstance.addSource).toHaveBeenCalledWith(BICYCLE_LOG_SOURCE_ID, { type: 'geojson', data: emptyData });
+    expect(mapInstance.addSource).toHaveBeenCalledWith(BICYCLE_LOG_SELECTED_SOURCE_ID, {
       type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] },
-      promoteId: 'id'
+      data: emptyData
+    });
+    expect(mapInstance.addSource).toHaveBeenCalledWith(BICYCLE_LOG_FOCUSED_SOURCE_ID, {
+      type: 'geojson',
+      data: emptyData
     });
     expect(mapInstance.addLayer).toHaveBeenCalledWith(
-      expect.objectContaining({ id: BICYCLE_LOG_LAYER_ID, type: 'line', source: BICYCLE_LOG_SOURCE_ID })
+      expect.objectContaining({
+        id: BICYCLE_LOG_LAYER_ID,
+        type: 'line',
+        source: BICYCLE_LOG_SOURCE_ID,
+        paint: expect.objectContaining({ 'line-color': BICYCLE_LOG_LINE_COLOR_DEFAULT })
+      })
+    );
+    expect(mapInstance.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: BICYCLE_LOG_SELECTED_LAYER_ID,
+        type: 'line',
+        source: BICYCLE_LOG_SELECTED_SOURCE_ID,
+        paint: expect.objectContaining({ 'line-color': BICYCLE_LOG_LINE_COLOR_SELECTED })
+      })
+    );
+    expect(mapInstance.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: BICYCLE_LOG_FOCUSED_LAYER_ID,
+        type: 'line',
+        source: BICYCLE_LOG_FOCUSED_SOURCE_ID,
+        paint: expect.objectContaining({ 'line-color': BICYCLE_LOG_LINE_COLOR_FOCUSED })
+      })
+    );
+    // レイヤーが追加された順（通常→選択→フォーカス）で手前に描画される
+    const layerIdCallOrder = mapInstance.addLayer.mock.calls.map(([layer]: [{ id: string }]) => layer.id);
+    expect(layerIdCallOrder.indexOf(BICYCLE_LOG_LAYER_ID)).toBeLessThan(
+      layerIdCallOrder.indexOf(BICYCLE_LOG_SELECTED_LAYER_ID)
+    );
+    expect(layerIdCallOrder.indexOf(BICYCLE_LOG_SELECTED_LAYER_ID)).toBeLessThan(
+      layerIdCallOrder.indexOf(BICYCLE_LOG_FOCUSED_LAYER_ID)
     );
   });
 
@@ -219,7 +262,6 @@ describe('MapViewに関するテスト', () => {
     const { rerender } = renderWithChakra(
       <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
     );
-    const mapInstance = getMapInstance();
 
     rerender(
       <MapView
@@ -235,9 +277,8 @@ describe('MapViewに関するテスト', () => {
     await waitFor(() => {
       expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
     });
-    const source = mapInstance.getSource(BICYCLE_LOG_SOURCE_ID);
     await waitFor(() => {
-      expect(source.setData).toHaveBeenCalledWith(
+      expect(getSetDataMock(BICYCLE_LOG_SOURCE_ID)).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'FeatureCollection',
           features: [expect.objectContaining({ properties: { id: '1', name: 'ライド1' } })]
@@ -412,7 +453,7 @@ describe('MapViewに関するテスト', () => {
         [95, 195],
         [105, 205]
       ],
-      { layers: [BICYCLE_LOG_LAYER_ID] }
+      { layers: [BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_FOCUSED_LAYER_ID] }
     );
     expect(onSelectActivities).toHaveBeenCalledWith(['1', '2']);
   });
@@ -455,7 +496,107 @@ describe('MapViewに関するテスト', () => {
     expect(onSelectActivities).toHaveBeenCalledWith(['1']);
   });
 
-  test('selectedIds・focusedIdが変化すると、取得済みの各アクティビティのfeature-stateが更新される', async () => {
+  test('フォーカス中にクリックしても、ヒットテストが行われずonSelectActivitiesも呼ばれない', () => {
+    const onSelectActivities = vi.fn();
+    renderWithChakra(
+      <MapView
+        layerVisibility={ALL_ON_VISIBILITY}
+        onError={vi.fn()}
+        {...DEFAULT_SELECTION_PROPS}
+        selectedIds={['1']}
+        focusedId="1"
+        onSelectActivities={onSelectActivities}
+      />
+    );
+    const mapInstance = getMapInstance();
+    mapInstance.queryRenderedFeatures.mockReturnValue([{ properties: { id: '2' } }]);
+    const handleClick = getClickHandler(mapInstance);
+
+    handleClick({ point: { x: 100, y: 200 } });
+
+    expect(mapInstance.queryRenderedFeatures).not.toHaveBeenCalled();
+    expect(onSelectActivities).not.toHaveBeenCalled();
+  });
+
+  test('selectedIds・focusedIdが変化すると、選択用レイヤーにフォーカス中を除いた選択中アクティビティが通し番号順で反映される', async () => {
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([
+      {
+        id: '1',
+        name: 'ライド1',
+        distanceMeters: 1000,
+        movingTimeSeconds: 600,
+        elapsedTimeSeconds: 650,
+        elevationGainMeters: 50,
+        startDate: '2026-07-01T00:00:00Z',
+        path: [
+          [139.7, 35.6],
+          [139.8, 35.7]
+        ]
+      },
+      {
+        id: '2',
+        name: 'ライド2',
+        distanceMeters: 2000,
+        movingTimeSeconds: 1200,
+        elapsedTimeSeconds: 1250,
+        elevationGainMeters: 80,
+        startDate: '2026-07-02T00:00:00Z',
+        path: [
+          [139.7, 35.6],
+          [139.9, 35.8]
+        ]
+      },
+      {
+        id: '3',
+        name: 'ライド3',
+        distanceMeters: 3000,
+        movingTimeSeconds: 1800,
+        elapsedTimeSeconds: 1850,
+        elevationGainMeters: 100,
+        startDate: '2026-07-03T00:00:00Z',
+        path: [
+          [139.7, 35.6],
+          [140.0, 35.9]
+        ]
+      }
+    ]);
+    const { rerender } = renderWithChakra(
+      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+    );
+
+    rerender(
+      <MapView
+        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+        onError={vi.fn()}
+        {...DEFAULT_SELECTION_PROPS}
+      />
+    );
+    await waitFor(() => {
+      expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
+    });
+
+    rerender(
+      <MapView
+        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+        onError={vi.fn()}
+        {...DEFAULT_SELECTION_PROPS}
+        selectedIds={['2', '3']}
+        focusedId="3"
+      />
+    );
+
+    await waitFor(() => {
+      expect(getSetDataMock(BICYCLE_LOG_FOCUSED_SOURCE_ID)).toHaveBeenCalledWith(
+        expect.objectContaining({ features: [expect.objectContaining({ properties: { id: '3', name: 'ライド3' } })] })
+      );
+    });
+    // 通し番号1番('2')のみが選択用レイヤーに残る（通し番号2番('3')はフォーカス用レイヤーへ）
+    expect(getSetDataMock(BICYCLE_LOG_SELECTED_SOURCE_ID)).toHaveBeenCalledWith(
+      expect.objectContaining({ features: [expect.objectContaining({ properties: { id: '2', name: 'ライド2' } })] })
+    );
+  });
+
+  test('選択用レイヤーのfeatures配列は、通し番号の昇順（＝後からクリックしたものが配列末尾で最前面）で並ぶ', async () => {
     vi.mocked(fetchCyclingActivities).mockResolvedValue([
       {
         id: '1',
@@ -487,8 +628,6 @@ describe('MapViewに関するテスト', () => {
     const { rerender } = renderWithChakra(
       <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
     );
-    const mapInstance = getMapInstance();
-
     rerender(
       <MapView
         layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
@@ -499,27 +638,25 @@ describe('MapViewに関するテスト', () => {
     await waitFor(() => {
       expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
     });
-    mapInstance.setFeatureState.mockClear();
 
+    // 通し番号0番が'2'、1番が'1'（クリック検出順が数値の昇順とは限らない例）
     rerender(
       <MapView
         layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
         onError={vi.fn()}
         {...DEFAULT_SELECTION_PROPS}
-        selectedIds={['1']}
-        focusedId="2"
+        selectedIds={['2', '1']}
+        focusedId={null}
       />
     );
 
     await waitFor(() => {
-      expect(mapInstance.setFeatureState).toHaveBeenCalledWith(
-        { source: BICYCLE_LOG_SOURCE_ID, id: '1' },
-        { selected: true, focused: false }
-      );
+      const calls = getSetDataMock(BICYCLE_LOG_SELECTED_SOURCE_ID).mock.calls;
+      const lastCall = calls[calls.length - 1][0];
+      expect(lastCall.features.map((feature: { properties: { id: string } }) => feature.properties.id)).toEqual([
+        '2',
+        '1'
+      ]);
     });
-    expect(mapInstance.setFeatureState).toHaveBeenCalledWith(
-      { source: BICYCLE_LOG_SOURCE_ID, id: '2' },
-      { selected: false, focused: true }
-    );
   });
 });
