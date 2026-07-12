@@ -98,6 +98,10 @@ const data: User = fetchedData;
 const user: User = { id: 1, name: "name" };
 ```
 
+`as unknown as T`のように型システムを迂回して無理やりキャストすることは、原則・例外を問わずいかなる場合も禁止する。「正しい型を見つけるのが面倒／複雑に見える」ことはキャストを正当化する理由にならない。型が合わないと感じた場合は、次の手順で正しい型を特定してから使うこと。
+- ライブラリが提供する型が期待と違う場合、そのライブラリが依存する別パッケージ（transitive dependency）が本来の型を公開していないか確認する（例: `maplibre-gl`の式(expression)の型は`maplibre-gl`自身からは再エクスポートされていないが、依存先の`@maplibre/maplibre-gl-style-spec`が`ExpressionSpecification`等として公開している）。見つかった場合はそのパッケージをdevDependenciesに明示的に追加してimportする。
+- 配列・タプルリテラルがユニオン型に一致しないというエラーが出る場合、変数宣言に型注釈を付けて「期待される型」をTypeScriptに伝える（コンテキスト型を与える）ことで解消できることが多い。キャストの前に必ず試すこと。
+
 # ||ではなく??（Null合体演算子）を使用する
 
 NG

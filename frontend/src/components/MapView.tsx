@@ -1,4 +1,5 @@
 import { Box } from '@chakra-ui/react';
+import type { ExpressionSpecification } from '@maplibre/maplibre-gl-style-spec';
 import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
@@ -41,7 +42,7 @@ const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection',
 // 自転車ログの線は太さ3pxと細く正確なクリックが難しいため、クリック地点を中心とした
 // 10px四方(片側5px)のバウンディングボックスでヒットテストする
 const HIT_TEST_RADIUS_PX = 5;
-const BICYCLE_LOG_LINE_COLOR_EXPRESSION = [
+const BICYCLE_LOG_LINE_COLOR_EXPRESSION: ExpressionSpecification = [
   'case',
   ['boolean', ['feature-state', 'focused'], false],
   BICYCLE_LOG_LINE_COLOR_FOCUSED,
@@ -103,7 +104,7 @@ const addBicycleLogLayer = (map: maplibregl.Map) => {
     type: 'line',
     source: BICYCLE_LOG_SOURCE_ID,
     paint: {
-      'line-color': BICYCLE_LOG_LINE_COLOR_EXPRESSION as unknown as string,
+      'line-color': BICYCLE_LOG_LINE_COLOR_EXPRESSION,
       'line-width': BICYCLE_LOG_LINE_WIDTH
     }
   });

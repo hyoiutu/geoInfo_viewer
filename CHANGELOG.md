@@ -14,6 +14,20 @@
 
 ## 変更履歴
 
+### [2026-07-12] PR #16のレビュー対応としてMapViewのas unknown asキャストを正しい型定義へ置き換えた
+* **修正の動機・概要**:
+  - PR #16のレビューで、`MapView.tsx`のline-color式に使っていた`as unknown as string`キャストについて「型システムを迂回する強制キャストは絶対禁止。JSON.stringifyなど使えないか」との指摘を受けた。
+  - 調査の結果、MapLibreの式(expression)の型`ExpressionSpecification`は`maplibre-gl`自体からは再エクスポートされていないが、その依存先である`@maplibre/maplibre-gl-style-spec`が公開していることが分かった。同パッケージをdevDependenciesに明示的に追加し、`BICYCLE_LOG_LINE_COLOR_EXPRESSION`の型注釈として使うことで、キャストなしで`case`式の配列リテラルが正しく型チェックされることを確認した。
+  - 今後同様の「ライブラリの型が期待と合わない」状況で安易にキャストへ逃げないよう、rules.mdに「transitive dependencyが公開する型を探す」「型注釈でコンテキスト型を与える」という具体的な回避手順を追記した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/package.json`・`pnpm-lock.yaml`: `@maplibre/maplibre-gl-style-spec`をdevDependenciesに追加。
+    - `frontend/src/components/MapView.tsx`: `BICYCLE_LOG_LINE_COLOR_EXPRESSION`に`ExpressionSpecification`型注釈を付け、`as unknown as string`キャストを削除。
+    - `rules.md`: 「anyやas（型キャスト）は原則使用しない」節に、`as unknown as T`の強制キャストを例外なく禁止する旨と、キャストに逃げる前に試すべき2つの回避手順を追記。
+    - 単体テスト（フロントエンド112件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（型定義の修正であり機能仕様に影響しないため）。
+
 ### [2026-07-12] PR #16のレビュー対応として自転車ログ強制再取得ボタンを追加した
 * **修正の動機・概要**:
   - PR #16（Issue #15対応）のレビューで、獲得標高・経過時間フィールド追加時に既存629件がデフォルト値0になった問題を解消できるよう、「detail_fetched_atの状態にかかわらず既存全アクティビティを強制的に再取得するボタン」の追加依頼を受けた。
