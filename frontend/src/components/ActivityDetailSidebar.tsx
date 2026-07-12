@@ -21,12 +21,18 @@ type ActivityDetailSidebarProps = {
   onBackFromList: () => void;
 };
 
+/** ActivityListのprops */
+type ActivityListProps = {
+  /** 選択中のアクティビティ一覧（クリックした順。selectedIdsと1:1で対応する） */
+  activities: CyclingActivity[];
+  /** 一覧の項目がクリックされたときに呼ばれるコールバック */
+  onFocus: (index: number) => void;
+  /** 一覧画面の戻るボタンが押されたときに呼ばれるコールバック */
+  onBackFromList: () => void;
+};
+
 /** 走行開始日時一覧（一覧画面）を表示する */
-const ActivityList = ({
-  activities,
-  onFocus,
-  onBackFromList
-}: Pick<ActivityDetailSidebarProps, 'activities' | 'onFocus' | 'onBackFromList'>) => (
+const ActivityList = ({ activities, onFocus, onBackFromList }: ActivityListProps) => (
   <Flex direction="column" gap="3">
     <Button onClick={onBackFromList} size="sm" variant="ghost" alignSelf="flex-start">
       {BACK_BUTTON_LABEL}
@@ -40,14 +46,16 @@ const ActivityList = ({
   </Flex>
 );
 
-/** フォーカス中のアクティビティの詳細（詳細画面）を表示する */
-const ActivityDetail = ({
-  activity,
-  onBackFromDetail
-}: {
+/** ActivityDetailのprops */
+type ActivityDetailProps = {
+  /** フォーカス中のアクティビティ */
   activity: CyclingActivity;
+  /** 詳細画面の戻るボタンが押されたときに呼ばれるコールバック */
   onBackFromDetail: () => void;
-}) => {
+};
+
+/** フォーカス中のアクティビティの詳細（詳細画面）を表示する */
+const ActivityDetail = ({ activity, onBackFromDetail }: ActivityDetailProps) => {
   const view = toActivityDetailView(activity);
 
   return (
