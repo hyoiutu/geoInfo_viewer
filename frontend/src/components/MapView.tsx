@@ -39,7 +39,7 @@ const VISIBLE_VALUE = 'visible';
 const HIDDEN_VALUE = 'none';
 const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] };
 // 自転車ログの線は太さ3pxと細く正確なクリックが難しいため、クリック地点を中心とした
-// 10px四方(片側5px)のバウンディングボックスでヒットテストする（設計判断・要確認）
+// 10px四方(片側5px)のバウンディングボックスでヒットテストする
 const HIT_TEST_RADIUS_PX = 5;
 const BICYCLE_LOG_LINE_COLOR_EXPRESSION = [
   'case',
@@ -102,7 +102,6 @@ const addBicycleLogLayer = (map: maplibregl.Map) => {
     id: BICYCLE_LOG_LAYER_ID,
     type: 'line',
     source: BICYCLE_LOG_SOURCE_ID,
-    // style-specの式の型は複雑なタプル型のため厳密に一致させづらく、ここではキャストで回避する（設計判断・要確認）
     paint: {
       'line-color': BICYCLE_LOG_LINE_COLOR_EXPRESSION as unknown as string,
       'line-width': BICYCLE_LOG_LINE_WIDTH
