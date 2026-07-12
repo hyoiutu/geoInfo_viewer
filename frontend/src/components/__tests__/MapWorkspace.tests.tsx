@@ -37,8 +37,24 @@ vi.mock('maplibre-gl', () => {
   const addSource = vi.fn();
   const addLayer = vi.fn();
   const setLayoutProperty = vi.fn();
+  const setData = vi.fn();
+  const getSource = vi.fn(() => ({ setData }));
+  const on = vi.fn();
+  const queryRenderedFeatures = vi.fn(() => []);
+  const setFeatureState = vi.fn();
   const MapMock = vi.fn().mockImplementation(function MockMap() {
-    return { remove, once, getStyle, addSource, addLayer, setLayoutProperty };
+    return {
+      remove,
+      once,
+      getStyle,
+      addSource,
+      addLayer,
+      setLayoutProperty,
+      getSource,
+      on,
+      queryRenderedFeatures,
+      setFeatureState
+    };
   });
   // biome-ignore lint/style/useNamingConvention: maplibre-glの実APIに合わせクラス名(Map)をPascalCaseのまま公開する
   return { default: { Map: MapMock } };

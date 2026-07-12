@@ -14,6 +14,27 @@
 
 ## 変更履歴
 
+### [2026-07-12] GitHub Issue #15としてアクティビティ詳細閲覧機能を実装した
+* **修正の動機・概要**:
+  - 地図上の自転車ログをクリックして選択し、詳細（走行距離・獲得標高・開始/終了日時・平均時速）を閲覧できるようにしてほしいという依頼（Issue #15）。自律モードで対応し、判断が必要な箇所はコード中に`// 設計判断（要確認）`コメントを残した。
+  - 平均時速・走行終了日時の算出、獲得標高の表示には、これまでDBに保存していなかったStravaの`elapsed_time`（経過時間）・`total_elevation_gain`（獲得標高）が必要だったため、データモデル全体（Strava型・Entity・DTO・マッピング処理）に追加した（先行コミット、2026-07-12 `6147e99`）。既存629件は暫定的にデフォルト値0になるため、マイグレーションファイルに設計判断コメントを記載した。
+  - フロントエンドは、選択状態・フォーカス状態を管理する`useActivitySelection`フック、表示用に整形する`activityDetailView`ユーティリティ、一覧⇔詳細を切り替える`ActivityDetailSidebar`コンポーネントを新設し、`MapView`にクリックによるヒットテスト・MapLibreのfeature-stateによる線の色分けを実装した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/strava/types/strava-activity.type.ts`・`activities/entities/cycling-activity.entity.ts`・`activities/cycling-activity-entity.util.ts`・`activities/cycling-activity-dto.util.ts`・`activities/types/cycling-activity.dto.ts`: `elapsed_time`/`total_elevation_gain`（Strava側）・`elapsedTimeSeconds`/`elevationGainMeters`（Entity/DTO側）を追加。
+    - `backend/src/migrations/1720600000000-AddElevationGainAndElapsedTimeToCyclingActivities.ts`（新規）: 上記2列を`NOT NULL DEFAULT 0`で追加するマイグレーション。実DB（dev docker-compose）に適用し動作確認済み。
+    - `frontend/src/hooks/useActivitySelection.ts`（新規）: 選択中ID一覧（クリック順、重複可）とフォーカス中インデックスを管理するフック。
+    - `frontend/src/utils/activityDetailView.ts`（新規）: `CyclingActivity`を詳細表示用の整形済み文字列に変換するユーティリティ。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`（新規）: 選択中アクティビティの一覧画面・詳細画面を切り替えて表示する右サイドバー。
+    - `frontend/src/components/MapView.tsx`: 自転車ログレイヤーのクリックを検出し、クリック地点±5pxのバウンディングボックスでヒットテストして`onSelectActivities`を呼ぶ処理を追加。GeoJSONソースに`promoteId: 'id'`を設定し、`setFeatureState`で選択・フォーカス状態を反映、`line-color`をfeature-state参照の`case`式に変更（通常/選択/フォーカスの3色）。
+    - `frontend/src/components/MapWorkspace.tsx`: `useActivitySelection`と`ActivityDetailSidebar`を配線。
+    - `frontend/src/constants/bicycleLog.ts`: 単一の`BICYCLE_LOG_LINE_COLOR`（Strava橙 `#fc4c02`）を、状態別の3定数（通常:赤`#e53e3e`・選択:青`#3182ce`・フォーカス:紫`#805ad5`）に置き換え。
+    - `electron/tests/fixtures/activities.js`・`electron/tests/support/mock-strava-server.js`: E2E用フィクスチャ・モックサーバーに新規必須フィールド（`elapsed_time`/`total_elevation_gain`）を追加。
+    - 単体テスト（バックエンド80件・フロントエンド105件）・lint・typecheckは全てGreen。E2Eテストはローカル環境でポート3000が開発用（実Strava接続の）バックエンドプロセスに占有されておりE2E用バックエンドを起動できず未検証（`app.spec.ts`・`aerial-photo.spec.ts`の2件は影響を受けず実行しGreenを確認）。マージ前にポートが空いた状態での再実行が必要。
+    - 地図クリックによる選択・フォーカス・詳細表示フローを検証するE2Eシナリオの追加は今回スコープ外とした（設計判断・要確認、CHANGELOG記載により明示）。
+  * **README.md**: 変更なし（アプリの操作手順の詳細は記載しておらず、セットアップ手順に影響が無いため）。
+  * **仕様書**: `specs/system_specification.md`に「アクティビティ詳細閲覧機能」節を新設し、クリック選択・ヒットテストの範囲・一覧/詳細画面の切り替え・feature-stateによる色分けの仕様を記載。
+
 ### [2026-07-11] PR #13のレビュー対応としてSwaggerレスポンス型のルールを正式化した
 * **修正の動機・概要**:
   - PR #13（Issue #7対応）のレビューで3点の指摘・依頼を受けた。(1) `type`→`class`変換について、一時的な例外ではなく「レスポンスに使う型はclassにする」という正式なルールにし、各ファイルの説明コメントは削除してよい。(2) 先祖ブランチ（Issue #4〜#6のレビュー対応等）の変更を取り込んだ後、Swaggerの適用漏れが無いかチェックすること。(3) Swagger UI（APIの一覧）の見方がREADME.mdに書かれていない。

@@ -10,6 +10,8 @@ describe('cyclingActivityToGeoJsonに関するテスト', () => {
         name: 'ライド1',
         distanceMeters: 1000,
         movingTimeSeconds: 600,
+        elapsedTimeSeconds: 650,
+        elevationGainMeters: 50,
         startDate: '2026-07-01T00:00:00Z',
         path: [
           [139.767125, 35.681236],
@@ -45,6 +47,8 @@ describe('cyclingActivityToGeoJsonに関するテスト', () => {
         name: 'GPSデータなし',
         distanceMeters: 0,
         movingTimeSeconds: 0,
+        elapsedTimeSeconds: 0,
+        elevationGainMeters: 0,
         startDate: '2026-07-01T00:00:00Z',
         path: null
       }

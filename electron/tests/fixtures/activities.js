@@ -69,6 +69,8 @@ function createFixtureActivity({ id, name, startDate, encodedRoute = ENCODED_ROU
     type: 'Ride',
     distance: 12345.6,
     moving_time: 3600,
+    elapsed_time: 3900,
+    total_elevation_gain: 120.5,
     start_date: startDate,
     map: {
       summary_polyline: encodedRoute,
