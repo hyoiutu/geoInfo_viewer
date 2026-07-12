@@ -10,8 +10,12 @@ export type StravaActivity = {
   type: string;
   /** 走行距離（メートル） */
   distance: number;
-  /** 走行時間（秒） */
+  /** 走行時間（秒、停止時間を含まない） */
   moving_time: number;
+  /** 経過時間（秒、停止時間を含む。開始日時に加算すると終了日時になる） */
+  elapsed_time: number;
+  /** 獲得標高（メートル） */
+  total_elevation_gain: number;
   /** 開始日時（ISO 8601形式の文字列） */
   start_date: string;
   /** 経路情報 */
@@ -34,8 +38,12 @@ export type StravaActivityDetail = {
   type: string;
   /** 走行距離（メートル） */
   distance: number;
-  /** 走行時間（秒） */
+  /** 走行時間（秒、停止時間を含まない） */
   moving_time: number;
+  /** 経過時間（秒、停止時間を含む。開始日時に加算すると終了日時になる） */
+  elapsed_time: number;
+  /** 獲得標高（メートル） */
+  total_elevation_gain: number;
   /** 開始日時（ISO 8601形式の文字列） */
   start_date: string;
   /** 経路情報 */

@@ -31,6 +31,8 @@ const mapBaseFields = (
   entity.name = activity.name;
   entity.distanceMeters = activity.distance;
   entity.movingTimeSeconds = activity.moving_time;
+  entity.elapsedTimeSeconds = activity.elapsed_time;
+  entity.elevationGainMeters = activity.total_elevation_gain;
   entity.startDate = new Date(activity.start_date);
   return entity;
 };

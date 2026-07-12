@@ -1,16 +1,19 @@
 import { Flex } from '@chakra-ui/react';
 import { useCallback, useState } from 'react';
+import type { CyclingActivity } from '../api/activitiesApi';
 import { LAYER_DEFINITIONS } from '../constants/layerDefinitions';
+import { useActivitySelection } from '../hooks/useActivitySelection';
 import { useBackfillStatus } from '../hooks/useBackfillStatus';
 import { useLayerVisibility } from '../hooks/useLayerVisibility';
 import type { AppErrorInfo } from '../types/apiError';
+import { ActivityDetailSidebar } from './ActivityDetailSidebar';
 import { ErrorDialog } from './ErrorDialog';
 import { LayerSidebar } from './LayerSidebar';
 import { MapView } from './MapView';
 
 /**
  * サイドバー・地図・エラーダイアログを組み合わせたアプリのメイン画面。
- * レイヤーの表示状態・初期取り込み進捗・エラー状態をここで一元管理し、各コンポーネントへpropsとして渡す
+ * レイヤーの表示状態・初期取り込み進捗・エラー状態・アクティビティの選択状態をここで一元管理し、各コンポーネントへpropsとして渡す
  */
 export const MapWorkspace = () => {
   const { visibility, toggleLayer } = useLayerVisibility();
@@ -23,7 +26,15 @@ export const MapWorkspace = () => {
   const dismissError = useCallback((index: number) => {
     setErrors((current) => current.filter((_, currentIndex) => currentIndex !== index));
   }, []);
-  const { backfillStatus, start: startBackfill } = useBackfillStatus(addError);
+  const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus(addError);
+  const [activities, setActivities] = useState<CyclingActivity[]>([]);
+  const { selectedIds, focusedIndex, selectActivities, focusActivity, clearFocus, clearSelection } =
+    useActivitySelection();
+  // selectedIds（クリック順・重複可）と1:1で対応するアクティビティ一覧をサイドバー表示用に組み立てる
+  const selectedActivities = selectedIds
+    .map((id) => activities.find((activity) => activity.id === id))
+    .filter((activity): activity is CyclingActivity => activity !== undefined);
+  const focusedId = focusedIndex === null ? null : (selectedIds[focusedIndex] ?? null);
 
   const layers = LAYER_DEFINITIONS.map((layerDefinition) => ({
     id: layerDefinition.id,
@@ -40,8 +51,25 @@ export const MapWorkspace = () => {
         onStartBackfill={() => {
           void startBackfill();
         }}
+        onStartForceRefetch={() => {
+          void startForceRefetch();
+        }}
       />
-      <MapView layerVisibility={visibility} onError={addError} />
+      <MapView
+        layerVisibility={visibility}
+        onError={addError}
+        selectedIds={selectedIds}
+        focusedId={focusedId}
+        onSelectActivities={selectActivities}
+        onActivitiesLoaded={setActivities}
+      />
+      <ActivityDetailSidebar
+        activities={selectedActivities}
+        focusedIndex={focusedIndex}
+        onFocus={focusActivity}
+        onBackFromDetail={clearFocus}
+        onBackFromList={clearSelection}
+      />
       <ErrorDialog errors={errors} onDismiss={dismissError} />
     </Flex>
   );

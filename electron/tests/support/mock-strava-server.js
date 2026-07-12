@@ -47,6 +47,8 @@ const toSummary = (activity) => ({
   type: activity.type,
   distance: activity.distance,
   moving_time: activity.moving_time,
+  elapsed_time: activity.elapsed_time,
+  total_elevation_gain: activity.total_elevation_gain,
   start_date: activity.start_date,
   map: { summary_polyline: activity.map.summary_polyline }
 });

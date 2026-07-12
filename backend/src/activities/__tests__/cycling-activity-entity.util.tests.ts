@@ -10,6 +10,8 @@ const createActivity = (overrides: Partial<StravaActivity>): StravaActivity => (
   type: 'Ride',
   distance: 12345.6,
   moving_time: 3600,
+  elapsed_time: 3900,
+  total_elevation_gain: 250.5,
   start_date: '2026-07-01T00:00:00Z',
   map: { summary_polyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' },
   ...overrides
@@ -21,6 +23,8 @@ const createActivityDetail = (overrides: Partial<StravaActivityDetail>): StravaA
   type: 'Ride',
   distance: 12345.6,
   moving_time: 3600,
+  elapsed_time: 3900,
+  total_elevation_gain: 250.5,
   start_date: '2026-07-01T00:00:00Z',
   map: { summary_polyline: '', polyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' },
   ...overrides
@@ -36,6 +40,8 @@ describe('toPlaceholderCyclingActivityEntityに関するテスト', () => {
     expect(entity.name).toBe('テストライド');
     expect(entity.distanceMeters).toBe(12345.6);
     expect(entity.movingTimeSeconds).toBe(3600);
+    expect(entity.elapsedTimeSeconds).toBe(3900);
+    expect(entity.elevationGainMeters).toBe(250.5);
     expect(entity.startDate).toEqual(new Date('2026-07-01T00:00:00Z'));
   });
 
@@ -66,6 +72,8 @@ describe('toCyclingActivityEntityFromDetailに関するテスト', () => {
     expect(entity.name).toBe('テストライド');
     expect(entity.distanceMeters).toBe(12345.6);
     expect(entity.movingTimeSeconds).toBe(3600);
+    expect(entity.elapsedTimeSeconds).toBe(3900);
+    expect(entity.elevationGainMeters).toBe(250.5);
     expect(entity.startDate).toEqual(new Date('2026-07-01T00:00:00Z'));
   });
 

@@ -14,9 +14,17 @@ export class CyclingActivityDto {
   @ApiProperty({ description: '走行距離（メートル）' })
   distanceMeters!: number;
 
-  /** 走行時間（秒） */
-  @ApiProperty({ description: '走行時間（秒）' })
+  /** 走行時間（秒、停止時間を含まない） */
+  @ApiProperty({ description: '走行時間（秒、停止時間を含まない）' })
   movingTimeSeconds!: number;
+
+  /** 経過時間（秒、停止時間を含む。開始日時に加算すると終了日時になる） */
+  @ApiProperty({ description: '経過時間（秒、停止時間を含む。開始日時に加算すると終了日時になる）' })
+  elapsedTimeSeconds!: number;
+
+  /** 獲得標高（メートル） */
+  @ApiProperty({ description: '獲得標高（メートル）' })
+  elevationGainMeters!: number;
 
   /** 開始日時（ISO 8601形式の文字列） */
   @ApiProperty({ description: '開始日時（ISO 8601形式の文字列）' })

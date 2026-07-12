@@ -14,6 +14,8 @@ const createActivity = (overrides: Partial<StravaActivity>): StravaActivity => (
   type: 'Ride',
   distance: 1000,
   moving_time: 600,
+  elapsed_time: 650,
+  total_elevation_gain: 50,
   start_date: '2026-07-01T00:00:00Z',
   map: { summary_polyline: '' },
   ...overrides
@@ -25,6 +27,8 @@ const createActivityDetail = (overrides: Partial<StravaActivityDetail>): StravaA
   type: 'Ride',
   distance: 1000,
   moving_time: 600,
+  elapsed_time: 650,
+  total_elevation_gain: 50,
   start_date: '2026-07-01T00:00:00Z',
   map: { summary_polyline: '', polyline: '' },
   ...overrides
@@ -46,7 +50,10 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     find: ReturnType<typeof vi.fn>;
     save: ReturnType<typeof vi.fn>;
     count: ReturnType<typeof vi.fn>;
+    createQueryBuilder: ReturnType<typeof vi.fn>;
   };
+  let queryBuilderExecute: ReturnType<typeof vi.fn>;
+  let queryBuilderSet: ReturnType<typeof vi.fn>;
 
   // find()はfetchAndSavePlaceholders内の既存ID確認（引数無し）と、
   // runBackfill内の未取得分取得（where: detailFetchedAt IsNull）の2種類の呼ばれ方をする。
@@ -92,10 +99,15 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     fetchAllCyclingActivities = vi.fn().mockResolvedValue([]);
     fetchCyclingActivityDetail = vi.fn().mockResolvedValue(createActivityDetail({}));
     getIntervalMs = vi.fn().mockReturnValue(9000);
+    queryBuilderExecute = vi.fn().mockResolvedValue(undefined);
+    queryBuilderSet = vi.fn().mockReturnValue({ execute: queryBuilderExecute });
     cyclingActivityRepository = {
       find: vi.fn().mockResolvedValue([]),
       save: vi.fn(),
-      count: vi.fn().mockResolvedValue(0)
+      count: vi.fn().mockResolvedValue(0),
+      createQueryBuilder: vi.fn().mockReturnValue({
+        update: vi.fn().mockReturnValue({ set: queryBuilderSet })
+      })
     };
   });
 
@@ -268,6 +280,87 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(2);
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(3);
       expect(fetchCyclingActivityDetail).not.toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('startForceRefetch', () => {
+    test('未実行の場合、started:trueを返しisRunningがtrueになる', async () => {
+      fetchCyclingActivityDetail.mockReturnValue(new Promise(() => {}));
+      cyclingActivityRepository.find.mockResolvedValue([
+        Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null })
+      ]);
+      const service = await createService();
+
+      const result = await service.startForceRefetch();
+
+      expect(result).toEqual({ started: true });
+      expect(service.isRunning()).toBe(true);
+    });
+
+    test('既に初期取り込み(start)が実行中の場合、started:falseを返す（isRunningガードを共有する）', async () => {
+      fetchAllCyclingActivities.mockReturnValue(new Promise(() => {}));
+      const service = await createService();
+      await service.start();
+
+      const result = await service.startForceRefetch();
+
+      expect(result).toEqual({ started: false });
+    });
+
+    test('既にstartForceRefetchが実行中の場合、startはstarted:falseを返す（isRunningガードを共有する）', async () => {
+      fetchCyclingActivityDetail.mockReturnValue(new Promise(() => {}));
+      cyclingActivityRepository.find.mockResolvedValue([
+        Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null })
+      ]);
+      const service = await createService();
+      await service.startForceRefetch();
+
+      const result = await service.start();
+
+      expect(result).toEqual({ started: false });
+    });
+
+    test('全アクティビティのdetailFetchedAtをnullにリセットしてから、詳細を再取得する', async () => {
+      cyclingActivityRepository.find.mockResolvedValue([
+        Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null }),
+        Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null })
+      ]);
+      fetchCyclingActivityDetail.mockImplementation((id: number) => Promise.resolve(createActivityDetail({ id })));
+      const service = await createService();
+
+      await service.startForceRefetch();
+      await flushMicrotasks();
+
+      expect(queryBuilderSet).toHaveBeenCalledWith({ detailFetchedAt: null });
+      expect(queryBuilderExecute).toHaveBeenCalled();
+      expect(fetchAllCyclingActivities).not.toHaveBeenCalled();
+      expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(1);
+      expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(2);
+    });
+
+    test('完了後にisRunningがfalseに戻る', async () => {
+      const service = await createService();
+
+      await service.startForceRefetch();
+      await flushMicrotasks();
+
+      expect(service.isRunning()).toBe(false);
+    });
+
+    test('詳細API取得中にエラーが発生した場合、getStatus()のlastErrorに記録される', async () => {
+      cyclingActivityRepository.find.mockResolvedValue([
+        Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null })
+      ]);
+      fetchCyclingActivityDetail.mockRejectedValue(new Error('Strava API error'));
+      const service = await createService();
+
+      await service.startForceRefetch();
+      await flushMicrotasks();
+      const status = await service.getStatus();
+
+      expect(status.lastError).toEqual(
+        expect.objectContaining({ errorCode: 'INTERNAL_ERROR', message: 'Strava API error' })
+      );
     });
   });
 

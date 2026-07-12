@@ -4,7 +4,8 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 import { setupSwagger } from './swagger.config';
 
-const PORT = 3000;
+const DEFAULT_PORT = 3000;
+const PORT = Number(process.env.PORT) || DEFAULT_PORT;
 
 /** NestJSアプリケーションを起動する */
 const bootstrap = async () => {

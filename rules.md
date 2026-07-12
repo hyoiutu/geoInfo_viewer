@@ -98,6 +98,10 @@ const data: User = fetchedData;
 const user: User = { id: 1, name: "name" };
 ```
 
+`as unknown as T`のように型システムを迂回して無理やりキャストすることは、原則・例外を問わずいかなる場合も禁止する。「正しい型を見つけるのが面倒／複雑に見える」ことはキャストを正当化する理由にならない。型が合わないと感じた場合は、次の手順で正しい型を特定してから使うこと。
+- ライブラリが提供する型が期待と違う場合、そのライブラリが依存する別パッケージ（transitive dependency）が本来の型を公開していないか確認する（例: `maplibre-gl`の式(expression)の型は`maplibre-gl`自身からは再エクスポートされていないが、依存先の`@maplibre/maplibre-gl-style-spec`が`ExpressionSpecification`等として公開している）。見つかった場合はそのパッケージをdevDependenciesに明示的に追加してimportする。
+- 配列・タプルリテラルがユニオン型に一致しないというエラーが出る場合、変数宣言に型注釈を付けて「期待される型」をTypeScriptに伝える（コンテキスト型を与える）ことで解消できることが多い。キャストの前に必ず試すこと。
+
 # ||ではなく??（Null合体演算子）を使用する
 
 NG
@@ -155,6 +159,8 @@ NestJSのコントローラーメソッドが返す型（DTO）は、`@nestjs/sw
 限定された文字列・数値の集合を取りうるプロパティ（例: `errorCode`のようなUnion型）は、`@ApiProperty()`に`enum`オプションを付与し、取りうる値をSwagger上でも確認できるようにすること。
 
 他ブランチの変更（他Issue対応・レビュー対応等）をマージ・rebaseで取り込んだ際は、新たに追加・変更されたレスポンス型に`@ApiProperty()`の付与漏れが無いか確認すること。マージ作業を終えたら、`nest build`後にバックエンドを実際に起動し`/api-json`のレスポンスで該当スキーマ（`components.schemas`）の中身が空になっていないか確認するのが確実。
+
+**例外: 既存の`interface`へ宣言をマージ(declaration merging)する必要がある場合は`interface`を使う。** `type`エイリアスは宣言のマージができないため、代替できない（例: `frontend/src/vite-env.d.ts`の`ImportMetaEnv`は、Viteが`vite/client`の型定義で宣言した`interface ImportMetaEnv`に独自の環境変数プロパティをマージするために`interface`を使う必要がある）。biomeの`useConsistentTypeDefinitions`警告が出るため、該当箇所には理由を示す`biome-ignore`コメントを付けること。
 
 # 三項演算子はネストしない
 
@@ -1105,6 +1111,7 @@ const fetchActivityDetail = (activityId: number, options: FetchActivityDetailOpt
 - 引数・戻り値が**オブジェクト型の場合**は、インライン（`{ a: number; b: string }`のような直書き）のままにせず、名前付きの`type`として抽出し、各プロパティに対して個別にTSDocを書くこと。関数本体側は`@param`/`@returns`でプロパティ単位の説明を書き並べない（NG例のように「かっこ書きで列挙」しない）。
 - 抽出した型の命名は、関数名を接頭辞にした`<関数名>Params`/`<関数名>Result`のような、他の型と衝突しない具体的な名前にする。
 - Reactコンポーネント（`export const Foo = (props: FooProps) => {...}`）も関数の一種として扱い、コンポーネント自体の役割を1行のTSDocで説明する（個々のJSX要素にはTSDocを書かない）。
+- **1つのファイルに複数のコンポーネントを定義する場合、ファイル外へexportしないローカルな子コンポーネントも例外なく本ルールの対象とする。** 子コンポーネントのpropsを`Pick<親のProps, '...'>`のように親のProps型から直接切り出して関数シグネチャにインラインで書いたり、リテラルのオブジェクト型をそのまま書いたりせず、子コンポーネント自身の名前を冠した独立した`type`（例: `ActivityListProps`）として抽出し、各プロパティにTSDocを書くこと。親のProps型のフィールドと説明文が重複しても構わない（両者は将来別々に変化しうる独立した型のため）。
 
 ---
 

@@ -13,7 +13,7 @@
     "build": "pnpm run build:renderer && pnpm run build:electron",
     "start": "pnpm run build && electron .",
     "test:unit": "pnpm --filter frontend test:unit && pnpm --filter backend test:unit",
-    "test:e2e": "pnpm run build && playwright test",
+    "test:e2e": "cross-env VITE_BACKEND_BASE_URL=http://localhost:3100 pnpm run build && playwright test",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "typecheck": "pnpm --filter frontend typecheck && pnpm --filter backend typecheck && tsc -p tsconfig.electron.json --noEmit",

@@ -1,6 +1,7 @@
 import { Controller, Get, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import {
+  ACTIVITIES_BACKFILL_FORCE_REFETCH_ROUTE,
   ACTIVITIES_BACKFILL_ROUTE,
   ACTIVITIES_BACKFILL_STATUS_ROUTE,
   ACTIVITIES_ROUTE,
@@ -45,5 +46,11 @@ export class ActivitiesController {
   @Get(ACTIVITIES_BACKFILL_STATUS_ROUTE)
   getBackfillStatus(): Promise<BackfillStatus> {
     return this.activitiesBackfillService.getStatus();
+  }
+
+  /** POST /activities/backfill/force-refetch: 既存全アクティビティの詳細を強制的に再取得する */
+  @Post(ACTIVITIES_BACKFILL_FORCE_REFETCH_ROUTE)
+  startForceRefetch(): Promise<BackfillStartResult> {
+    return this.activitiesBackfillService.startForceRefetch();
   }
 }

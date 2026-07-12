@@ -34,6 +34,7 @@ const renderSidebar = (overrides: Partial<Parameters<typeof LayerSidebar>[0]> = 
       onToggleLayer={vi.fn()}
       backfillStatus={NOT_RUNNING_BACKFILL_STATUS}
       onStartBackfill={vi.fn()}
+      onStartForceRefetch={vi.fn()}
       {...overrides}
     />
   );
@@ -129,5 +130,32 @@ describe('LayerSidebarに関するテスト', () => {
     const { queryByText } = renderSidebar({ backfillStatus: NOT_RUNNING_BACKFILL_STATUS });
 
     expect(queryByText(/%/)).not.toBeInTheDocument();
+  });
+
+  test('レイヤー一覧の下に強制再取得ボタンが表示される', () => {
+    const { getByRole } = renderSidebar();
+
+    expect(getByRole('button', { name: '自転車ログ強制再取得' })).toBeInTheDocument();
+  });
+
+  test('強制再取得ボタンをクリックすると、onStartForceRefetchが呼ばれる', () => {
+    const onStartForceRefetch = vi.fn();
+    const { getByRole } = renderSidebar({ onStartForceRefetch });
+
+    fireEvent.click(getByRole('button', { name: '自転車ログ強制再取得' }));
+
+    expect(onStartForceRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('初期取り込みが実行中でない場合、強制再取得ボタンはdisabledではない', () => {
+    const { getByRole } = renderSidebar({ backfillStatus: NOT_RUNNING_BACKFILL_STATUS });
+
+    expect(getByRole('button', { name: '自転車ログ強制再取得' })).not.toBeDisabled();
+  });
+
+  test('初期取り込みが実行中の場合、強制再取得ボタンもdisabledになる（isRunningガードを共有するため）', () => {
+    const { getByRole } = renderSidebar({ backfillStatus: RUNNING_BACKFILL_STATUS });
+
+    expect(getByRole('button', { name: '自転車ログ強制再取得' })).toBeDisabled();
   });
 });

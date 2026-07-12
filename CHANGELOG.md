@@ -14,6 +14,101 @@
 
 ## 変更履歴
 
+### [2026-07-13] PR #16のレビュー対応としてActivityDetailSidebarの子コンポーネントにTSDocを補った
+* **修正の動機・概要**:
+  - PR #16のレビューで、`ActivityDetailSidebar.tsx`内の子コンポーネント`ActivityList`・`ActivityDetail`のTSDoc情報が不足している（`ActivityDetail`はpropsをリテラルのオブジェクト型のまま、`ActivityList`は親のProps型から`Pick<...>`で直接切り出して使っており、どちらも独立した名前付き`type`として抽出されていなかった）との指摘を受けた。加えて、他に同様の状態のファイルが無いか確認するよう依頼された。
+  - `rules.md`の「テスト以外の全ての関数にTSDocを書く」ルールは元々「オブジェクト型の引数は名前付きtypeとして抽出」を求めていたが、1ファイルに複数コンポーネントがある場合の子コンポーネントへの適用が曖昧だったため、明確化した。
+  - 他のファイルも確認したが、複数コンポーネントを1ファイルに定義しているのは`ActivityDetailSidebar.tsx`のみで、他に同様の問題は無かった。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: `ActivityList`・`ActivityDetail`それぞれに`ActivityListProps`・`ActivityDetailProps`という独立した名前付き型を追加し、各プロパティにTSDocを付与。
+    - `rules.md`: 「1つのファイルに複数のコンポーネントを定義する場合、exportしない子コンポーネントも本ルールの対象とする」旨を明記。
+    - 単体テスト（フロントエンド114件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（コードのドキュメンテーション整備でありアプリの機能仕様には影響しないため）。
+
+### [2026-07-13] PR #16のレビュー対応としてアクティビティ選択・フォーカスの仕様を修正した
+* **修正の動機・概要**:
+  - PR #16の動作確認で、Issue #15の仕様に記載していなかった5点の修正依頼を受けた。(1) 選択中・フォーカス中のアクティビティが他より手前に描画されるようにする。選択中同士は通し番号の降順（＝最後にクリックしたものが最前面）で描画する。(2) 選択済みの状態で別の箇所をクリックすると、既存の選択を解除して新たな選択に置き換える（累積しない）。(3) フォーカス中は地図クリックによる選択操作を無効化する。(4) 選択数が多くウィンドウ高さを超える場合、右サイドバー内のみスクロールする。
+  - (1)について、「通し番号の降順」の具体的な向き（最大番号が最前面か最背面か）が曖昧だったためユーザーに確認し、「最後にクリックした（最大の通し番号）ものが最前面」で合意した。MapLibreの単一line層には描画順を制御する仕組みが無いため、通常・選択・フォーカスの3つを独立したGeoJSONソース・レイヤーに分離し、レイヤーを追加した順（＝描画順）で手前関係を実現する方式に変更した。これに伴い、前回導入したfeature-state（`case`式によるline-color切り替え）は不要になったため削除し、`@maplibre/maplibre-gl-style-spec`への依存も撤去した。
+  - (2)は`useActivitySelection.selectActivities`を「既存配列への追加」から「置き換え」に変更するだけで対応できた。(3)によりフォーカス中は選択変更ができなくなるため、(2)の置き換えロジックにフォーカス中の考慮は不要（フォーカス中はそもそもクリックが無視される）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/constants/bicycleLog.ts`: 選択用・フォーカス用のソースID・レイヤーIDを追加。
+    - `frontend/src/components/MapView.tsx`: `addBicycleLogLayer`が3つのソース・レイヤー（通常・選択・フォーカス）を追加するよう変更。feature-state関連のコード（`applyActivitySelectionState`・`promoteId`・`ExpressionSpecification`）を削除し、`applySelectionLayers`（選択用・フォーカス用レイヤーのGeoJSONデータを再構築する関数）に置き換え。クリックハンドラはフォーカス中（`focusedIdRef.current !== null`）の場合は`queryRenderedFeatures`自体を呼ばず早期リターンするよう変更。
+    - `frontend/src/hooks/useActivitySelection.ts`: `selectActivities`を`setSelectedIds((current) => [...current, ...ids])`から`setSelectedIds(ids)`（置き換え）に変更。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: ルートの`Box`に`minHeight={0}`・`overflowY="auto"`を追加し、内容がウィンドウ高さを超える場合にサイドバー内でスクロールするよう変更。
+    - `frontend/package.json`・`pnpm-lock.yaml`: 不要になった`@maplibre/maplibre-gl-style-spec`を削除。
+    - 単体テスト（フロントエンド114件）・lint・typecheck・E2Eテスト4件は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「アクティビティ詳細閲覧機能」に、選択の置き換え仕様・フォーカス中のクリック無効化・描画の手前関係（3レイヤー構成・通し番号降順）・サイドバーの内部スクロールを追記。
+
+### [2026-07-12] PR #16のレビュー対応としてE2Eテストのバックエンドポート衝突を解消した
+* **修正の動機・概要**:
+  - PR #16のレビューで「E2Eテストをスキップしないでほしい。ポートが占有されないようE2Eテストのポートをずらせないか」との指摘を受けた。PR作成時点では開発用バックエンド（`nest start --watch`、3000番ポート、実Strava接続・実DB）がローカルで常駐していたため、Playwrightの`webServer`（`reuseExistingServer: !process.env.CI`）がこれを「起動済みのE2E用サーバー」として誤って再利用してしまい、E2E向けのモックStrava・E2E専用DBへの向き先設定が一切適用されないままテストが実行され、バックフィルボタンの状態確認に失敗する事故が発生していた。
+  - 開発用バックエンドとE2E用バックエンドが同じポート（3000番）を取り合う構造そのものが根本原因のため、E2E用バックエンドを別ポート（3100番）で起動するようにした。バックエンドのポート・フロントエンドの接続先URLをどちらも環境変数で上書き可能にし、`playwright.config.ts`・ルートの`test:e2e`スクリプトからそれぞれ3100番を指定する。
+  - 修正後、開発用バックエンド（3000番、実データ629件）を起動したままの状態で`pnpm run test:e2e`を実行し、4件のE2Eシナリオ全てがGreenになること、および開発用バックエンドのデータ・状態に一切影響が無いことを確認した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/main.ts`: `PORT`環境変数があればそれを使うよう変更（未設定時は従来通り3000番）。
+    - `frontend/src/api/activitiesApi.ts`・`vite-env.d.ts`: バックエンド接続先を`import.meta.env.VITE_BACKEND_BASE_URL`で上書き可能にした（未設定時は従来通り`http://localhost:3000`）。
+    - `playwright.config.ts`: `BACKEND_PORT`を3000→3100に変更し、`webServer`の`env`に`PORT: '3100'`を追加。
+    - `package.json`: `test:e2e`スクリプトで`VITE_BACKEND_BASE_URL=http://localhost:3100`を設定した上でビルドするよう変更（Viteの環境変数はビルド時に静的に埋め込まれるため、ビルドより前に設定する必要がある）。
+    - E2Eテスト4件・単体テスト（バックエンド87件・フロントエンド112件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし（`pnpm run test:e2e`の使い方自体は変わらないため）。
+  * **仕様書**: 変更なし（テスト基盤の変更でありアプリの機能仕様には影響しないため）。
+  * **その他**: `test_rules.md`の「E2Eテスト」節に、ポート衝突の事故の経緯とポート分離の仕組みを追記。
+
+### [2026-07-12] PR #16のレビュー対応としてMapViewのas unknown asキャストを正しい型定義へ置き換えた
+* **修正の動機・概要**:
+  - PR #16のレビューで、`MapView.tsx`のline-color式に使っていた`as unknown as string`キャストについて「型システムを迂回する強制キャストは絶対禁止。JSON.stringifyなど使えないか」との指摘を受けた。
+  - 調査の結果、MapLibreの式(expression)の型`ExpressionSpecification`は`maplibre-gl`自体からは再エクスポートされていないが、その依存先である`@maplibre/maplibre-gl-style-spec`が公開していることが分かった。同パッケージをdevDependenciesに明示的に追加し、`BICYCLE_LOG_LINE_COLOR_EXPRESSION`の型注釈として使うことで、キャストなしで`case`式の配列リテラルが正しく型チェックされることを確認した。
+  - 今後同様の「ライブラリの型が期待と合わない」状況で安易にキャストへ逃げないよう、rules.mdに「transitive dependencyが公開する型を探す」「型注釈でコンテキスト型を与える」という具体的な回避手順を追記した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/package.json`・`pnpm-lock.yaml`: `@maplibre/maplibre-gl-style-spec`をdevDependenciesに追加。
+    - `frontend/src/components/MapView.tsx`: `BICYCLE_LOG_LINE_COLOR_EXPRESSION`に`ExpressionSpecification`型注釈を付け、`as unknown as string`キャストを削除。
+    - `rules.md`: 「anyやas（型キャスト）は原則使用しない」節に、`as unknown as T`の強制キャストを例外なく禁止する旨と、キャストに逃げる前に試すべき2つの回避手順を追記。
+    - 単体テスト（フロントエンド112件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（型定義の修正であり機能仕様に影響しないため）。
+
+### [2026-07-12] PR #16のレビュー対応として自転車ログ強制再取得ボタンを追加した
+* **修正の動機・概要**:
+  - PR #16（Issue #15対応）のレビューで、獲得標高・経過時間フィールド追加時に既存629件がデフォルト値0になった問題を解消できるよう、「detail_fetched_atの状態にかかわらず既存全アクティビティを強制的に再取得するボタン」の追加依頼を受けた。
+  - `ActivitiesBackfillService`に`startForceRefetch()`を追加。既存全行の`detailFetchedAt`をnullにリセットしてから、初期取り込みと共通の詳細取得ループ（`fetchPendingDetails`）を再実行する。新規アクティビティの検出（Strava一覧の再取得）は目的に含まないため行わない。初期取り込み(`start()`)とはisRunningガード（二重起動防止）を共有し、内部実装も`runExclusively(job)`として共通化した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/activities/activities-backfill.service.ts`: `startForceRefetch()`を追加。`start()`と共通のisRunningガード処理を`runExclusively()`に、詳細取得ループを`fetchPendingDetails()`にそれぞれ抽出。
+    - `backend/src/activities/activities.controller.ts`・`activities.constants.ts`: `POST /activities/backfill/force-refetch`エンドポイントを追加。
+    - `frontend/src/api/activitiesApi.ts`: `startForceRefetch()`を追加。
+    - `frontend/src/hooks/useBackfillStatus.ts`: `startForceRefetch`を追加。開始→進捗再取得の処理を`start`と共通化（`runStartAction`）。
+    - `frontend/src/components/LayerSidebar.tsx`・`MapWorkspace.tsx`: 初期取り込みボタンの下に「自転車ログ強制再取得」ボタンを追加。配置・進捗表示・disabled化は既存の初期取り込みボタンと共通の仕組みを使う。
+    - 単体テスト（バックエンド87件・フロントエンド112件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「自転車ログ初期取り込み機能」に、強制再取得ボタンの仕様（全件のdetailFetchedAtリセット、isRunningガード共有）を追記。
+
+### [2026-07-12] GitHub Issue #15としてアクティビティ詳細閲覧機能を実装した
+* **修正の動機・概要**:
+  - 地図上の自転車ログをクリックして選択し、詳細（走行距離・獲得標高・開始/終了日時・平均時速）を閲覧できるようにしてほしいという依頼（Issue #15）。自律モードで対応し、判断が必要な箇所はコード中に`// 設計判断（要確認）`コメントを残した。
+  - 平均時速・走行終了日時の算出、獲得標高の表示には、これまでDBに保存していなかったStravaの`elapsed_time`（経過時間）・`total_elevation_gain`（獲得標高）が必要だったため、データモデル全体（Strava型・Entity・DTO・マッピング処理）に追加した（先行コミット、2026-07-12 `6147e99`）。既存629件は暫定的にデフォルト値0になるため、マイグレーションファイルに設計判断コメントを記載した。
+  - フロントエンドは、選択状態・フォーカス状態を管理する`useActivitySelection`フック、表示用に整形する`activityDetailView`ユーティリティ、一覧⇔詳細を切り替える`ActivityDetailSidebar`コンポーネントを新設し、`MapView`にクリックによるヒットテスト・MapLibreのfeature-stateによる線の色分けを実装した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/strava/types/strava-activity.type.ts`・`activities/entities/cycling-activity.entity.ts`・`activities/cycling-activity-entity.util.ts`・`activities/cycling-activity-dto.util.ts`・`activities/types/cycling-activity.dto.ts`: `elapsed_time`/`total_elevation_gain`（Strava側）・`elapsedTimeSeconds`/`elevationGainMeters`（Entity/DTO側）を追加。
+    - `backend/src/migrations/1720600000000-AddElevationGainAndElapsedTimeToCyclingActivities.ts`（新規）: 上記2列を`NOT NULL DEFAULT 0`で追加するマイグレーション。実DB（dev docker-compose）に適用し動作確認済み。
+    - `frontend/src/hooks/useActivitySelection.ts`（新規）: 選択中ID一覧（クリック順、重複可）とフォーカス中インデックスを管理するフック。
+    - `frontend/src/utils/activityDetailView.ts`（新規）: `CyclingActivity`を詳細表示用の整形済み文字列に変換するユーティリティ。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`（新規）: 選択中アクティビティの一覧画面・詳細画面を切り替えて表示する右サイドバー。
+    - `frontend/src/components/MapView.tsx`: 自転車ログレイヤーのクリックを検出し、クリック地点±5pxのバウンディングボックスでヒットテストして`onSelectActivities`を呼ぶ処理を追加。GeoJSONソースに`promoteId: 'id'`を設定し、`setFeatureState`で選択・フォーカス状態を反映、`line-color`をfeature-state参照の`case`式に変更（通常/選択/フォーカスの3色）。
+    - `frontend/src/components/MapWorkspace.tsx`: `useActivitySelection`と`ActivityDetailSidebar`を配線。
+    - `frontend/src/constants/bicycleLog.ts`: 単一の`BICYCLE_LOG_LINE_COLOR`（Strava橙 `#fc4c02`）を、状態別の3定数（通常:赤`#e53e3e`・選択:青`#3182ce`・フォーカス:紫`#805ad5`）に置き換え。
+    - `electron/tests/fixtures/activities.js`・`electron/tests/support/mock-strava-server.js`: E2E用フィクスチャ・モックサーバーに新規必須フィールド（`elapsed_time`/`total_elevation_gain`）を追加。
+    - 単体テスト（バックエンド80件・フロントエンド105件）・lint・typecheckは全てGreen。E2Eテストはローカル環境でポート3000が開発用（実Strava接続の）バックエンドプロセスに占有されておりE2E用バックエンドを起動できず未検証（`app.spec.ts`・`aerial-photo.spec.ts`の2件は影響を受けず実行しGreenを確認）。マージ前にポートが空いた状態での再実行が必要。
+    - 地図クリックによる選択・フォーカス・詳細表示フローを検証するE2Eシナリオの追加は今回スコープ外とした（設計判断・要確認、CHANGELOG記載により明示）。
+  * **README.md**: 変更なし（アプリの操作手順の詳細は記載しておらず、セットアップ手順に影響が無いため）。
+  * **仕様書**: `specs/system_specification.md`に「アクティビティ詳細閲覧機能」節を新設し、クリック選択・ヒットテストの範囲・一覧/詳細画面の切り替え・feature-stateによる色分けの仕様を記載。
+
 ### [2026-07-11] PR #13のレビュー対応としてSwaggerレスポンス型のルールを正式化した
 * **修正の動機・概要**:
   - PR #13（Issue #7対応）のレビューで3点の指摘・依頼を受けた。(1) `type`→`class`変換について、一時的な例外ではなく「レスポンスに使う型はclassにする」という正式なルールにし、各ファイルの説明コメントは削除してよい。(2) 先祖ブランチ（Issue #4〜#6のレビュー対応等）の変更を取り込んだ後、Swaggerの適用漏れが無いかチェックすること。(3) Swagger UI（APIの一覧）の見方がREADME.mdに書かれていない。

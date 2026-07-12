@@ -14,6 +14,8 @@ describe('ActivitiesControllerに関するテスト', () => {
         name: 'ライド1',
         distanceMeters: 1000,
         movingTimeSeconds: 600,
+        elapsedTimeSeconds: 650,
+        elevationGainMeters: 50,
         startDate: '2026-07-01T00:00:00Z',
         path: null
       }
@@ -89,5 +91,22 @@ describe('ActivitiesControllerに関するテスト', () => {
     const result = await controller.getBackfillStatus();
 
     expect(result).toBe(status);
+  });
+
+  test('startForceRefetchが呼ばれたとき、ActivitiesBackfillServiceのstartForceRefetchの戻り値をそのまま返す', async () => {
+    const startResult: BackfillStartResult = { started: true };
+    const startForceRefetch = vi.fn().mockResolvedValue(startResult);
+    const moduleRef = await Test.createTestingModule({
+      controllers: [ActivitiesController],
+      providers: [
+        { provide: ActivitiesService, useValue: {} },
+        { provide: ActivitiesBackfillService, useValue: { startForceRefetch } }
+      ]
+    }).compile();
+    const controller = moduleRef.get(ActivitiesController);
+
+    const result = await controller.startForceRefetch();
+
+    expect(result).toBe(startResult);
   });
 });

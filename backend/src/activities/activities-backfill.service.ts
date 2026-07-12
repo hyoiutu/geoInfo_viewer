@@ -74,15 +74,32 @@ export class ActivitiesBackfillService {
    * @returns 開始結果
    */
   async start(): Promise<BackfillStartResult> {
+    return this.runExclusively(() => this.runBackfill());
+  }
+
+  /**
+   * 既存全アクティビティのdetailFetchedAtをリセットした上で、詳細を強制的に再取得する。
+   * 初期取り込みとisRunningガード（二重起動防止）を共有するため、どちらか一方が実行中はもう一方を開始できない。
+   * @returns 開始結果
+   */
+  async startForceRefetch(): Promise<BackfillStartResult> {
+    return this.runExclusively(() => this.runForceRefetch());
+  }
+
+  /**
+   * isRunningガードを取った上でjobをfire-and-forgetで実行する。
+   * エラーはHTTPレスポンスには返さず、lastErrorに記録した上でgetStatus()経由で参照可能にする
+   * @param job 実行する処理
+   * @returns 開始結果
+   */
+  private async runExclusively(job: () => Promise<void>): Promise<BackfillStartResult> {
     if (this.running) {
       return { started: false };
     }
 
     this.running = true;
     this.lastError = null;
-    // fire-and-forget: エラーはHTTPレスポンスには返さず、lastErrorに記録した上でgetStatus()経由で参照可能にする。
-    // isRunningは戻して次回startを可能にする
-    this.runBackfill()
+    job()
       .catch((error: unknown) => {
         this.lastError = toAppErrorInfo(error);
       })
@@ -120,6 +137,25 @@ export class ActivitiesBackfillService {
       await this.fetchAndSavePlaceholders();
     }
 
+    await this.fetchPendingDetails();
+  }
+
+  /**
+   * 既存全アクティビティのdetailFetchedAtをnullに戻してから、詳細取得を再実行する。
+   * 新規アクティビティの検出（Strava一覧の再取得）は目的に含まないため、fetchAndSavePlaceholdersは呼ばない
+   */
+  private async runForceRefetch(): Promise<void> {
+    await this.cyclingActivityRepository
+      .createQueryBuilder()
+      .update(CyclingActivityEntity)
+      .set({ detailFetchedAt: null })
+      .execute();
+
+    await this.fetchPendingDetails();
+  }
+
+  /** detailFetchedAtがnullの行それぞれについて詳細APIを呼び出し、Entityを更新保存する */
+  private async fetchPendingDetails(): Promise<void> {
     const pendingEntities = await this.cyclingActivityRepository.find({ where: { detailFetchedAt: IsNull() } });
     for (const pendingEntity of pendingEntities) {
       const detail = await this.stravaActivitiesService.fetchCyclingActivityDetail(Number(pendingEntity.id));

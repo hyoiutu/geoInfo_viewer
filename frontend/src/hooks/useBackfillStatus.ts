@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { type BackfillStartResult, type BackfillStatus, getBackfillStatus, startBackfill } from '../api/activitiesApi';
+import {
+  type BackfillStartResult,
+  type BackfillStatus,
+  getBackfillStatus,
+  startBackfill,
+  startForceRefetch as startForceRefetchApi
+} from '../api/activitiesApi';
 import type { AppErrorInfo } from '../types/apiError';
 import { toAppErrorInfo } from '../utils/apiError';
 
@@ -14,6 +20,8 @@ type UseBackfillStatusResult = {
   backfillStatus: BackfillStatus | null;
   /** 初期取り込みを開始する関数 */
   start: () => Promise<BackfillStartResult | null>;
+  /** 既存全アクティビティの強制再取得を開始する関数 */
+  startForceRefetch: () => Promise<BackfillStartResult | null>;
 };
 
 /**
@@ -59,16 +67,24 @@ export const useBackfillStatus = (onError?: (error: AppErrorInfo) => void): UseB
     return () => clearInterval(timer);
   }, [backfillStatus?.isRunning, refresh]);
 
-  const start = useCallback(async (): Promise<BackfillStartResult | null> => {
-    try {
-      const result = await startBackfill();
-      await refresh();
-      return result;
-    } catch (error) {
-      onError?.(toAppErrorInfo(error));
-      return null;
-    }
-  }, [refresh, onError]);
+  // start/startForceRefetchはバックエンド側で同じisRunningガードを共有するため、
+  // 開始処理→進捗再取得の流れも共通化する
+  const runStartAction = useCallback(
+    async (action: () => Promise<BackfillStartResult>): Promise<BackfillStartResult | null> => {
+      try {
+        const result = await action();
+        await refresh();
+        return result;
+      } catch (error) {
+        onError?.(toAppErrorInfo(error));
+        return null;
+      }
+    },
+    [refresh, onError]
+  );
 
-  return { backfillStatus, start };
+  const start = useCallback(() => runStartAction(startBackfill), [runStartAction]);
+  const startForceRefetch = useCallback(() => runStartAction(startForceRefetchApi), [runStartAction]);
+
+  return { backfillStatus, start, startForceRefetch };
 };

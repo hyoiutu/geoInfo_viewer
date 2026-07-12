@@ -4,6 +4,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
 import {
+  type CyclingActivity,
   fetchCyclingActivities,
   getBackfillStatus,
   type SyncResult,
@@ -18,9 +19,15 @@ import {
   AERIAL_PHOTO_TILE_URL
 } from '../constants/aerialPhoto';
 import {
+  BICYCLE_LOG_FOCUSED_LAYER_ID,
+  BICYCLE_LOG_FOCUSED_SOURCE_ID,
   BICYCLE_LOG_LAYER_ID,
-  BICYCLE_LOG_LINE_COLOR,
+  BICYCLE_LOG_LINE_COLOR_DEFAULT,
+  BICYCLE_LOG_LINE_COLOR_FOCUSED,
+  BICYCLE_LOG_LINE_COLOR_SELECTED,
   BICYCLE_LOG_LINE_WIDTH,
+  BICYCLE_LOG_SELECTED_LAYER_ID,
+  BICYCLE_LOG_SELECTED_SOURCE_ID,
   BICYCLE_LOG_SOURCE_ID
 } from '../constants/bicycleLog';
 import type { AppErrorInfo } from '../types/apiError';
@@ -35,6 +42,9 @@ const DEFAULT_CENTER: [number, number] = [139.1798829, 35.2756364];
 const VISIBLE_VALUE = 'visible';
 const HIDDEN_VALUE = 'none';
 const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] };
+// 自転車ログの線は太さ3pxと細く正確なクリックが難しいため、クリック地点を中心とした
+// 10px四方(片側5px)のバウンディングボックスでヒットテストする
+const HIT_TEST_RADIUS_PX = 5;
 
 /** MapViewのprops */
 type MapViewProps = {
@@ -42,6 +52,14 @@ type MapViewProps = {
   layerVisibility: LayerVisibility;
   /** API呼び出し等でエラーが発生したときに呼ばれるコールバック */
   onError: (error: AppErrorInfo) => void;
+  /** 選択中のアクティビティID一覧 */
+  selectedIds: string[];
+  /** フォーカス中のアクティビティID。未フォーカスの場合はnull */
+  focusedId: string | null;
+  /** 地図クリックでアクティビティが検出されたときに呼ばれるコールバック */
+  onSelectActivities: (ids: string[]) => void;
+  /** 自転車ログのデータ取得・更新のたびに、取得済みアクティビティ一覧を渡すコールバック */
+  onActivitiesLoaded: (activities: CyclingActivity[]) => void;
 };
 
 type CategorizedLayerIds = Record<ToggleableLayerId, string[]>;
@@ -65,25 +83,39 @@ const addAerialPhotoLayer = (map: maplibregl.Map, categorizedLayerIds: Categoriz
 };
 
 /**
- * 自転車ログ用の空のGeoJSONソース・ラインレイヤーを地図に追加する
+ * 自転車ログ用の空のGeoJSONソース・ラインレイヤーを地図に追加する。
+ * 通常状態(全アクティビティ)・選択状態・フォーカス状態をそれぞれ別のソース・レイヤーとして持つ。
+ * 単一のline層には描画順を制御する仕組みが無いため、レイヤーを追加した順（=描画順、後から追加した方が手前）で
+ * 「通常→選択→フォーカス」の手前関係を実現する
  * @param map 追加先のMapLibre地図インスタンス
  */
 const addBicycleLogLayer = (map: maplibregl.Map) => {
-  map.addSource(BICYCLE_LOG_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
-  map.addLayer({
-    id: BICYCLE_LOG_LAYER_ID,
-    type: 'line',
-    source: BICYCLE_LOG_SOURCE_ID,
-    paint: { 'line-color': BICYCLE_LOG_LINE_COLOR, 'line-width': BICYCLE_LOG_LINE_WIDTH }
-  });
+  const addLineLayer = (sourceId: string, layerId: string, color: string) => {
+    map.addSource(sourceId, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+    map.addLayer({
+      id: layerId,
+      type: 'line',
+      source: sourceId,
+      paint: { 'line-color': color, 'line-width': BICYCLE_LOG_LINE_WIDTH }
+    });
+  };
+
+  addLineLayer(BICYCLE_LOG_SOURCE_ID, BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_LINE_COLOR_DEFAULT);
+  addLineLayer(BICYCLE_LOG_SELECTED_SOURCE_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_LINE_COLOR_SELECTED);
+  addLineLayer(BICYCLE_LOG_FOCUSED_SOURCE_ID, BICYCLE_LOG_FOCUSED_LAYER_ID, BICYCLE_LOG_LINE_COLOR_FOCUSED);
 };
 
 /**
  * Strava上の新規アクティビティを同期し、自転車ログのGeoJSONソースを最新のデータで更新する
  * @param map 更新対象のMapLibre地図インスタンス
  * @param onError API呼び出し失敗時に呼ばれるコールバック
+ * @param onActivitiesLoaded 取得に成功したアクティビティ一覧を渡すコールバック
  */
-const syncAndLoadBicycleLog = async (map: maplibregl.Map, onError: (error: AppErrorInfo) => void) => {
+const syncAndLoadBicycleLog = async (
+  map: maplibregl.Map,
+  onError: (error: AppErrorInfo) => void,
+  onActivitiesLoaded: (activities: CyclingActivity[]) => void
+) => {
   // 初期取り込み(バックフィル)実行中は更新用APIを呼ばず、その時点でDBに取得済みの分だけ表示する
   const backfillStatus = await getBackfillStatus().catch(() => null);
   if (!backfillStatus?.isRunning) {
@@ -105,9 +137,73 @@ const syncAndLoadBicycleLog = async (map: maplibregl.Map, onError: (error: AppEr
     const activities = await fetchCyclingActivities();
     const source = map.getSource(BICYCLE_LOG_SOURCE_ID) as maplibregl.GeoJSONSource;
     source.setData(cyclingActivityToGeoJson(activities));
+    onActivitiesLoaded(activities);
   } catch (error) {
     onError(toAppErrorInfo(error));
   }
+};
+
+/**
+ * 自転車ログレイヤーのクリックを検出し、選択中アクティビティを置き換える。
+ * 線が細く正確なクリックが難しいため、クリック地点を中心としたバウンディングボックスでヒットテストする。
+ * フォーカス中はクリックによる選択変更を無効にする
+ * @param map クリックを監視するMapLibre地図インスタンス
+ * @param onSelectActivities 検出したアクティビティID一覧を渡すコールバック
+ * @param isFocused 呼び出し時点でフォーカス中かどうかを返す関数
+ */
+const registerBicycleLogClickHandler = (
+  map: maplibregl.Map,
+  onSelectActivities: (ids: string[]) => void,
+  isFocused: () => boolean
+) => {
+  map.on('click', (event) => {
+    if (isFocused()) {
+      return;
+    }
+
+    const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
+      [event.point.x - HIT_TEST_RADIUS_PX, event.point.y - HIT_TEST_RADIUS_PX],
+      [event.point.x + HIT_TEST_RADIUS_PX, event.point.y + HIT_TEST_RADIUS_PX]
+    ];
+    const features = map.queryRenderedFeatures(bbox, {
+      layers: [BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_FOCUSED_LAYER_ID]
+    });
+    // 同一クリックでも複数の描画フィーチャーが同一アクティビティIDを指しうるため重複排除する
+    const ids = [...new Set(features.map((feature) => String(feature.properties?.id)))];
+    if (ids.length > 0) {
+      onSelectActivities(ids);
+    }
+  });
+};
+
+/**
+ * 選択・フォーカス状態を、自転車ログの選択用・フォーカス用レイヤーのGeoJSONデータへ反映する。
+ * selectedIdsの並び順（通し番号の昇順）をそのままfeatures配列の並びとして使う。MapLibreは
+ * 単一ソース内で後の要素ほど手前に描画するため、これにより「通し番号が大きいものほど手前」というdraw順が実現される
+ * @param map 反映先のMapLibre地図インスタンス
+ * @param activities 現在地図に描画されているアクティビティ一覧
+ * @param selectedIds 選択中のアクティビティID一覧（通し番号の昇順）
+ * @param focusedId フォーカス中のアクティビティID。未フォーカスの場合はnull
+ */
+const applySelectionLayers = (
+  map: maplibregl.Map,
+  activities: CyclingActivity[],
+  selectedIds: string[],
+  focusedId: string | null
+) => {
+  const activityById = new Map(activities.map((activity) => [activity.id, activity]));
+  const focusedActivity = focusedId === null ? null : (activityById.get(focusedId) ?? null);
+
+  const selectedActivities = selectedIds
+    .filter((id) => id !== focusedId)
+    .map((id) => activityById.get(id))
+    .filter((activity): activity is CyclingActivity => activity !== undefined);
+
+  const selectedSource = map.getSource(BICYCLE_LOG_SELECTED_SOURCE_ID) as maplibregl.GeoJSONSource;
+  selectedSource.setData(cyclingActivityToGeoJson(selectedActivities));
+
+  const focusedSource = map.getSource(BICYCLE_LOG_FOCUSED_SOURCE_ID) as maplibregl.GeoJSONSource;
+  focusedSource.setData(cyclingActivityToGeoJson(focusedActivity ? [focusedActivity] : []));
 };
 
 /**
@@ -121,7 +217,7 @@ const resolveStyleLayerIds = (layerId: ToggleableLayerId, categorizedLayerIds: C
     return [AERIAL_PHOTO_LAYER_ID];
   }
   if (layerId === 'bicycle-log') {
-    return [BICYCLE_LOG_LAYER_ID];
+    return [BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_FOCUSED_LAYER_ID];
   }
   return categorizedLayerIds[layerId];
 };
@@ -148,13 +244,26 @@ const applyLayerVisibility = (
   }
 };
 
-/** MapLibreの地図本体を表示し、レイヤーの表示/非表示・自転車ログの同期を行うコンポーネント */
-export const MapView = ({ layerVisibility, onError }: MapViewProps) => {
+/** MapLibreの地図本体を表示し、レイヤーの表示/非表示・自転車ログの同期・選択状態の描画を行うコンポーネント */
+export const MapView = ({
+  layerVisibility,
+  onError,
+  selectedIds,
+  focusedId,
+  onSelectActivities,
+  onActivitiesLoaded
+}: MapViewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
   const wasBicycleLogVisibleRef = useRef(false);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
+  const [activities, setActivities] = useState<CyclingActivity[]>([]);
+  // クリックハンドラはマウント時に一度だけ登録するため、最新の値をrefで参照する（クロージャの陳腐化対策）
+  const onSelectActivitiesRef = useRef(onSelectActivities);
+  onSelectActivitiesRef.current = onSelectActivities;
+  const focusedIdRef = useRef(focusedId);
+  focusedIdRef.current = focusedId;
 
   // マウント時に一度だけMapLibreの地図を生成し、スタイル読み込み完了後に航空写真・自転車ログレイヤーを追加する
   useEffect(() => {
@@ -175,6 +284,11 @@ export const MapView = ({ layerVisibility, onError }: MapViewProps) => {
       categorizedLayerIdsRef.current = categorizedLayerIds;
       addAerialPhotoLayer(map, categorizedLayerIds);
       addBicycleLogLayer(map);
+      registerBicycleLogClickHandler(
+        map,
+        (ids) => onSelectActivitiesRef.current(ids),
+        () => focusedIdRef.current !== null
+      );
       setIsStyleLoaded(true);
     });
 
@@ -183,6 +297,16 @@ export const MapView = ({ layerVisibility, onError }: MapViewProps) => {
       map.remove();
     };
   }, []);
+
+  // 選択中・フォーカス中のアクティビティが変化するたびに、選択用・フォーカス用レイヤーのデータを更新する
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isStyleLoaded) {
+      return;
+    }
+
+    applySelectionLayers(map, activities, selectedIds, focusedId);
+  }, [activities, selectedIds, focusedId, isStyleLoaded]);
 
   // layerVisibilityが変化するたびに各レイヤーの表示/非表示を反映し、
   // 自転車ログレイヤーがOFF→ONに変化した場合はStrava同期・データ取得を行う
@@ -200,9 +324,12 @@ export const MapView = ({ layerVisibility, onError }: MapViewProps) => {
     wasBicycleLogVisibleRef.current = isBicycleLogVisible;
 
     if (!wasBicycleLogVisible && isBicycleLogVisible) {
-      void syncAndLoadBicycleLog(map, onError);
+      void syncAndLoadBicycleLog(map, onError, (loaded) => {
+        setActivities(loaded);
+        onActivitiesLoaded(loaded);
+      });
     }
-  }, [layerVisibility, isStyleLoaded, onError]);
+  }, [layerVisibility, isStyleLoaded, onError, onActivitiesLoaded]);
 
   return <Box ref={containerRef} flex="1" minWidth="0" height="100vh" data-testid="map-container" />;
 };

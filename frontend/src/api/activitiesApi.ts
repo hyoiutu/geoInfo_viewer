@@ -9,8 +9,12 @@ export type CyclingActivity = {
   name: string;
   /** 走行距離（メートル） */
   distanceMeters: number;
-  /** 走行時間（秒） */
+  /** 走行時間（秒、停止時間を含まない） */
   movingTimeSeconds: number;
+  /** 経過時間（秒、停止時間を含む。開始日時に加算すると終了日時になる） */
+  elapsedTimeSeconds: number;
+  /** 獲得標高（メートル） */
+  elevationGainMeters: number;
   /** 開始日時（ISO 8601形式の文字列） */
   startDate: string;
   /** 軌跡（経度・緯度の配列）。GPSルートの無いアクティビティの場合はnull */
@@ -45,11 +49,15 @@ export type BackfillStatus = {
   lastError: AppErrorInfo | null;
 };
 
-const BACKEND_BASE_URL = 'http://localhost:3000';
+const DEFAULT_BACKEND_BASE_URL = 'http://localhost:3000';
+// E2Eテストは開発用バックエンド(3000番ポート)との衝突を避けるため別ポートで起動する。
+// ビルド時にVITE_BACKEND_BASE_URLを設定することで接続先を切り替える（playwright.config.ts参照）
+const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL ?? DEFAULT_BACKEND_BASE_URL;
 const ACTIVITIES_PATH = '/activities';
 const ACTIVITIES_SYNC_PATH = '/activities/sync';
 const ACTIVITIES_BACKFILL_PATH = '/activities/backfill';
 const ACTIVITIES_BACKFILL_STATUS_PATH = '/activities/backfill/status';
+const ACTIVITIES_BACKFILL_FORCE_REFETCH_PATH = '/activities/backfill/force-refetch';
 const HTTP_METHOD_POST = 'POST';
 
 /**
@@ -88,6 +96,23 @@ export const syncCyclingActivities = async (): Promise<SyncResult> => {
  */
 export const startBackfill = async (): Promise<BackfillStartResult> => {
   const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_BACKFILL_PATH}`, { method: HTTP_METHOD_POST });
+
+  if (!response.ok) {
+    throw await buildApiError(response);
+  }
+
+  return response.json();
+};
+
+/**
+ * 既存全アクティビティの詳細を、detailFetchedAtの状態にかかわらず強制的に再取得する。
+ * 初期取り込み(バックフィル)とisRunningガードを共有するため、どちらか一方が実行中はもう一方を開始できない。
+ * @returns 開始結果
+ */
+export const startForceRefetch = async (): Promise<BackfillStartResult> => {
+  const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_BACKFILL_FORCE_REFETCH_PATH}`, {
+    method: HTTP_METHOD_POST
+  });
 
   if (!response.ok) {
     throw await buildApiError(response);

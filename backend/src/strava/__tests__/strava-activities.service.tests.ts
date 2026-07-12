@@ -16,6 +16,8 @@ const createActivity = (overrides: Partial<StravaActivity>): StravaActivity => (
   type: 'Ride',
   distance: 10000,
   moving_time: 1800,
+  elapsed_time: 1900,
+  total_elevation_gain: 100,
   start_date: '2026-07-01T00:00:00Z',
   map: { summary_polyline: '' },
   ...overrides
@@ -27,6 +29,8 @@ const createActivityDetail = (overrides: Partial<StravaActivityDetail>): StravaA
   type: 'Ride',
   distance: 10000,
   moving_time: 1800,
+  elapsed_time: 1900,
+  total_elevation_gain: 100,
   start_date: '2026-07-01T00:00:00Z',
   map: { summary_polyline: '', polyline: '' },
   ...overrides
