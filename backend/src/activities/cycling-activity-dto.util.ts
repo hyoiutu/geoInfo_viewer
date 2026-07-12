@@ -11,6 +11,8 @@ export const toCyclingActivityDto = (entity: CyclingActivityEntity): CyclingActi
   name: entity.name,
   distanceMeters: entity.distanceMeters,
   movingTimeSeconds: entity.movingTimeSeconds,
+  elapsedTimeSeconds: entity.elapsedTimeSeconds,
+  elevationGainMeters: entity.elevationGainMeters,
   startDate: entity.startDate.toISOString(),
   path: entity.path === null ? null : (entity.path.coordinates as [number, number][])
 });

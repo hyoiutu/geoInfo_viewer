@@ -14,6 +14,8 @@ describe('ActivitiesControllerに関するテスト', () => {
         name: 'ライド1',
         distanceMeters: 1000,
         movingTimeSeconds: 600,
+        elapsedTimeSeconds: 650,
+        elevationGainMeters: 50,
         startDate: '2026-07-01T00:00:00Z',
         path: null
       }

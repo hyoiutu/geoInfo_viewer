@@ -8,6 +8,8 @@ const createEntity = (overrides: Partial<CyclingActivityEntity>): CyclingActivit
   entity.name = 'テストライド';
   entity.distanceMeters = 12345.6;
   entity.movingTimeSeconds = 3600;
+  entity.elapsedTimeSeconds = 3900;
+  entity.elevationGainMeters = 250.5;
   entity.startDate = new Date('2026-07-01T00:00:00Z');
   entity.path = null;
   Object.assign(entity, overrides);
@@ -24,6 +26,8 @@ describe('toCyclingActivityDtoに関するテスト', () => {
     expect(dto.name).toBe('テストライド');
     expect(dto.distanceMeters).toBe(12345.6);
     expect(dto.movingTimeSeconds).toBe(3600);
+    expect(dto.elapsedTimeSeconds).toBe(3900);
+    expect(dto.elevationGainMeters).toBe(250.5);
     expect(dto.startDate).toBe('2026-07-01T00:00:00.000Z');
   });
 

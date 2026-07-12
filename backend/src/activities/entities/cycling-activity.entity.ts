@@ -20,6 +20,14 @@ export class CyclingActivityEntity {
   @Column({ name: 'moving_time_seconds', type: 'integer' })
   movingTimeSeconds!: number;
 
+  // 経過時間（停止時間を含む）。開始日時に加算すると終了日時になる。走行時間(movingTimeSeconds)は
+  // 平均時速の算出に、経過時間は終了日時の算出にそれぞれ用途が異なるため両方を保持する。
+  @Column({ name: 'elapsed_time_seconds', type: 'integer' })
+  elapsedTimeSeconds!: number;
+
+  @Column({ name: 'elevation_gain_meters', type: 'double precision' })
+  elevationGainMeters!: number;
+
   @Column({ name: 'start_date', type: 'timestamptz' })
   startDate!: Date;
 
