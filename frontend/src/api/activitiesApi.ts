@@ -49,7 +49,10 @@ export type BackfillStatus = {
   lastError: AppErrorInfo | null;
 };
 
-const BACKEND_BASE_URL = 'http://localhost:3000';
+const DEFAULT_BACKEND_BASE_URL = 'http://localhost:3000';
+// E2Eテストは開発用バックエンド(3000番ポート)との衝突を避けるため別ポートで起動する。
+// ビルド時にVITE_BACKEND_BASE_URLを設定することで接続先を切り替える（playwright.config.ts参照）
+const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL ?? DEFAULT_BACKEND_BASE_URL;
 const ACTIVITIES_PATH = '/activities';
 const ACTIVITIES_SYNC_PATH = '/activities/sync';
 const ACTIVITIES_BACKFILL_PATH = '/activities/backfill';

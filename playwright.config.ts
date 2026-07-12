@@ -1,7 +1,9 @@
 import { defineConfig } from '@playwright/test';
 
 const MOCK_STRAVA_PORT = 4010;
-const BACKEND_PORT = 3000;
+// 開発用バックエンド（3000番ポート）と同時に起動していても衝突しないよう、E2E専用の別ポートを使う。
+// フロントエンドのビルド時（test:e2eスクリプトのVITE_BACKEND_BASE_URL）もこのポートに合わせる必要がある
+const BACKEND_PORT = 3100;
 // E2E実行中はStravaレート制限を極小間隔にし、バックフィル待機を実用的な長さに抑える。
 const E2E_STRAVA_RATE_LIMIT_INTERVAL_MS = 50;
 // 地図タイル(OSM/航空写真)は実サーバーへ接続するため、タイルデータの経年変化による
@@ -43,6 +45,8 @@ export default defineConfig({
       url: `http://localhost:${BACKEND_PORT}/health`,
       reuseExistingServer: !process.env.CI,
       env: {
+        // biome-ignore lint/style/useNamingConvention: 環境変数名(SCREAMING_SNAKE_CASE)に合わせる
+        PORT: String(BACKEND_PORT),
         // biome-ignore lint/style/useNamingConvention: 環境変数名(SCREAMING_SNAKE_CASE)に合わせる
         STRAVA_API_BASE_URL: `http://localhost:${MOCK_STRAVA_PORT}/api/v3`,
         // biome-ignore lint/style/useNamingConvention: 環境変数名(SCREAMING_SNAKE_CASE)に合わせる

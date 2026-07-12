@@ -160,6 +160,8 @@ NestJSのコントローラーメソッドが返す型（DTO）は、`@nestjs/sw
 
 他ブランチの変更（他Issue対応・レビュー対応等）をマージ・rebaseで取り込んだ際は、新たに追加・変更されたレスポンス型に`@ApiProperty()`の付与漏れが無いか確認すること。マージ作業を終えたら、`nest build`後にバックエンドを実際に起動し`/api-json`のレスポンスで該当スキーマ（`components.schemas`）の中身が空になっていないか確認するのが確実。
 
+**例外: 既存の`interface`へ宣言をマージ(declaration merging)する必要がある場合は`interface`を使う。** `type`エイリアスは宣言のマージができないため、代替できない（例: `frontend/src/vite-env.d.ts`の`ImportMetaEnv`は、Viteが`vite/client`の型定義で宣言した`interface ImportMetaEnv`に独自の環境変数プロパティをマージするために`interface`を使う必要がある）。biomeの`useConsistentTypeDefinitions`警告が出るため、該当箇所には理由を示す`biome-ignore`コメントを付けること。
+
 # 三項演算子はネストしない
 
 NG
