@@ -8,6 +8,7 @@ vi.mock('../../api/activitiesApi', () => ({
   fetchCyclingActivities: vi.fn().mockResolvedValue([]),
   syncCyclingActivities: vi.fn().mockResolvedValue({ success: true }),
   startBackfill: vi.fn().mockResolvedValue({ started: true }),
+  startForceRefetch: vi.fn().mockResolvedValue({ started: true }),
   getBackfillStatus: vi.fn().mockResolvedValue({
     isRunning: false,
     totalCount: 0,
@@ -98,6 +99,15 @@ describe('MapWorkspaceに関するテスト', () => {
     fireEvent.click(getByRole('button', { name: '自転車ログ初期取り込み' }));
 
     await waitFor(() => expect(startBackfill).toHaveBeenCalledTimes(1));
+  });
+
+  test('強制再取得ボタンをクリックすると、startForceRefetchが呼ばれる', async () => {
+    const { startForceRefetch } = await import('../../api/activitiesApi');
+    const { getByRole } = renderWithChakra(<MapWorkspace />);
+
+    fireEvent.click(getByRole('button', { name: '自転車ログ強制再取得' }));
+
+    await waitFor(() => expect(startForceRefetch).toHaveBeenCalledTimes(1));
   });
 
   test('複数のエラーが発生した場合、エラーダイアログにスタックして表示される', async () => {

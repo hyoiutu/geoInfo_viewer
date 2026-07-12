@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-07-12] PR #16のレビュー対応として自転車ログ強制再取得ボタンを追加した
+* **修正の動機・概要**:
+  - PR #16（Issue #15対応）のレビューで、獲得標高・経過時間フィールド追加時に既存629件がデフォルト値0になった問題を解消できるよう、「detail_fetched_atの状態にかかわらず既存全アクティビティを強制的に再取得するボタン」の追加依頼を受けた。
+  - `ActivitiesBackfillService`に`startForceRefetch()`を追加。既存全行の`detailFetchedAt`をnullにリセットしてから、初期取り込みと共通の詳細取得ループ（`fetchPendingDetails`）を再実行する。新規アクティビティの検出（Strava一覧の再取得）は目的に含まないため行わない。初期取り込み(`start()`)とはisRunningガード（二重起動防止）を共有し、内部実装も`runExclusively(job)`として共通化した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/activities/activities-backfill.service.ts`: `startForceRefetch()`を追加。`start()`と共通のisRunningガード処理を`runExclusively()`に、詳細取得ループを`fetchPendingDetails()`にそれぞれ抽出。
+    - `backend/src/activities/activities.controller.ts`・`activities.constants.ts`: `POST /activities/backfill/force-refetch`エンドポイントを追加。
+    - `frontend/src/api/activitiesApi.ts`: `startForceRefetch()`を追加。
+    - `frontend/src/hooks/useBackfillStatus.ts`: `startForceRefetch`を追加。開始→進捗再取得の処理を`start`と共通化（`runStartAction`）。
+    - `frontend/src/components/LayerSidebar.tsx`・`MapWorkspace.tsx`: 初期取り込みボタンの下に「自転車ログ強制再取得」ボタンを追加。配置・進捗表示・disabled化は既存の初期取り込みボタンと共通の仕組みを使う。
+    - 単体テスト（バックエンド87件・フロントエンド112件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「自転車ログ初期取り込み機能」に、強制再取得ボタンの仕様（全件のdetailFetchedAtリセット、isRunningガード共有）を追記。
+
 ### [2026-07-12] GitHub Issue #15としてアクティビティ詳細閲覧機能を実装した
 * **修正の動機・概要**:
   - 地図上の自転車ログをクリックして選択し、詳細（走行距離・獲得標高・開始/終了日時・平均時速）を閲覧できるようにしてほしいという依頼（Issue #15）。自律モードで対応し、判断が必要な箇所はコード中に`// 設計判断（要確認）`コメントを残した。

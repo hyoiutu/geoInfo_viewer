@@ -1,11 +1,12 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { getBackfillStatus, startBackfill } from '../../api/activitiesApi';
+import { getBackfillStatus, startBackfill, startForceRefetch } from '../../api/activitiesApi';
 import { useBackfillStatus } from '../useBackfillStatus';
 
 vi.mock('../../api/activitiesApi', () => ({
   getBackfillStatus: vi.fn(),
-  startBackfill: vi.fn()
+  startBackfill: vi.fn(),
+  startForceRefetch: vi.fn()
 }));
 
 const NOT_RUNNING_STATUS = {
@@ -30,6 +31,7 @@ describe('useBackfillStatusに関するテスト', () => {
   beforeEach(() => {
     vi.mocked(getBackfillStatus).mockResolvedValue(NOT_RUNNING_STATUS);
     vi.mocked(startBackfill).mockResolvedValue({ started: true });
+    vi.mocked(startForceRefetch).mockResolvedValue({ started: true });
   });
 
   afterEach(() => {
@@ -126,6 +128,36 @@ describe('useBackfillStatusに関するテスト', () => {
     await waitFor(() => {
       expect(onError).toHaveBeenCalledWith(lastError);
     });
+  });
+
+  test('startForceRefetchを呼ぶとstartForceRefetch APIを呼び出し、その後状態を再取得する', async () => {
+    const { result } = renderHook(() => useBackfillStatus());
+    await waitFor(() => {
+      expect(result.current.backfillStatus).toEqual(NOT_RUNNING_STATUS);
+    });
+    vi.mocked(getBackfillStatus).mockResolvedValue(RUNNING_STATUS);
+
+    await act(async () => {
+      await result.current.startForceRefetch();
+    });
+
+    expect(startForceRefetch).toHaveBeenCalledTimes(1);
+    expect(result.current.backfillStatus).toEqual(RUNNING_STATUS);
+  });
+
+  test('startForceRefetchに失敗した場合、onErrorを呼び出す', async () => {
+    vi.mocked(startForceRefetch).mockRejectedValue(new Error('force refetch start failed'));
+    const onError = vi.fn();
+    const { result } = renderHook(() => useBackfillStatus(onError));
+    await waitFor(() => {
+      expect(result.current.backfillStatus).toEqual(NOT_RUNNING_STATUS);
+    });
+
+    await act(async () => {
+      await result.current.startForceRefetch();
+    });
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'force refetch start failed' }));
   });
 
   test('取得結果のlastErrorがnullの場合、onErrorを呼び出さない', async () => {

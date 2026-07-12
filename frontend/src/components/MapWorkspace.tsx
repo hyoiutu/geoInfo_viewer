@@ -26,7 +26,7 @@ export const MapWorkspace = () => {
   const dismissError = useCallback((index: number) => {
     setErrors((current) => current.filter((_, currentIndex) => currentIndex !== index));
   }, []);
-  const { backfillStatus, start: startBackfill } = useBackfillStatus(addError);
+  const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus(addError);
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
   const { selectedIds, focusedIndex, selectActivities, focusActivity, clearFocus, clearSelection } =
     useActivitySelection();
@@ -50,6 +50,9 @@ export const MapWorkspace = () => {
         backfillStatus={backfillStatus}
         onStartBackfill={() => {
           void startBackfill();
+        }}
+        onStartForceRefetch={() => {
+          void startForceRefetch();
         }}
       />
       <MapView

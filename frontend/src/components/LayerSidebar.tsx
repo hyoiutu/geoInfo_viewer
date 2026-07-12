@@ -26,10 +26,18 @@ type LayerSidebarProps = {
   backfillStatus: BackfillStatus | null;
   /** 初期取り込みボタンが押されたときに呼ばれるコールバック */
   onStartBackfill: () => void;
+  /** 強制再取得ボタンが押されたときに呼ばれるコールバック */
+  onStartForceRefetch: () => void;
 };
 
 /** レイヤーの一覧表示・ON/OFF切り替え・初期取り込みボタンを提供するサイドバー */
-export const LayerSidebar = ({ layers, onToggleLayer, backfillStatus, onStartBackfill }: LayerSidebarProps) => {
+export const LayerSidebar = ({
+  layers,
+  onToggleLayer,
+  backfillStatus,
+  onStartBackfill,
+  onStartForceRefetch
+}: LayerSidebarProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
   const handleToggleExpand = () => {
@@ -72,6 +80,15 @@ export const LayerSidebar = ({ layers, onToggleLayer, backfillStatus, onStartBac
           <Box borderTop="1px solid" borderColor="border" paddingTop="3">
             <Button onClick={onStartBackfill} disabled={backfillStatus?.isRunning ?? false} size="sm" width="100%">
               自転車ログ初期取り込み
+            </Button>
+            <Button
+              onClick={onStartForceRefetch}
+              disabled={backfillStatus?.isRunning ?? false}
+              size="sm"
+              width="100%"
+              marginTop="2"
+            >
+              自転車ログ強制再取得
             </Button>
             {backfillStatus?.isRunning && (
               <Box marginTop="2">

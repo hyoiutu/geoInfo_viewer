@@ -92,4 +92,21 @@ describe('ActivitiesControllerに関するテスト', () => {
 
     expect(result).toBe(status);
   });
+
+  test('startForceRefetchが呼ばれたとき、ActivitiesBackfillServiceのstartForceRefetchの戻り値をそのまま返す', async () => {
+    const startResult: BackfillStartResult = { started: true };
+    const startForceRefetch = vi.fn().mockResolvedValue(startResult);
+    const moduleRef = await Test.createTestingModule({
+      controllers: [ActivitiesController],
+      providers: [
+        { provide: ActivitiesService, useValue: {} },
+        { provide: ActivitiesBackfillService, useValue: { startForceRefetch } }
+      ]
+    }).compile();
+    const controller = moduleRef.get(ActivitiesController);
+
+    const result = await controller.startForceRefetch();
+
+    expect(result).toBe(startResult);
+  });
 });
