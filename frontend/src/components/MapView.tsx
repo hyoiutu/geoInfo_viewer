@@ -2,7 +2,7 @@ import { Box } from '@chakra-ui/react';
 import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   type CyclingActivity,
   fetchCyclingActivities,
@@ -30,10 +30,12 @@ import {
   BICYCLE_LOG_SELECTED_SOURCE_ID,
   BICYCLE_LOG_SOURCE_ID
 } from '../constants/bicycleLog';
+import type { ActivityFilter } from '../types/activityFilter';
 import type { AppErrorInfo } from '../types/apiError';
 import type { LayerVisibility, ToggleableLayerId } from '../types/layer';
 import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
+import { filterActivities } from '../utils/filterActivities';
 import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
 
 const OSM_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
@@ -60,6 +62,8 @@ type MapViewProps = {
   onSelectActivities: (ids: string[]) => void;
   /** 自転車ログのデータ取得・更新のたびに、取得済みアクティビティ一覧を渡すコールバック */
   onActivitiesLoaded: (activities: CyclingActivity[]) => void;
+  /** 地図に表示するアクティビティを絞り込むフィルタ条件 */
+  filter: ActivityFilter;
 };
 
 type CategorizedLayerIds = Record<ToggleableLayerId, string[]>;
@@ -106,13 +110,12 @@ const addBicycleLogLayer = (map: maplibregl.Map) => {
 };
 
 /**
- * Strava上の新規アクティビティを同期し、自転車ログのGeoJSONソースを最新のデータで更新する
- * @param map 更新対象のMapLibre地図インスタンス
+ * Strava上の新規アクティビティを同期し、取得したアクティビティ一覧をコールバックで通知する。
+ * 地図への反映（フィルタ適用後のGeoJSON設定）はこの関数の呼び出し元が別途行う
  * @param onError API呼び出し失敗時に呼ばれるコールバック
  * @param onActivitiesLoaded 取得に成功したアクティビティ一覧を渡すコールバック
  */
 const syncAndLoadBicycleLog = async (
-  map: maplibregl.Map,
   onError: (error: AppErrorInfo) => void,
   onActivitiesLoaded: (activities: CyclingActivity[]) => void
 ) => {
@@ -135,8 +138,6 @@ const syncAndLoadBicycleLog = async (
 
   try {
     const activities = await fetchCyclingActivities();
-    const source = map.getSource(BICYCLE_LOG_SOURCE_ID) as maplibregl.GeoJSONSource;
-    source.setData(cyclingActivityToGeoJson(activities));
     onActivitiesLoaded(activities);
   } catch (error) {
     onError(toAppErrorInfo(error));
@@ -251,7 +252,8 @@ export const MapView = ({
   selectedIds,
   focusedId,
   onSelectActivities,
-  onActivitiesLoaded
+  onActivitiesLoaded,
+  filter
 }: MapViewProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -259,6 +261,7 @@ export const MapView = ({
   const wasBicycleLogVisibleRef = useRef(false);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
+  const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
   // クリックハンドラはマウント時に一度だけ登録するため、最新の値をrefで参照する（クロージャの陳腐化対策）
   const onSelectActivitiesRef = useRef(onSelectActivities);
   onSelectActivitiesRef.current = onSelectActivities;
@@ -298,6 +301,17 @@ export const MapView = ({
     };
   }, []);
 
+  // フィルタ適用後のアクティビティ一覧が変化するたびに、通常状態の自転車ログレイヤーのデータを更新する
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isStyleLoaded) {
+      return;
+    }
+
+    const source = map.getSource(BICYCLE_LOG_SOURCE_ID) as maplibregl.GeoJSONSource;
+    source.setData(cyclingActivityToGeoJson(filteredActivities));
+  }, [filteredActivities, isStyleLoaded]);
+
   // 選択中・フォーカス中のアクティビティが変化するたびに、選択用・フォーカス用レイヤーのデータを更新する
   useEffect(() => {
     const map = mapRef.current;
@@ -305,8 +319,8 @@ export const MapView = ({
       return;
     }
 
-    applySelectionLayers(map, activities, selectedIds, focusedId);
-  }, [activities, selectedIds, focusedId, isStyleLoaded]);
+    applySelectionLayers(map, filteredActivities, selectedIds, focusedId);
+  }, [filteredActivities, selectedIds, focusedId, isStyleLoaded]);
 
   // layerVisibilityが変化するたびに各レイヤーの表示/非表示を反映し、
   // 自転車ログレイヤーがOFF→ONに変化した場合はStrava同期・データ取得を行う
@@ -324,7 +338,7 @@ export const MapView = ({
     wasBicycleLogVisibleRef.current = isBicycleLogVisible;
 
     if (!wasBicycleLogVisible && isBicycleLogVisible) {
-      void syncAndLoadBicycleLog(map, onError, (loaded) => {
+      void syncAndLoadBicycleLog(onError, (loaded) => {
         setActivities(loaded);
         onActivitiesLoaded(loaded);
       });

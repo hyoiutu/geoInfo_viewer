@@ -2,12 +2,14 @@ import { Flex } from '@chakra-ui/react';
 import { useCallback, useState } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
 import { LAYER_DEFINITIONS } from '../constants/layerDefinitions';
+import { useActivityFilter } from '../hooks/useActivityFilter';
 import { useActivitySelection } from '../hooks/useActivitySelection';
 import { useBackfillStatus } from '../hooks/useBackfillStatus';
 import { useLayerVisibility } from '../hooks/useLayerVisibility';
 import type { AppErrorInfo } from '../types/apiError';
 import { ActivityDetailSidebar } from './ActivityDetailSidebar';
 import { ErrorDialog } from './ErrorDialog';
+import { FilterDialog } from './FilterDialog';
 import { LayerSidebar } from './LayerSidebar';
 import { MapView } from './MapView';
 
@@ -30,6 +32,16 @@ export const MapWorkspace = () => {
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
   const { selectedIds, focusedIndex, selectActivities, focusActivity, clearFocus, clearSelection } =
     useActivitySelection();
+  const {
+    appliedFilter,
+    draftFilter,
+    isDialogOpen: isFilterDialogOpen,
+    openDialog: openFilterDialog,
+    closeDialog: closeFilterDialog,
+    updateDraft: updateFilterDraft,
+    resetDraft: resetFilterDraft,
+    applyDraft: applyFilterDraft
+  } = useActivityFilter();
   // selectedIds（クリック順・重複可）と1:1で対応するアクティビティ一覧をサイドバー表示用に組み立てる
   const selectedActivities = selectedIds
     .map((id) => activities.find((activity) => activity.id === id))
@@ -54,6 +66,7 @@ export const MapWorkspace = () => {
         onStartForceRefetch={() => {
           void startForceRefetch();
         }}
+        onOpenFilterDialog={openFilterDialog}
       />
       <MapView
         layerVisibility={visibility}
@@ -62,6 +75,7 @@ export const MapWorkspace = () => {
         focusedId={focusedId}
         onSelectActivities={selectActivities}
         onActivitiesLoaded={setActivities}
+        filter={appliedFilter}
       />
       <ActivityDetailSidebar
         activities={selectedActivities}
@@ -69,6 +83,14 @@ export const MapWorkspace = () => {
         onFocus={focusActivity}
         onBackFromDetail={clearFocus}
         onBackFromList={clearSelection}
+      />
+      <FilterDialog
+        isOpen={isFilterDialogOpen}
+        draftFilter={draftFilter}
+        onUpdateDraft={updateFilterDraft}
+        onReset={resetFilterDraft}
+        onApply={applyFilterDraft}
+        onClose={closeFilterDialog}
       />
       <ErrorDialog errors={errors} onDismiss={dismissError} />
     </Flex>

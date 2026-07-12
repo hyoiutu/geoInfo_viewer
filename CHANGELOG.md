@@ -14,6 +14,25 @@
 
 ## 変更履歴
 
+### [2026-07-13] GitHub Issue #19として自転車ログフィルタリング機能を実装した
+* **修正の動機・概要**:
+  - 地図上に表示する自転車ログを、走行開始年月の範囲・獲得標高・平均時速・走行距離で絞り込みたいという依頼（Issue #19）。自律モードで対応した。
+  - Issueの要求仕様（年のみ入力時の月補完、片側のみ入力時のもう片側の扱い、月のみ入力のバリデーション拒否等）を1つの純粋関数`filterActivities`とその前段のバリデーション関数`isActivityFilterValid`に落とし込み、TDDで細部の境界値（月末日を含むか、走行時間0のゼロ除算等）を検証した。
+  - ダイアログの入力状態（未確定のdraft）と実際に地図へ適用される状態（applied）を分離管理するフック`useActivityFilter`を新設し、「実行を押したときのみ確定し、閉じるボタンでは破棄され、再度開いたときは直近の適用内容を復元する」というIssueの要求を満たした。
+  - `MapView`の自転車ログ描画を、これまで「取得したアクティビティをそのままGeoJSONへ変換して表示」していたところから、「取得したアクティビティにフィルタを適用してから表示」するよう変更した。選択用・フォーカス用レイヤーも同じフィルタ済みアクティビティ一覧を参照するようにし、フィルタで除外されたアクティビティは選択・フォーカス状態であっても地図上には描画されないようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/types/activityFilter.ts`（新規）: `ActivityFilter`型と`DEFAULT_ACTIVITY_FILTER`。
+    - `frontend/src/utils/filterActivities.ts`（新規）: `filterActivities`・`isActivityFilterValid`。
+    - `frontend/src/hooks/useActivityFilter.ts`（新規）: ダイアログの開閉・入力中(draft)/適用中(applied)のフィルタ状態を管理するフック。
+    - `frontend/src/components/FilterDialog.tsx`（新規）: 年月プルダウン・数値入力・リセット/実行/閉じるボタンを持つフィルタダイアログ。
+    - `frontend/src/components/LayerSidebar.tsx`: フィルタダイアログを開くボタンを追加。
+    - `frontend/src/components/MapView.tsx`: `filter`propsを追加し、自転車ログの通常・選択・フォーカス各レイヤーの描画にフィルタ適用後のアクティビティ一覧を使うよう変更。
+    - `frontend/src/components/MapWorkspace.tsx`: `useActivityFilter`・`FilterDialog`を配線。
+    - 単体テスト（フロントエンド153件）・lint・typecheck・E2Eテスト4件は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`に「自転車ログフィルタリング機能」節を新設。
+
 ### [2026-07-13] PR #16のレビュー対応としてActivityDetailSidebarの子コンポーネントにTSDocを補った
 * **修正の動機・概要**:
   - PR #16のレビューで、`ActivityDetailSidebar.tsx`内の子コンポーネント`ActivityList`・`ActivityDetail`のTSDoc情報が不足している（`ActivityDetail`はpropsをリテラルのオブジェクト型のまま、`ActivityList`は親のProps型から`Pick<...>`で直接切り出して使っており、どちらも独立した名前付き`type`として抽出されていなかった）との指摘を受けた。加えて、他に同様の状態のファイルが無いか確認するよう依頼された。

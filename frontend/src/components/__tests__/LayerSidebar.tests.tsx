@@ -35,6 +35,7 @@ const renderSidebar = (overrides: Partial<Parameters<typeof LayerSidebar>[0]> = 
       backfillStatus={NOT_RUNNING_BACKFILL_STATUS}
       onStartBackfill={vi.fn()}
       onStartForceRefetch={vi.fn()}
+      onOpenFilterDialog={vi.fn()}
       {...overrides}
     />
   );
@@ -157,5 +158,20 @@ describe('LayerSidebarに関するテスト', () => {
     const { getByRole } = renderSidebar({ backfillStatus: RUNNING_BACKFILL_STATUS });
 
     expect(getByRole('button', { name: '自転車ログ強制再取得' })).toBeDisabled();
+  });
+
+  test('レイヤー一覧の下にフィルタボタンが表示される', () => {
+    const { getByRole } = renderSidebar();
+
+    expect(getByRole('button', { name: '自転車ログ フィルタ' })).toBeInTheDocument();
+  });
+
+  test('フィルタボタンをクリックすると、onOpenFilterDialogが呼ばれる', () => {
+    const onOpenFilterDialog = vi.fn();
+    const { getByRole } = renderSidebar({ onOpenFilterDialog });
+
+    fireEvent.click(getByRole('button', { name: '自転車ログ フィルタ' }));
+
+    expect(onOpenFilterDialog).toHaveBeenCalledTimes(1);
   });
 });
