@@ -33,6 +33,14 @@ export type BackfillStartResult = {
   started: boolean;
 };
 
+/** fetchPassedMunicipalitiesが返す一覧の1件分（通過した自治体） */
+export type PassedMunicipality = {
+  /** 都道府県名 */
+  prefectureName: string;
+  /** 市区町村名（政令指定都市の区の場合は市名を含む。例: 横浜市中区） */
+  municipalityName: string;
+};
+
 /** getBackfillStatusが返す初期取り込みの進捗状況 */
 export type BackfillStatus = {
   /** 現在実行中かどうか */
@@ -59,6 +67,21 @@ const ACTIVITIES_BACKFILL_PATH = '/activities/backfill';
 const ACTIVITIES_BACKFILL_STATUS_PATH = '/activities/backfill/status';
 const ACTIVITIES_BACKFILL_FORCE_REFETCH_PATH = '/activities/backfill/force-refetch';
 const HTTP_METHOD_POST = 'POST';
+
+/**
+ * 指定したアクティビティの軌跡から算出した、通過した自治体一覧を取得する
+ * @param activityId 対象のアクティビティID
+ * @returns 通過した自治体一覧
+ */
+export const fetchPassedMunicipalities = async (activityId: string): Promise<PassedMunicipality[]> => {
+  const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_PATH}/${activityId}/municipalities`);
+
+  if (!response.ok) {
+    throw await buildApiError(response);
+  }
+
+  return response.json();
+};
 
 /**
  * DBに保存済みの自転車ログ一覧を取得する

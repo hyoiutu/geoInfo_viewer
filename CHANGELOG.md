@@ -14,6 +14,26 @@
 
 ## 変更履歴
 
+### [2026-07-13] GitHub Issue #18として通過自治体表示機能を実装した
+* **修正の動機・概要**:
+  - アクティビティ詳細画面に、そのアクティビティが通過した市区町村（都道府県+市区町村）を表示してほしいという依頼（Issue #18）。自律モードで対応した。
+  - 全国の市区町村境界データを国土数値情報(N03)ベースのオープンデータ（GeoShapeリポジトリ、TopoJSON形式）からダウンロードし、PostGISの`municipalities`テーブルへ投入する仕組み（`seed-municipalities.ts`）を新設した。全47都道府県で最新の基準日が2023-01-01で統一されていることを実際にHTTPリクエストで確認した上でハードコードした。
+  - 逆ジオコーディングは、アクティビティの軌跡をPostGISの`ST_Segmentize`で約100m間隔にサンプリングし、`ST_DumpPoints`で座標点を取り出した上で`ST_Contains`により自治体ポリゴンとの空間結合を行う方式で実装した。実際に開発DB（実データ・実境界データ）に対してクエリを実行し、東京駅が「東京都千代田区」、横浜駅付近が「神奈川県横浜市神奈川区」と正しく判定されること、実際のアクティビティの軌跡から神奈川県内の複数市町村が正しく得られることを確認した。
+  - 海外を通過した区間の除外は、市区町村データが日本国内のみのため「一致する自治体が無い＝除外される」という形で自然に実現され、追加の判定ロジックは不要だった。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/municipalities/`（新規）: `entities/municipality.entity.ts`（Entity）・`municipalities.service.ts`（逆ジオコーディングサービス）・`municipalities.module.ts`・`seed-municipalities.ts`（データ投入スクリプト）。
+    - `backend/src/migrations/1720700000000-CreateMunicipalities.ts`（新規）: `municipalities`テーブルとGiSTインデックスを作成するマイグレーション。実DBに適用し、47都道府県分（1917件）のデータ投入・空間検索の動作を確認済み。
+    - `backend/src/database/database.config.ts`: `MunicipalityEntity`をTypeORMへ登録。
+    - `backend/src/activities/activities.controller.ts`・`activities.module.ts`・`activities.constants.ts`: `GET /activities/:id/municipalities`エンドポイントを追加。
+    - `backend/package.json`: `topojson-client`・`@types/topojson-client`・`@types/topojson-specification`を追加、`seed:municipalities`スクリプトを追加。
+    - `frontend/src/api/activitiesApi.ts`: `fetchPassedMunicipalities`を追加。
+    - `frontend/src/hooks/usePassedMunicipalities.ts`（新規）: アクティビティIDが変わるたびに通過自治体を取得するフック。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: フォーカス中のアクティビティ詳細に通過自治体一覧（取得中/0件/一覧の3状態）を表示する`PassedMunicipalitiesList`を追加。
+    - 単体テスト（バックエンド91件・フロントエンド123件）・lint・typecheck・E2Eテスト4件は全てGreen。
+  * **README.md**: 「通過自治体データの投入（初回のみ）」節を新設し、`pnpm --filter backend run seed:municipalities`の実行方法とデータ出典を記載。
+  * **仕様書**: `specs/system_specification.md`に「通過自治体表示機能」節を新設し、逆ジオコーディングの方式（データ出典・サンプリング間隔・空間検索方法・海外除外の扱い）を記載。「アクティビティ詳細閲覧機能」の詳細画面の表示項目にも通過自治体一覧を追記。
+
 ### [2026-07-13] PR #16のレビュー対応としてActivityDetailSidebarの子コンポーネントにTSDocを補った
 * **修正の動機・概要**:
   - PR #16のレビューで、`ActivityDetailSidebar.tsx`内の子コンポーネント`ActivityList`・`ActivityDetail`のTSDoc情報が不足している（`ActivityDetail`はpropsをリテラルのオブジェクト型のまま、`ActivityList`は親のProps型から`Pick<...>`で直接切り出して使っており、どちらも独立した名前付き`type`として抽出されていなかった）との指摘を受けた。加えて、他に同様の状態のファイルが無いか確認するよう依頼された。
