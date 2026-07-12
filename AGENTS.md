@@ -14,4 +14,5 @@
 - 単体テスト・E2Eテストを作成または実行する場合はtest_rules.mdに記載されたルールに従う
 - GitHub Issueをもとに実装・修正を行う場合はissue-implementスキル（.agents/skills/issue-implement/SKILL.md）を経由し、branch_rules.mdに記載された「1 Issue = 1 Branch」の原則に従ってブランチを作成する。対話モードでは対象Issue・ブランチ名・派生元ブランチをユーザーに確認するが、/loop等による自律モードでは確認を省略して自己判断し、実装完了後にpush・PR作成まで行う（詳細はスキル本文参照）
 - GitHub PRのレビューコメントに対応する場合はpr-review-respondスキル（.agents/skills/pr-review-respond/SKILL.md）を経由し、1コメント=1コミットの原則でauto-commitスキル経由でコミットした上で、各コメントへ対応内容（コミットへのリンク、または質問への回答・対応不要の理由）を返信する。自律モードでは全対応完了後にpushしユーザーへ通知する
-- `git push`は原則ユーザー自身が行うが、issue-implement・pr-review-respondの自律モードに限り、完了後の最終ステップとしてAIが通常のpushを行ってよい。**force push（`--force`/`-f`）はいかなる場合も絶対に禁止**（branch_rules.md参照）
+- レビュー対応が完了しpush・PRマージ・次にレビューするPRの準備（祖先ブランチの取り込みによる競合解消）を行う場合はfinish-reviewスキル（.agents/skills/finish-review/SKILL.md）を経由する。PRのマージ実行前には必ずユーザーにY/N確認を行う（常に対話モードで実行し、自律モードは持たない）
+- `git push`は原則ユーザー自身が行うが、issue-implement・pr-review-respondの自律モード、およびfinish-reviewスキル（マージ前確認あり）に限り、AIが通常のpushを行ってよい。**force push（`--force`/`-f`）はいかなる場合も絶対に禁止**（branch_rules.md参照）

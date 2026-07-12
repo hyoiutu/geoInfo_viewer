@@ -14,6 +14,7 @@
 1. **プッシュの制限**
    - 対話モード（ユーザーとチャットでやり取りしながら1件のIssueを進める通常時）では、ユーザーから明示的な指示が無い限り`git push`を実行してはならない。リモートリポジトリへの送信は原則ユーザー（人間）自身が行う。
    - `issue-implement`スキルの**自律モード**（[issue-implement/SKILL.md](../.agents/skills/issue-implement/SKILL.md)参照）でのみ、1つのIssueの実装・検証・コミットが全て完了した後の最終ステップとして`git push`（通常のpush、`-u origin <ブランチ名>`）を行ってよい。
+   - [finish-review](../.agents/skills/finish-review/SKILL.md)スキルでも、レビュー対応完了後の後処理として`git push`（およびPRのマージ）を行うが、マージの実行前には必ずユーザーにY/N確認を行う。本スキルは常に対話モードで実行し、自律モードは持たない。
    - **`git push --force`/`-f`（force push）は、対話モード・自律モードいずれであっても絶対に禁止。** このルールに例外は無い。
 
 2. **ブランチ作成前のユーザー確認（対話モード）**
