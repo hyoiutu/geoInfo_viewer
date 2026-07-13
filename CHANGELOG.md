@@ -14,6 +14,19 @@
 
 ## 変更履歴
 
+### [2026-07-14] GitHub Issue #30として仕様書を仕様書と設計書に分割した
+* **修正の動機・概要**:
+  - `specs/system_specification.md`に、ユーザーから見た仕様レベルの記述だけでなく、アルゴリズム・データモデル・クラス名・PostGISの関数名等の設計レベルの記述も混在しており、レビューしづらいという依頼（Issue #30）。自律モードで対応した。
+  - 設計書を置く`designs/`フォルダを新設し、`designs/technical_design.md`へ実装上の設計（技術スタック、ディレクトリ構造、各機能のアルゴリズム・データモデル・処理フロー）を移した。`specs/system_specification.md`にはユーザーから見た機能・挙動のみを残した。
+  - 設計書へ移す過程で、既存のコードを参照し、仕様書の記述が実装と乖離していた箇所を補強・修正した（例: `StravaApiException`という独立した例外クラスが存在するという記述は誤りで、実際は`toStravaApiException`という変換関数であることを確認し修正。エラー状態管理も、Issue #28で`onError`のバケツリレーからJotaiの`errorsAtom`へ変更されていたのに仕様書側が追従できていなかったため修正）。
+  - Issue #29で作成した`CLASS_DIAGRAM.md`（リポジトリルート）も、新設した`designs/`フォルダへ移動した（`designs/class_diagram.md`）。
+  - AGENTS.mdの実装・README・仕様書の乖離確認ルールに、`designs/`以下の設計書も対象として追加した。`issue-implement`・`pr-review-respond`・`finish-review`スキルの該当箇所も同様に更新した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: アプリケーションコードの変更は無い。
+  * **README.md**: 概要文に`designs/technical_design.md`へのリンクを追加。
+  * **仕様書**: `specs/system_specification.md`から実装上の設計に関する記述を`designs/technical_design.md`へ移動し、ユーザーから見た仕様のみを残す構成に変更。
+  * **その他**: `AGENTS.md`・`.agents/skills/issue-implement/SKILL.md`・`.agents/skills/pr-review-respond/SKILL.md`・`.agents/skills/finish-review/SKILL.md`の仕様書関連の記述に、`designs/`以下の設計書も対象として追加。
+
 ### [2026-07-14] GitHub Issue #29として現状の実装のクラス図と改善提案をまとめた
 * **修正の動機・概要**:
   - 設計・実装がエージェント任せになっており、現在の依存関係が適切かレビューできる状態になっていないという依頼（Issue #29）。自律モードで対応した。
