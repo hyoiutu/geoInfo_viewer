@@ -12,7 +12,25 @@
   * **仕様書**: 〇〇
 -->
 
-## 変更履歴
+### [2026-07-14] GitHub Issue #28としてエラー状態をJotaiによるグローバルステートへ置き換えた
+* **修正の動機・概要**:
+  - `onError`コールバックが`MapWorkspace`を起点に`MapView`・`ActivityDetailSidebar`→`ActivityDetail`→`usePassedMunicipalities`、`useBackfillStatus`と複数階層にわたってバケツリレーされており、コンポーネントの整理やアプリケーション拡大に伴いこの構造が深刻化する前に解消してほしいという依頼（Issue #28）。自律モードで対応した。
+  - Jotaiを導入し、エラースタックを`errorsAtom`（グローバルステート）として持たせた。エラーが発生しうる箇所（`MapView`・`useBackfillStatus`・`usePassedMunicipalities`）は`useErrorReporter`フックを直接呼び出してエラーを追加するようになり、`onError`propsを親から受け取る必要が無くなった。`ErrorDialog`も`errorsAtom`を直接参照・更新するようになり、`errors`/`onDismiss`propsが不要になった。
+  - 他にグローバルステート化すべきものがないか調査したが、`onError`ほど深い（3階層以上の）バケツリレーが発生している状態は他に見当たらなかった（`layerVisibility`・`selectedIds`・`filter`等は`MapWorkspace`から直接の子コンポーネントへ渡されるのみ）ため、今回は`onError`のみを対象とした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/package.json`・`pnpm-lock.yaml`: `jotai`を追加。
+    - `frontend/src/atoms/errorsAtom.ts`（新規）: `errorsAtom`。
+    - `frontend/src/hooks/useErrorReporter.ts`（新規）: `errorsAtom`へエラーを追加する`useErrorReporter`。
+    - `frontend/src/hooks/useBackfillStatus.ts`・`frontend/src/hooks/usePassedMunicipalities.ts`: `onError`引数を廃止し`useErrorReporter`を直接使うよう変更。
+    - `frontend/src/components/MapView.tsx`・`frontend/src/components/ActivityDetailSidebar.tsx`: `onError`propsを廃止。
+    - `frontend/src/components/ErrorDialog.tsx`: `errors`/`onDismiss`propsを廃止し`errorsAtom`を直接参照・更新。
+    - `frontend/src/components/MapWorkspace.tsx`: エラー用のローカルステート・コールバックを削除。
+    - `frontend/src/test-utils/renderWithChakra.tsx`: JotaiのProviderでラップ（テストケース間でグローバルステートが漏れないよう、呼び出しごとに独立したストアを持たせる）。
+    - `frontend/src/test-utils/ErrorsProbe.tsx`（新規）: テストからerrorsAtomの値を検証するためのテスト専用コンポーネント。
+    - 単体テスト（フロントエンド180件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部アーキテクチャの変更であり機能仕様に影響しないため）。
 
 ### [2026-07-14] GitHub Issue #27として軌跡の位置飛び（測定不能区間）を検出し区間分割するようにした
 * **修正の動機・概要**:

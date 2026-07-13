@@ -30,6 +30,7 @@ import {
   BICYCLE_LOG_SELECTED_SOURCE_ID,
   BICYCLE_LOG_SOURCE_ID
 } from '../constants/bicycleLog';
+import { useErrorReporter } from '../hooks/useErrorReporter';
 import type { ActivityFilter } from '../types/activityFilter';
 import type { AppErrorInfo } from '../types/apiError';
 import type { LayerVisibility, ToggleableLayerId } from '../types/layer';
@@ -53,8 +54,6 @@ const HIT_TEST_RADIUS_PX = 5;
 type MapViewProps = {
   /** レイヤーIDごとの表示/非表示状態 */
   layerVisibility: LayerVisibility;
-  /** API呼び出し等でエラーが発生したときに呼ばれるコールバック */
-  onError: (error: AppErrorInfo) => void;
   /** 選択中のアクティビティID一覧 */
   selectedIds: string[];
   /** フォーカス中のアクティビティID。未フォーカスの場合はnull */
@@ -299,13 +298,13 @@ const applyLayerVisibility = (
 /** MapLibreの地図本体を表示し、レイヤーの表示/非表示・自転車ログの同期・選択状態の描画を行うコンポーネント */
 export const MapView = ({
   layerVisibility,
-  onError,
   selectedIds,
   focusedId,
   onSelectActivities,
   onActivitiesLoaded,
   filter
 }: MapViewProps) => {
+  const addError = useErrorReporter();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
@@ -404,12 +403,12 @@ export const MapView = ({
     wasBicycleLogVisibleRef.current = isBicycleLogVisible;
 
     if (!wasBicycleLogVisible && isBicycleLogVisible) {
-      void syncAndLoadBicycleLog(onError, (loaded) => {
+      void syncAndLoadBicycleLog(addError, (loaded) => {
         setActivities(loaded);
         onActivitiesLoaded(loaded);
       });
     }
-  }, [layerVisibility, isStyleLoaded, onError, onActivitiesLoaded]);
+  }, [layerVisibility, isStyleLoaded, addError, onActivitiesLoaded]);
 
   return <Box ref={containerRef} flex="1" minWidth="0" height="100vh" data-testid="map-container" />;
 };
