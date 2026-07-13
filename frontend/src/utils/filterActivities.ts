@@ -1,15 +1,14 @@
 import type { CyclingActivity } from '../api/activitiesApi';
 import type { ActivityFilter } from '../types/activityFilter';
+import { calculateAverageSpeedKmh } from './averageSpeed';
 
 const METERS_PER_KILOMETER = 1000;
-const SECONDS_PER_HOUR = 3600;
 const JANUARY = 1;
 const DECEMBER = 12;
 const DEFAULT_START_YEAR = 1980;
 const MONTH_INDEX_OFFSET = 1;
 const NEXT_MONTH_OFFSET = 1;
 const FIRST_DAY_OF_MONTH = 1;
-const ZERO_SPEED_KMH = 0;
 
 /**
  * フィルタ条件が有効かどうかを検証する。「月のみ入力され年が未入力」の組み合わせは無効とする
@@ -58,18 +57,6 @@ const resolveEndDateExclusive = (filter: ActivityFilter, now: Date): Date | null
   }
   const month = filter.endMonth ?? DECEMBER;
   return new Date(filter.endYear, month - MONTH_INDEX_OFFSET + NEXT_MONTH_OFFSET, FIRST_DAY_OF_MONTH);
-};
-
-/**
- * 平均時速(km/h)を算出する。走行時間が0の場合はゼロ除算を避け0を返す
- * @param activity 対象のアクティビティ
- * @returns 平均時速(km/h)
- */
-const calculateAverageSpeedKmh = (activity: CyclingActivity): number => {
-  if (activity.movingTimeSeconds === ZERO_SPEED_KMH) {
-    return ZERO_SPEED_KMH;
-  }
-  return (activity.distanceMeters / METERS_PER_KILOMETER / activity.movingTimeSeconds) * SECONDS_PER_HOUR;
 };
 
 /**
