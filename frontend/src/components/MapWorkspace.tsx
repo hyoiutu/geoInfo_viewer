@@ -1,13 +1,16 @@
 import { Flex } from '@chakra-ui/react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
 import { LAYER_DEFINITIONS } from '../constants/layerDefinitions';
+import { useActivityFilter } from '../hooks/useActivityFilter';
 import { useActivitySelection } from '../hooks/useActivitySelection';
 import { useBackfillStatus } from '../hooks/useBackfillStatus';
 import { useLayerVisibility } from '../hooks/useLayerVisibility';
 import type { AppErrorInfo } from '../types/apiError';
+import { filterActivities } from '../utils/filterActivities';
 import { ActivityDetailSidebar } from './ActivityDetailSidebar';
 import { ErrorDialog } from './ErrorDialog';
+import { FilterDialog } from './FilterDialog';
 import { LayerSidebar } from './LayerSidebar';
 import { MapView } from './MapView';
 
@@ -28,8 +31,26 @@ export const MapWorkspace = () => {
   }, []);
   const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus(addError);
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
-  const { selectedIds, focusedIndex, selectActivities, focusActivity, clearFocus, clearSelection } =
+  const { selectedIds, focusedIndex, selectActivities, focusActivity, clearFocus, clearSelection, pruneToVisible } =
     useActivitySelection();
+  const {
+    appliedFilter,
+    draftFilter,
+    isDialogOpen: isFilterDialogOpen,
+    openDialog: openFilterDialog,
+    closeDialog: closeFilterDialog,
+    updateDraft: updateFilterDraft,
+    resetDraft: resetFilterDraft,
+    applyDraft: applyFilterDraft
+  } = useActivityFilter();
+  const visibleIds = useMemo(
+    () => new Set(filterActivities(activities, appliedFilter).map((activity) => activity.id)),
+    [activities, appliedFilter]
+  );
+  // フィルタで除外され地図上に表示されなくなったアクティビティは、選択・フォーカス状態からも取り除く
+  useEffect(() => {
+    pruneToVisible(visibleIds);
+  }, [visibleIds, pruneToVisible]);
   // selectedIds（クリック順・重複可）と1:1で対応するアクティビティ一覧をサイドバー表示用に組み立てる
   const selectedActivities = selectedIds
     .map((id) => activities.find((activity) => activity.id === id))
@@ -54,6 +75,7 @@ export const MapWorkspace = () => {
         onStartForceRefetch={() => {
           void startForceRefetch();
         }}
+        onOpenFilterDialog={openFilterDialog}
       />
       <MapView
         layerVisibility={visibility}
@@ -62,6 +84,7 @@ export const MapWorkspace = () => {
         focusedId={focusedId}
         onSelectActivities={selectActivities}
         onActivitiesLoaded={setActivities}
+        filter={appliedFilter}
       />
       <ActivityDetailSidebar
         activities={selectedActivities}
@@ -70,6 +93,14 @@ export const MapWorkspace = () => {
         onBackFromDetail={clearFocus}
         onBackFromList={clearSelection}
         onError={addError}
+      />
+      <FilterDialog
+        isOpen={isFilterDialogOpen}
+        draftFilter={draftFilter}
+        onUpdateDraft={updateFilterDraft}
+        onReset={resetFilterDraft}
+        onApply={applyFilterDraft}
+        onClose={closeFilterDialog}
       />
       <ErrorDialog errors={errors} onDismiss={dismissError} />
     </Flex>

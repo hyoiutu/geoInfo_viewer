@@ -1,7 +1,7 @@
 import type { CyclingActivity } from '../api/activitiesApi';
+import { calculateAverageSpeedKmh } from './averageSpeed';
 
 const METERS_PER_KILOMETER = 1000;
-const SECONDS_PER_HOUR = 3600;
 const MILLISECONDS_PER_SECOND = 1000;
 const DECIMAL_PLACES = 1;
 const LOCALE_JA = 'ja-JP';
@@ -29,10 +29,7 @@ type ActivityDetailView = {
  */
 export const toActivityDetailView = (activity: CyclingActivity): ActivityDetailView => {
   const distanceKm = activity.distanceMeters / METERS_PER_KILOMETER;
-  const averageSpeedKmh =
-    activity.movingTimeSeconds === 0
-      ? 0
-      : (activity.distanceMeters / METERS_PER_KILOMETER / activity.movingTimeSeconds) * SECONDS_PER_HOUR;
+  const averageSpeedKmh = calculateAverageSpeedKmh(activity);
   const startDate = new Date(activity.startDate);
   const endDate = new Date(startDate.getTime() + activity.elapsedTimeSeconds * MILLISECONDS_PER_SECOND);
 

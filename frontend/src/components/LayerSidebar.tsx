@@ -28,15 +28,18 @@ type LayerSidebarProps = {
   onStartBackfill: () => void;
   /** 強制再取得ボタンが押されたときに呼ばれるコールバック */
   onStartForceRefetch: () => void;
+  /** フィルタボタンが押されたときに呼ばれるコールバック */
+  onOpenFilterDialog: () => void;
 };
 
-/** レイヤーの一覧表示・ON/OFF切り替え・初期取り込みボタンを提供するサイドバー */
+/** レイヤーの一覧表示・ON/OFF切り替え・初期取り込み・フィルタダイアログを開くボタンを提供するサイドバー */
 export const LayerSidebar = ({
   layers,
   onToggleLayer,
   backfillStatus,
   onStartBackfill,
-  onStartForceRefetch
+  onStartForceRefetch,
+  onOpenFilterDialog
 }: LayerSidebarProps) => {
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -77,6 +80,11 @@ export const LayerSidebar = ({
               </Switch.Label>
             </Switch.Root>
           ))}
+          <Box borderTop="1px solid" borderColor="border" paddingTop="3">
+            <Button onClick={onOpenFilterDialog} size="sm" width="100%">
+              自転車ログ フィルタ
+            </Button>
+          </Box>
           <Box borderTop="1px solid" borderColor="border" paddingTop="3">
             <Button onClick={onStartBackfill} disabled={backfillStatus?.isRunning ?? false} size="sm" width="100%">
               自転車ログ初期取り込み

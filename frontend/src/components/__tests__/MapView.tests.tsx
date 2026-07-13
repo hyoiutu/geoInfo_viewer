@@ -21,6 +21,7 @@ import {
   BICYCLE_LOG_SOURCE_ID
 } from '../../constants/bicycleLog';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
+import { DEFAULT_ACTIVITY_FILTER } from '../../types/activityFilter';
 import type { LayerVisibility } from '../../types/layer';
 import { MapView } from '../MapView';
 
@@ -62,7 +63,8 @@ const DEFAULT_SELECTION_PROPS = {
   selectedIds: [] as string[],
   focusedId: null as string | null,
   onSelectActivities: vi.fn(),
-  onActivitiesLoaded: vi.fn()
+  onActivitiesLoaded: vi.fn(),
+  filter: DEFAULT_ACTIVITY_FILTER
 };
 
 // ソースIDごとに独立したsetDataスパイを返す（BICYCLE_LOG_SOURCE_ID等、複数ソースを区別して検証するため）
@@ -282,6 +284,62 @@ describe('MapViewに関するテスト', () => {
         expect.objectContaining({
           type: 'FeatureCollection',
           features: [expect.objectContaining({ properties: { id: '1', name: 'ライド1' } })]
+        })
+      );
+    });
+  });
+
+  test('filterで絞り込まれたアクティビティのみが、通常状態の自転車ログレイヤーに反映される', async () => {
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([
+      {
+        id: '1',
+        name: '短距離ライド',
+        distanceMeters: 1000,
+        movingTimeSeconds: 600,
+        elapsedTimeSeconds: 650,
+        elevationGainMeters: 50,
+        startDate: '2026-07-01T00:00:00Z',
+        path: [
+          [139.7, 35.6],
+          [139.8, 35.7]
+        ]
+      },
+      {
+        id: '2',
+        name: '長距離ライド',
+        distanceMeters: 50000,
+        movingTimeSeconds: 7200,
+        elapsedTimeSeconds: 7300,
+        elevationGainMeters: 500,
+        startDate: '2026-07-02T00:00:00Z',
+        path: [
+          [139.7, 35.6],
+          [139.9, 35.8]
+        ]
+      }
+    ]);
+    const { rerender } = renderWithChakra(
+      <MapView
+        layerVisibility={ALL_ON_VISIBILITY}
+        onError={vi.fn()}
+        {...DEFAULT_SELECTION_PROPS}
+        filter={{ ...DEFAULT_ACTIVITY_FILTER, minDistanceKm: 10 }}
+      />
+    );
+
+    rerender(
+      <MapView
+        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+        onError={vi.fn()}
+        {...DEFAULT_SELECTION_PROPS}
+        filter={{ ...DEFAULT_ACTIVITY_FILTER, minDistanceKm: 10 }}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getSetDataMock(BICYCLE_LOG_SOURCE_ID)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          features: [expect.objectContaining({ properties: { id: '2', name: '長距離ライド' } })]
         })
       );
     });
