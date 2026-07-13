@@ -225,8 +225,10 @@ const applySelectionLayers = (
 
 /**
  * フォーカス中のアクティビティの開始地点・終了地点に、スタート・ゴールを示すマーカーを表示する。
- * フォーカスが無い場合、または軌跡(path)を持たないアクティビティの場合はマーカーを全て取り除く。
- * 開始地点と終了地点が同じ座標の場合（周回ルート等）に手前へ描画されるよう、スタートのマーカーを後から追加する
+ * pathは位置飛び（測定不能区間）で区間分割された座標配列の配列のため、最初の区間の最初の点をスタート、
+ * 最後の区間の最後の点をゴールとする。フォーカスが無い場合、または軌跡(path)を持たないアクティビティの場合は
+ * マーカーを全て取り除く。開始地点と終了地点が同じ座標の場合（周回ルート等）に手前へ描画されるよう、
+ * スタートのマーカーを後から追加する
  * @param map 反映先のMapLibre地図インスタンス
  * @param markersRef 直前に表示していたマーカーを保持するref（今回分の反映前に取り除くために使う）
  * @param focusedActivity フォーカス中のアクティビティ。未フォーカスの場合はnull
@@ -242,12 +244,14 @@ const applyStartGoalMarkers = (
   markersRef.current = [];
 
   const path = focusedActivity?.path;
-  if (!path || path.length === 0) {
+  const firstSegment = path?.[0];
+  const lastSegment = path?.[path.length - 1];
+  if (!firstSegment || !lastSegment || firstSegment.length === 0 || lastSegment.length === 0) {
     return;
   }
 
-  const startPoint = path[0];
-  const goalPoint = path[path.length - 1];
+  const startPoint = firstSegment[0];
+  const goalPoint = lastSegment[lastSegment.length - 1];
   const goalMarker = new maplibregl.Marker({ element: createGoalMarkerElement() }).setLngLat(goalPoint).addTo(map);
   const startMarker = new maplibregl.Marker({ element: createStartMarkerElement() }).setLngLat(startPoint).addTo(map);
 

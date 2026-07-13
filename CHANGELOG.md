@@ -14,6 +14,27 @@
 
 ## 変更履歴
 
+### [2026-07-14] GitHub Issue #27として軌跡の位置飛び（測定不能区間）を検出し区間分割するようにした
+* **修正の動機・概要**:
+  - トンネル内やフェリー乗船中等、GPSの測定ができない区間で、計測一時停止地点・計測再開地点の2点間に線が引かれてしまい、その線上に重なる自治体を誤って通過自治体としてカウントしてしまうという不具合（Issue #27）。自律モードで対応した。
+  - 隣接する2点間の距離をHaversine公式で算出し、10km以上離れている箇所を位置飛びと判定して軌跡を複数の区間に分割する純粋関数`splitPathAtJumps`を新設した。分割後に2点未満（線を描画できない孤立した1点）になった区間は除外する。
+  - この分割は詳細API(`GET /activities/{id}`)のレスポンスをEntityへ変換する`toCyclingActivityEntityFromDetail`内で行っており、初期取り込み・強制再取得・更新API呼び出しのいずれも同じ関数を経由するため、Issueで要求された3つのタイミング全てに自動的に適用される。
+  - DBの`path`列を、単一の線（LineString）ではなく複数の線をまとめて持てるMultiLineStringへ変更した。既存行はマイグレーションで`ST_Multi()`により単一区間のMultiLineStringへ変換されるが、実際に位置飛びの分割を適用するには「自転車ログ強制再取得」ボタンでの再取得が必要（マイグレーション自体は位置飛びの再判定を行わないため）。
+  - 通過自治体の逆ジオコーディングクエリ（`ST_Segmentize`+`ST_DumpPoints`）はMultiLineStringに対しても各区間ごとに独立してサンプリングされるため、SQLの変更は不要だった（区間間の存在しない線を誤ってサンプリングすることも無い）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/activities/split-path-at-jumps.util.ts`（新規）: `splitPathAtJumps`。
+    - `backend/src/activities/entities/cycling-activity.entity.ts`: `path`列の型を`LineString`→`MultiLineString`に変更。
+    - `backend/src/activities/cycling-activity-entity.util.ts`: `toCyclingActivityEntityFromDetail`が`splitPathAtJumps`を使い、区間分割した`MultiLineString`を構築するよう変更。
+    - `backend/src/activities/cycling-activity-dto.util.ts`・`backend/src/activities/types/cycling-activity.dto.ts`: `path`の型を`[number, number][]`→`[number, number][][]`に変更。
+    - `backend/src/migrations/1720800000000-ChangeCyclingActivitiesPathToMultiLineString.ts`（新規）: `path`列をgeometry(LineString,4326)からgeometry(MultiLineString,4326)へ変更するマイグレーション。実DBに適用し、既存データの変換・通過自治体クエリの動作を確認済み。
+    - `frontend/src/api/activitiesApi.ts`: `CyclingActivity.path`の型を`[number, number][][] | null`に変更。
+    - `frontend/src/utils/cyclingActivityToGeoJson.ts`: 描画するGeoJSONジオメトリを`LineString`→`MultiLineString`に変更。
+    - `frontend/src/components/MapView.tsx`: スタート・ゴールマーカー（Issue #24）が、区間分割された`path`の最初の区間の最初の点・最後の区間の最後の点を参照するよう変更。
+    - 単体テスト（バックエンド99件・フロントエンド178件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「自転車ログ表示機能」節に、位置飛びの検出・区間分割の仕様（10km以上の閾値、孤立した1点区間の除外、適用タイミング）を追記。
+
 ### [2026-07-14] GitHub Issue #26として地図上のアクティビティの線の色を赤ベースの濃淡に変更した
 * **修正の動機・概要**:
   - 未選択(赤)・選択中(青)・フォーカス中(紫)がすべて原色に近く、重なると見にくいという依頼（Issue #26）。自律モードで対応した。

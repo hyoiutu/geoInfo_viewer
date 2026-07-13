@@ -17,8 +17,11 @@ export type CyclingActivity = {
   elevationGainMeters: number;
   /** 開始日時（ISO 8601形式の文字列） */
   startDate: string;
-  /** 軌跡（経度・緯度の配列）。GPSルートの無いアクティビティの場合はnull */
-  path: [number, number][] | null;
+  /**
+   * 軌跡（区間ごとの経度・緯度配列の配列）。位置飛び（隣接点間10km以上、トンネル内・フェリー乗船中等の
+   * 測定不能区間）で区間分割されている。GPSルートの無いアクティビティの場合はnull
+   */
+  path: [number, number][][] | null;
 };
 
 /** syncCyclingActivitiesの実行結果 */
