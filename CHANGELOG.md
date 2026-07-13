@@ -12,6 +12,8 @@
   * **仕様書**: 〇〇
 -->
 
+## 変更履歴
+
 ### [2026-07-14] GitHub Issue #28としてエラー状態をJotaiによるグローバルステートへ置き換えた
 * **修正の動機・概要**:
   - `onError`コールバックが`MapWorkspace`を起点に`MapView`・`ActivityDetailSidebar`→`ActivityDetail`→`usePassedMunicipalities`、`useBackfillStatus`と複数階層にわたってバケツリレーされており、コンポーネントの整理やアプリケーション拡大に伴いこの構造が深刻化する前に解消してほしいという依頼（Issue #28）。自律モードで対応した。
