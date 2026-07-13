@@ -101,6 +101,7 @@ const user: User = { id: 1, name: "name" };
 `as unknown as T`のように型システムを迂回して無理やりキャストすることは、原則・例外を問わずいかなる場合も禁止する。「正しい型を見つけるのが面倒／複雑に見える」ことはキャストを正当化する理由にならない。型が合わないと感じた場合は、次の手順で正しい型を特定してから使うこと。
 - ライブラリが提供する型が期待と違う場合、そのライブラリが依存する別パッケージ（transitive dependency）が本来の型を公開していないか確認する（例: `maplibre-gl`の式(expression)の型は`maplibre-gl`自身からは再エクスポートされていないが、依存先の`@maplibre/maplibre-gl-style-spec`が`ExpressionSpecification`等として公開している）。見つかった場合はそのパッケージをdevDependenciesに明示的に追加してimportする。
 - 配列・タプルリテラルがユニオン型に一致しないというエラーが出る場合、変数宣言に型注釈を付けて「期待される型」をTypeScriptに伝える（コンテキスト型を与える）ことで解消できることが多い。キャストの前に必ず試すこと。
+- ライブラリの関数がジェネリック引数を取るオーバーロードを持っていないか確認する（例: `maplibre-gl`の`Map#getSource`は`getSource(id: string): Source | undefined`だけでなく`getSource<TSource extends Source>(id: string): TSource | undefined`という宣言も持っており、`map.getSource(id) as maplibregl.GeoJSONSource`と書く代わりに`map.getSource<maplibregl.GeoJSONSource>(id)`と書けばキャスト無しで済む）。ライブラリの型定義ファイル（`node_modules`配下の`.d.ts`）を実際に検索し、同名メソッドの別シグネチャが無いか確認すること。
 
 # ||ではなく??（Null合体演算子）を使用する
 
@@ -506,6 +507,8 @@ const greetUser = (name: string) => `Hello, ${name}!`;
 const user1Greeting = greetUser("Alice");
 const user2Greeting = greetUser("Bob");
 ```
+
+2箇所の実装が似ているものの、呼び出し元での用途（例: 表示用に文字列へ整形する／比較のため生の数値のまま使う）が異なる場合、「責務が違うから共通化しない」と判断したくなることがある。しかし**戻り値の型・後続の加工が分かれる手前まで、計算ロジック自体が完全に同一なら共通化の対象とする**こと。用途の違いは呼び出し元でその戻り値をどう加工するかの違いであり、計算ロジックが重複してよい理由にはならない（例: 「走行距離÷走行時間」という平均時速の算出式を、表示用フォーマット関数とフィルタ用関数の両方に独立して実装していたが、算出結果(number)を返すところまでが同一だったため、共通関数として切り出した）。
 
 ---
 
