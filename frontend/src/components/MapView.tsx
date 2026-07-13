@@ -119,7 +119,7 @@ const syncAndLoadBicycleLog = async (
   onError: (error: AppErrorInfo) => void,
   onActivitiesLoaded: (activities: CyclingActivity[]) => void
 ) => {
-  // 初期取り込み(バックフィル)実行中は更新用APIを呼ばず、その時点でDBに取得済みの分だけ表示する
+  // 初期取り込み(バックフィル)実行中は同期を呼ばず、その時点でDBに取得済みの分だけ表示する
   const backfillStatus = await getBackfillStatus().catch(() => null);
   if (!backfillStatus?.isRunning) {
     let syncResult: SyncResult;
