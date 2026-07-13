@@ -27,6 +27,15 @@
   * **README.md**: 変更なし。
   * **仕様書**: `specs/system_specification.md`の「自転車ログフィルタリング機能」節で、フィルタが選択・フォーカスの状態に影響しないと記載していた箇所を、除外時に選択・フォーカスを解除する旨に修正(実装の当初設計と仕様書の記載が一致していなかったための訂正)。
 
+### [2026-07-14] PR #22のレビュー対応としてMapViewのgetSource呼び出しの型キャストをジェネリクスへ置き換えた
+* **修正の動機・概要**:
+  - PR #22のレビューで、`MapView.tsx`内の`map.getSource(id) as maplibregl.GeoJSONSource`という型キャストについて「rules.mdのルールに違反していないか、コメントも無いが理由があるのか」との指摘を受けた。
+  - 調査の結果、`maplibre-gl`の`getSource`にはジェネリック引数を取るオーバーロード(`getSource<TSource extends Source>(id: string): TSource | undefined`)が存在し、`map.getSource<maplibregl.GeoJSONSource>(id)`と書くことでキャスト無しで型を指定できることが分かった。この方法に置き換え、戻り値が`undefined`になりうる分岐(本来到達しないはずだが型上は存在する)を早期returnで処理するようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `frontend/src/components/MapView.tsx`の3箇所の`as maplibregl.GeoJSONSource`キャストを、`getSource`のジェネリック呼び出し+undefinedガードへ置き換え。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし(型定義の修正であり機能仕様に影響しないため)。
+
 ### [2026-07-14] PR #22のレビュー対応として平均時速の算出ロジックを共通化した
 * **修正の動機・概要**:
   - PR #22のレビューで、`filterActivities.ts`と`activityDetailView.ts`にそれぞれ独立して実装していた平均時速(km/h)の算出ロジック(走行距離÷走行時間、ゼロ除算時は0)について「共通化してください」との指摘を受けた。算出方法(numberを返すところまで)が完全に同一のため、表示用フォーマットとフィルタ用の数値計算で責務が異なるという当初の判断を見直した。

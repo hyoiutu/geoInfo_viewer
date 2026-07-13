@@ -200,10 +200,12 @@ const applySelectionLayers = (
     .map((id) => activityById.get(id))
     .filter((activity): activity is CyclingActivity => activity !== undefined);
 
-  const selectedSource = map.getSource(BICYCLE_LOG_SELECTED_SOURCE_ID) as maplibregl.GeoJSONSource;
+  const selectedSource = map.getSource<maplibregl.GeoJSONSource>(BICYCLE_LOG_SELECTED_SOURCE_ID);
+  const focusedSource = map.getSource<maplibregl.GeoJSONSource>(BICYCLE_LOG_FOCUSED_SOURCE_ID);
+  if (!selectedSource || !focusedSource) {
+    return;
+  }
   selectedSource.setData(cyclingActivityToGeoJson(selectedActivities));
-
-  const focusedSource = map.getSource(BICYCLE_LOG_FOCUSED_SOURCE_ID) as maplibregl.GeoJSONSource;
   focusedSource.setData(cyclingActivityToGeoJson(focusedActivity ? [focusedActivity] : []));
 };
 
@@ -308,7 +310,10 @@ export const MapView = ({
       return;
     }
 
-    const source = map.getSource(BICYCLE_LOG_SOURCE_ID) as maplibregl.GeoJSONSource;
+    const source = map.getSource<maplibregl.GeoJSONSource>(BICYCLE_LOG_SOURCE_ID);
+    if (!source) {
+      return;
+    }
     source.setData(cyclingActivityToGeoJson(filteredActivities));
   }, [filteredActivities, isStyleLoaded]);
 
