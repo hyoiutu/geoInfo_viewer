@@ -37,6 +37,7 @@ import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
 import { filterActivities } from '../utils/filterActivities';
 import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
+import { createGoalMarkerElement, createStartMarkerElement } from '../utils/startGoalMarkerElement';
 
 const OSM_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const DEFAULT_ZOOM = 12;
@@ -178,6 +179,19 @@ const registerBicycleLogClickHandler = (
 };
 
 /**
+ * アクティビティ一覧からIDで1件を探す
+ * @param activities 検索対象のアクティビティ一覧
+ * @param id 探すID。nullの場合は常にnullを返す
+ * @returns 見つかったアクティビティ。無い場合はnull
+ */
+const findActivityById = (activities: CyclingActivity[], id: string | null): CyclingActivity | null => {
+  if (id === null) {
+    return null;
+  }
+  return activities.find((activity) => activity.id === id) ?? null;
+};
+
+/**
  * 選択・フォーカス状態を、自転車ログの選択用・フォーカス用レイヤーのGeoJSONデータへ反映する。
  * selectedIdsの並び順（通し番号の昇順）をそのままfeatures配列の並びとして使う。MapLibreは
  * 単一ソース内で後の要素ほど手前に描画するため、これにより「通し番号が大きいものほど手前」というdraw順が実現される
@@ -192,8 +206,8 @@ const applySelectionLayers = (
   selectedIds: string[],
   focusedId: string | null
 ) => {
+  const focusedActivity = findActivityById(activities, focusedId);
   const activityById = new Map(activities.map((activity) => [activity.id, activity]));
-  const focusedActivity = focusedId === null ? null : (activityById.get(focusedId) ?? null);
 
   const selectedActivities = selectedIds
     .filter((id) => id !== focusedId)
@@ -207,6 +221,37 @@ const applySelectionLayers = (
   }
   selectedSource.setData(cyclingActivityToGeoJson(selectedActivities));
   focusedSource.setData(cyclingActivityToGeoJson(focusedActivity ? [focusedActivity] : []));
+};
+
+/**
+ * フォーカス中のアクティビティの開始地点・終了地点に、スタート・ゴールを示すマーカーを表示する。
+ * フォーカスが無い場合、または軌跡(path)を持たないアクティビティの場合はマーカーを全て取り除く。
+ * 開始地点と終了地点が同じ座標の場合（周回ルート等）に手前へ描画されるよう、スタートのマーカーを後から追加する
+ * @param map 反映先のMapLibre地図インスタンス
+ * @param markersRef 直前に表示していたマーカーを保持するref（今回分の反映前に取り除くために使う）
+ * @param focusedActivity フォーカス中のアクティビティ。未フォーカスの場合はnull
+ */
+const applyStartGoalMarkers = (
+  map: maplibregl.Map,
+  markersRef: { current: maplibregl.Marker[] },
+  focusedActivity: CyclingActivity | null
+) => {
+  for (const marker of markersRef.current) {
+    marker.remove();
+  }
+  markersRef.current = [];
+
+  const path = focusedActivity?.path;
+  if (!path || path.length === 0) {
+    return;
+  }
+
+  const startPoint = path[0];
+  const goalPoint = path[path.length - 1];
+  const goalMarker = new maplibregl.Marker({ element: createGoalMarkerElement() }).setLngLat(goalPoint).addTo(map);
+  const startMarker = new maplibregl.Marker({ element: createStartMarkerElement() }).setLngLat(startPoint).addTo(map);
+
+  markersRef.current = [goalMarker, startMarker];
 };
 
 /**
@@ -261,6 +306,7 @@ export const MapView = ({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
   const wasBicycleLogVisibleRef = useRef(false);
+  const startGoalMarkersRef = useRef<maplibregl.Marker[]>([]);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
   const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
@@ -326,6 +372,17 @@ export const MapView = ({
 
     applySelectionLayers(map, filteredActivities, selectedIds, focusedId);
   }, [filteredActivities, selectedIds, focusedId, isStyleLoaded]);
+
+  // フォーカス中のアクティビティが変化するたびに、スタート・ゴールマーカーの表示を更新する
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isStyleLoaded) {
+      return;
+    }
+
+    const focusedActivity = findActivityById(filteredActivities, focusedId);
+    applyStartGoalMarkers(map, startGoalMarkersRef, focusedActivity);
+  }, [filteredActivities, focusedId, isStyleLoaded]);
 
   // layerVisibilityが変化するたびに各レイヤーの表示/非表示を反映し、
   // 自転車ログレイヤーがOFF→ONに変化した場合はStrava同期・データ取得を行う
