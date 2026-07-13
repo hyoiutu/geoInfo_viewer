@@ -14,6 +14,8 @@ const PREFECTURE_CODE_LENGTH = 2;
 const TOPOJSON_DATE = '20230101';
 // 政令指定都市統合版ではない方(xx_city)・高解像度版(h)を使う（Issue #18の指定通り）
 const TOPOJSON_RESOLUTION = 'h';
+// 1都道府県分を1回のsave()にまとめて投入すると、TypeORMが発行するINSERT文のバインドパラメータ数が
+// PostgreSQLの上限(65535個)に抵触しうる（市区町村数が多い都道府県で発生しうる）ため、この件数ごとに分割して投入する
 const INSERT_BATCH_SIZE = 500;
 
 /** N03形式の市区町村ポリゴンのプロパティ（都道府県名・郡/政令市名・市区町村名） */
