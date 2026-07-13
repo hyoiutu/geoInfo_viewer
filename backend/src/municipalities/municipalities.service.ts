@@ -29,25 +29,37 @@ export class MunicipalitiesService {
 
   /**
    * 指定したアクティビティの軌跡上を約100m間隔でサンプリングした点それぞれについて、
-   * 含まれる自治体をPostGISの空間検索で求め、重複を除いて返す。
+   * 含まれる自治体をPostGISの空間検索で求め、通過した順（同じ自治体を複数回通過した場合は最初に通過した順）で返す。
    * 軌跡が海外にある区間はどの自治体にも一致しないため、自動的に結果から除外される。
    * 軌跡を持たないアクティビティの場合は空配列を返す
    * @param activityId 対象のアクティビティID
-   * @returns 通過した自治体一覧（都道府県名・市区町村名順）
+   * @returns 通過した自治体一覧（通過順）
    */
   async findPassedMunicipalities(activityId: string): Promise<PassedMunicipalityDto[]> {
     return this.municipalityRepository.query(
       `
-        SELECT DISTINCT m.prefecture_name AS "prefectureName", m.municipality_name AS "municipalityName"
+        SELECT "prefectureName", "municipalityName"
         FROM (
-          SELECT (ST_DumpPoints(
-            ST_Segmentize(ca.path::geography, $2)::geometry
-          )).geom AS pt
-          FROM cycling_activities ca
-          WHERE ca.id = $1 AND ca.path IS NOT NULL
-        ) AS sampled_points
-        JOIN municipalities m ON ST_Contains(m.geom, sampled_points.pt)
-        ORDER BY 1, 2
+          SELECT DISTINCT ON (m.prefecture_name, m.municipality_name)
+            m.prefecture_name AS "prefectureName",
+            m.municipality_name AS "municipalityName",
+            sampled_points.point_order AS point_order
+          FROM (
+            SELECT
+              (dp).path[1] AS point_order,
+              (dp).geom AS pt
+            FROM (
+              SELECT ST_DumpPoints(
+                ST_Segmentize(ca.path::geography, $2)::geometry
+              ) AS dp
+              FROM cycling_activities ca
+              WHERE ca.id = $1 AND ca.path IS NOT NULL
+            ) AS dumped
+          ) AS sampled_points
+          JOIN municipalities m ON ST_Contains(m.geom, sampled_points.pt)
+          ORDER BY m.prefecture_name, m.municipality_name, sampled_points.point_order
+        ) AS first_pass
+        ORDER BY point_order
       `,
       [activityId, SEGMENTIZE_INTERVAL_METERS]
     );
