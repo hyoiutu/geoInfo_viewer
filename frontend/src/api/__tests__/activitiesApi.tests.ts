@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { ApiError } from '../../utils/apiError';
-import { fetchCyclingActivities, getBackfillStatus, startBackfill, syncCyclingActivities } from '../activitiesApi';
+import {
+  fetchCyclingActivities,
+  fetchPassedMunicipalities,
+  getBackfillStatus,
+  startBackfill,
+  syncCyclingActivities
+} from '../activitiesApi';
 
 describe('fetchCyclingActivitiesに関するテスト', () => {
   afterEach(() => {
@@ -134,5 +140,32 @@ describe('getBackfillStatusに関するテスト', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(getBackfillStatus()).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('fetchPassedMunicipalitiesに関するテスト', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('GETでactivities/:id/municipalitiesエンドポイントを呼び出し、レスポンスをそのまま返す', async () => {
+    const municipalities = [{ prefectureName: '東京都', municipalityName: '千代田区' }];
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(municipalities)
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchPassedMunicipalities('123');
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/activities/123/municipalities');
+    expect(result).toEqual(municipalities);
+  });
+
+  test('レスポンスが異常なとき、ApiErrorを投げる', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.reject(new Error()) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchPassedMunicipalities('123')).rejects.toBeInstanceOf(ApiError);
   });
 });

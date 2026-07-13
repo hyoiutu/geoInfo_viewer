@@ -14,6 +14,16 @@
 
 ## 変更履歴
 
+### [2026-07-14] PR #21のレビュー対応として通過自治体一覧の並び順を通過順に修正した
+* **修正の動機・概要**:
+  - PR #21のレビューで、右サイドバーに表示する通過自治体一覧の順番が仕様書に記入漏れであり、実際には「通過した順（同じ市町村を複数回通過した場合は最初に通過した順）」にすべきという指摘を受けた。
+  - 実装（`MunicipalitiesService.findPassedMunicipalities`）は元々`ORDER BY 都道府県名, 市区町村名`（五十音順）でソートしており、仕様として意図されていた通過順にはなっていなかった。
+  - PostGISの`ST_DumpPoints`が返す`path`（サンプリング点のジオメトリ内での並び順）を用いて、自治体ごとに最初に通過した時点の`path`値で`DISTINCT ON`し、その値で最終的に並べ替えることで通過順を実現した。実際の開発DB（実データ）に対してクエリを実行し、五十音順ではなく実際のルート順（隣接する自治体が地理的に連続する順）で返ることを確認した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/municipalities/municipalities.service.ts`の`findPassedMunicipalities`のSQLを、`DISTINCT`+`ORDER BY`都道府県名・市区町村名から、`DISTINCT ON`+サンプリング点の`path`順への並び替えに変更。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「通過自治体表示機能」節に、一覧の並び順（通過順、重複時は最初の通過順）を明記。
+
 ### [2026-07-13] GitHub Issue #19として自転車ログフィルタリング機能を実装した
 * **修正の動機・概要**:
   - 地図上に表示する自転車ログを、走行開始年月の範囲・獲得標高・平均時速・走行距離で絞り込みたいという依頼（Issue #19）。自律モードで対応した。
@@ -32,6 +42,40 @@
     - 単体テスト（フロントエンド153件）・lint・typecheck・E2Eテスト4件は全てGreen。
   * **README.md**: 変更なし。
   * **仕様書**: `specs/system_specification.md`に「自転車ログフィルタリング機能」節を新設。
+
+### [2026-07-13] GitHub Issue #18として通過自治体表示機能を実装した
+* **修正の動機・概要**:
+  - アクティビティ詳細画面に、そのアクティビティが通過した市区町村（都道府県+市区町村）を表示してほしいという依頼（Issue #18）。自律モードで対応した。
+  - 全国の市区町村境界データを国土数値情報(N03)ベースのオープンデータ（GeoShapeリポジトリ、TopoJSON形式）からダウンロードし、PostGISの`municipalities`テーブルへ投入する仕組み（`seed-municipalities.ts`）を新設した。全47都道府県で最新の基準日が2023-01-01で統一されていることを実際にHTTPリクエストで確認した上でハードコードした。
+  - 逆ジオコーディングは、アクティビティの軌跡をPostGISの`ST_Segmentize`で約100m間隔にサンプリングし、`ST_DumpPoints`で座標点を取り出した上で`ST_Contains`により自治体ポリゴンとの空間結合を行う方式で実装した。実際に開発DB（実データ・実境界データ）に対してクエリを実行し、東京駅が「東京都千代田区」、横浜駅付近が「神奈川県横浜市神奈川区」と正しく判定されること、実際のアクティビティの軌跡から神奈川県内の複数市町村が正しく得られることを確認した。
+  - 海外を通過した区間の除外は、市区町村データが日本国内のみのため「一致する自治体が無い＝除外される」という形で自然に実現され、追加の判定ロジックは不要だった。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/municipalities/`（新規）: `entities/municipality.entity.ts`（Entity）・`municipalities.service.ts`（逆ジオコーディングサービス）・`municipalities.module.ts`・`seed-municipalities.ts`（データ投入スクリプト）。
+    - `backend/src/migrations/1720700000000-CreateMunicipalities.ts`（新規）: `municipalities`テーブルとGiSTインデックスを作成するマイグレーション。実DBに適用し、47都道府県分（1917件）のデータ投入・空間検索の動作を確認済み。
+    - `backend/src/database/database.config.ts`: `MunicipalityEntity`をTypeORMへ登録。
+    - `backend/src/activities/activities.controller.ts`・`activities.module.ts`・`activities.constants.ts`: `GET /activities/:id/municipalities`エンドポイントを追加。
+    - `backend/package.json`: `topojson-client`・`@types/topojson-client`・`@types/topojson-specification`を追加、`seed:municipalities`スクリプトを追加。
+    - `frontend/src/api/activitiesApi.ts`: `fetchPassedMunicipalities`を追加。
+    - `frontend/src/hooks/usePassedMunicipalities.ts`（新規）: アクティビティIDが変わるたびに通過自治体を取得するフック。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: フォーカス中のアクティビティ詳細に通過自治体一覧（取得中/0件/一覧の3状態）を表示する`PassedMunicipalitiesList`を追加。
+    - 単体テスト（バックエンド91件・フロントエンド123件）・lint・typecheck・E2Eテスト4件は全てGreen。
+  * **README.md**: 「通過自治体データの投入（初回のみ）」節を新設し、`pnpm --filter backend run seed:municipalities`の実行方法とデータ出典を記載。
+  * **仕様書**: `specs/system_specification.md`に「通過自治体表示機能」節を新設し、逆ジオコーディングの方式（データ出典・サンプリング間隔・空間検索方法・海外除外の扱い）を記載。「アクティビティ詳細閲覧機能」の詳細画面の表示項目にも通過自治体一覧を追記。
+
+### [2026-07-13] GitHub Issue #17としてfinish-reviewスキルを新設した
+* **修正の動機・概要**:
+  - スタック構成（あるPRが別の未マージPRから分岐している状態）で複数PRを順にレビューしていると、祖先PRがマージされるたびに、それより下流の子孫ブランチ全てでCHANGELOG.mdの競合が発生し、レビューのたびに手動で解消する必要があった（Issue #17）。世代が深いほど繰り返し作業が増えるため、この手順を自動化するスキルの新設が依頼された。
+  - Issueに記載されたアイデア（push→PRマージ（要確認）→次にレビューするPRの選定→祖先ブランチの取り込みによる競合解消、という一連の流れ）に基づき`finish-review`スキルを新設した。祖先ブランチの探索は、PRの`base`を`main`に到達するまで遡るが、途中のPRが既にマージ済みであればそのブランチは実質`main`に吸収されているとみなし遡りを打ち切ることで、既にマージされたブランチを無駄に辿らないようにしている。
+  - コンフリクト解決の方針（CHANGELOG.mdは時系列順に並べ替えて解決、それ以外の軽微な競合はエージェントが判断、それ以外はユーザーに判断を求める）は、これまでこのプロジェクトで実際に行ってきた手動解決の実績に基づいて明文化した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `.agents/skills/finish-review/SKILL.md`（新規）: push・PRマージ（要Y/N確認）・次のレビュー対象PRの選定・祖先ブランチの取り込みによる競合解消までを行うスキル定義。
+    - `AGENTS.md`: finish-reviewスキルへの参照と、AIによるpush・PRマージが許可される場面としての言及を追加。
+    - `branch_rules.md`: 「プッシュの制限」節に、finish-reviewスキルでのpush・PRマージ（要確認）についての言及を追加。
+    - スキル定義（ドキュメント）のみの追加であり、アプリケーションコードの変更・単体テスト・E2Eテストの追加は無い（本スキル自体は次回以降の実際のレビュー完了時に使用し検証する）。
+  * **README.md**: 変更なし（AIエージェントの内部運用スキルであり、アプリケーションのセットアップ・利用手順には影響しないため）。
+  * **仕様書**: 変更なし（アプリの機能仕様ではなく開発プロセスの改善のため）。
 
 ### [2026-07-13] PR #16のレビュー対応としてActivityDetailSidebarの子コンポーネントにTSDocを補った
 * **修正の動機・概要**:

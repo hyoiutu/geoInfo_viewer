@@ -83,6 +83,7 @@ export const MapWorkspace = () => {
         onFocus={focusActivity}
         onBackFromDetail={clearFocus}
         onBackFromList={clearSelection}
+        onError={addError}
       />
       <FilterDialog
         isOpen={isFilterDialogOpen}

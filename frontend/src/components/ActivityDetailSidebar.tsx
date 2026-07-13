@@ -1,11 +1,16 @@
 import { Box, Button, Flex, Text } from '@chakra-ui/react';
-import type { CyclingActivity } from '../api/activitiesApi';
+import type { CyclingActivity, PassedMunicipality } from '../api/activitiesApi';
+import { usePassedMunicipalities } from '../hooks/usePassedMunicipalities';
 import { layout } from '../theme';
+import type { AppErrorInfo } from '../types/apiError';
 import { toActivityDetailView } from '../utils/activityDetailView';
 
 const NO_ACTIVITIES = 0;
+const NO_MUNICIPALITIES = 0;
 const INDEX_OFFSET = 1;
 const BACK_BUTTON_LABEL = '戻る';
+const MUNICIPALITIES_LOADING_LABEL = '通過自治体を取得中...';
+const MUNICIPALITIES_EMPTY_LABEL = '該当する自治体はありません';
 
 /** ActivityDetailSidebarのprops */
 type ActivityDetailSidebarProps = {
@@ -19,6 +24,8 @@ type ActivityDetailSidebarProps = {
   onBackFromDetail: () => void;
   /** 一覧画面の戻るボタンが押されたときに呼ばれるコールバック */
   onBackFromList: () => void;
+  /** 通過自治体の取得に失敗したときに呼ばれるコールバック */
+  onError: (error: AppErrorInfo) => void;
 };
 
 /** ActivityListのprops */
@@ -46,17 +53,47 @@ const ActivityList = ({ activities, onFocus, onBackFromList }: ActivityListProps
   </Flex>
 );
 
+/** PassedMunicipalitiesListのprops */
+type PassedMunicipalitiesListProps = {
+  /** 通過した自治体一覧 */
+  municipalities: PassedMunicipality[];
+  /** 取得中かどうか */
+  isLoading: boolean;
+};
+
+/** 通過自治体一覧を、取得中・0件・複数件の状態に応じて表示する */
+const PassedMunicipalitiesList = ({ municipalities, isLoading }: PassedMunicipalitiesListProps) => {
+  if (isLoading) {
+    return <Text>{MUNICIPALITIES_LOADING_LABEL}</Text>;
+  }
+  if (municipalities.length === NO_MUNICIPALITIES) {
+    return <Text>{MUNICIPALITIES_EMPTY_LABEL}</Text>;
+  }
+  return (
+    <Flex direction="column">
+      {municipalities.map((municipality) => (
+        <Text key={`${municipality.prefectureName}-${municipality.municipalityName}`}>
+          {`${municipality.prefectureName}${municipality.municipalityName}`}
+        </Text>
+      ))}
+    </Flex>
+  );
+};
+
 /** ActivityDetailのprops */
 type ActivityDetailProps = {
   /** フォーカス中のアクティビティ */
   activity: CyclingActivity;
   /** 詳細画面の戻るボタンが押されたときに呼ばれるコールバック */
   onBackFromDetail: () => void;
+  /** 通過自治体の取得に失敗したときに呼ばれるコールバック */
+  onError: (error: AppErrorInfo) => void;
 };
 
-/** フォーカス中のアクティビティの詳細（詳細画面）を表示する */
-const ActivityDetail = ({ activity, onBackFromDetail }: ActivityDetailProps) => {
+/** フォーカス中のアクティビティの詳細（詳細画面）を表示する。フォーカス中のアクティビティが変わるたびに通過自治体を取得する */
+const ActivityDetail = ({ activity, onBackFromDetail, onError }: ActivityDetailProps) => {
   const view = toActivityDetailView(activity);
+  const { municipalities, isLoading } = usePassedMunicipalities(activity.id, onError);
 
   return (
     <Flex direction="column" gap="2">
@@ -69,6 +106,8 @@ const ActivityDetail = ({ activity, onBackFromDetail }: ActivityDetailProps) => 
       <Text>{`走行開始日時: ${view.startDate}`}</Text>
       <Text>{`走行終了日時: ${view.endDate}`}</Text>
       <Text>{`平均時速: ${view.averageSpeedKmh}`}</Text>
+      <Text fontWeight="bold">通過自治体</Text>
+      <PassedMunicipalitiesList municipalities={municipalities} isLoading={isLoading} />
     </Flex>
   );
 };
@@ -83,7 +122,8 @@ export const ActivityDetailSidebar = ({
   focusedIndex,
   onFocus,
   onBackFromDetail,
-  onBackFromList
+  onBackFromList,
+  onError
 }: ActivityDetailSidebarProps) => {
   if (activities.length === NO_ACTIVITIES) {
     return null;
@@ -103,7 +143,7 @@ export const ActivityDetailSidebar = ({
       padding="4"
     >
       {focusedActivity ? (
-        <ActivityDetail activity={focusedActivity} onBackFromDetail={onBackFromDetail} />
+        <ActivityDetail activity={focusedActivity} onBackFromDetail={onBackFromDetail} onError={onError} />
       ) : (
         <ActivityList activities={activities} onFocus={onFocus} onBackFromList={onBackFromList} />
       )}

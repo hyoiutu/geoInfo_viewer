@@ -1,5 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { describe, expect, test, vi } from 'vitest';
+import { MunicipalitiesService, type PassedMunicipalityDto } from '../../municipalities/municipalities.service';
 import { ActivitiesController } from '../activities.controller';
 import { ActivitiesService } from '../activities.service';
 import type { BackfillStartResult, BackfillStatus } from '../activities-backfill.service';
@@ -25,7 +26,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       controllers: [ActivitiesController],
       providers: [
         { provide: ActivitiesService, useValue: { findAll } },
-        { provide: ActivitiesBackfillService, useValue: {} }
+        { provide: ActivitiesBackfillService, useValue: {} },
+        { provide: MunicipalitiesService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -42,7 +44,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       controllers: [ActivitiesController],
       providers: [
         { provide: ActivitiesService, useValue: { sync } },
-        { provide: ActivitiesBackfillService, useValue: {} }
+        { provide: ActivitiesBackfillService, useValue: {} },
+        { provide: MunicipalitiesService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -59,7 +62,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       controllers: [ActivitiesController],
       providers: [
         { provide: ActivitiesService, useValue: {} },
-        { provide: ActivitiesBackfillService, useValue: { start } }
+        { provide: ActivitiesBackfillService, useValue: { start } },
+        { provide: MunicipalitiesService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -83,7 +87,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       controllers: [ActivitiesController],
       providers: [
         { provide: ActivitiesService, useValue: {} },
-        { provide: ActivitiesBackfillService, useValue: { getStatus } }
+        { provide: ActivitiesBackfillService, useValue: { getStatus } },
+        { provide: MunicipalitiesService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -100,7 +105,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       controllers: [ActivitiesController],
       providers: [
         { provide: ActivitiesService, useValue: {} },
-        { provide: ActivitiesBackfillService, useValue: { startForceRefetch } }
+        { provide: ActivitiesBackfillService, useValue: { startForceRefetch } },
+        { provide: MunicipalitiesService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -108,5 +114,24 @@ describe('ActivitiesControllerに関するテスト', () => {
     const result = await controller.startForceRefetch();
 
     expect(result).toBe(startResult);
+  });
+
+  test('getPassedMunicipalitiesが呼ばれたとき、MunicipalitiesServiceのfindPassedMunicipalitiesへアクティビティIDを渡しその戻り値をそのまま返す', async () => {
+    const municipalities: PassedMunicipalityDto[] = [{ prefectureName: '東京都', municipalityName: '千代田区' }];
+    const findPassedMunicipalities = vi.fn().mockResolvedValue(municipalities);
+    const moduleRef = await Test.createTestingModule({
+      controllers: [ActivitiesController],
+      providers: [
+        { provide: ActivitiesService, useValue: {} },
+        { provide: ActivitiesBackfillService, useValue: {} },
+        { provide: MunicipalitiesService, useValue: { findPassedMunicipalities } }
+      ]
+    }).compile();
+    const controller = moduleRef.get(ActivitiesController);
+
+    const result = await controller.getPassedMunicipalities('123');
+
+    expect(findPassedMunicipalities).toHaveBeenCalledWith('123');
+    expect(result).toBe(municipalities);
   });
 });
