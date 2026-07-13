@@ -1,6 +1,7 @@
 import { fireEvent, waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
+import type { CyclingActivity } from '../../api/activitiesApi';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { MapWorkspace } from '../MapWorkspace';
 
@@ -9,6 +10,7 @@ vi.mock('../../api/activitiesApi', () => ({
   syncCyclingActivities: vi.fn().mockResolvedValue({ success: true }),
   startBackfill: vi.fn().mockResolvedValue({ started: true }),
   startForceRefetch: vi.fn().mockResolvedValue({ started: true }),
+  fetchPassedMunicipalities: vi.fn().mockResolvedValue([]),
   getBackfillStatus: vi.fn().mockResolvedValue({
     isRunning: false,
     totalCount: 0,
@@ -63,6 +65,24 @@ vi.mock('maplibre-gl', () => {
 
 const getMapInstance = () => vi.mocked(maplibregl.Map).mock.results[0].value;
 
+/** mapInstance.onで登録された'click'ハンドラを取り出す */
+const getClickHandler = (mapInstance: ReturnType<typeof getMapInstance>) => {
+  const call = mapInstance.on.mock.calls.find(([event]: [string]) => event === 'click');
+  return call?.[1];
+};
+
+const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity => ({
+  id: '1',
+  name: 'テストライド',
+  distanceMeters: 20000,
+  movingTimeSeconds: 3600,
+  elapsedTimeSeconds: 3900,
+  elevationGainMeters: 50,
+  startDate: '2026-06-15T01:00:00.000Z',
+  path: null,
+  ...overrides
+});
+
 describe('MapWorkspaceに関するテスト', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -109,6 +129,39 @@ describe('MapWorkspaceに関するテスト', () => {
 
     await waitFor(() => expect(startForceRefetch).toHaveBeenCalledTimes(1));
   });
+
+  // ダイアログの開閉・入力・地図クリックと複数回のwaitForを経る重いテストのため、
+  // フルスイート並列実行時のCPU負荷でデフォルトタイムアウト(5000ms)を超えることがあるため延長する
+  test('選択・フォーカス中のアクティビティがフィルタで除外されると、選択・フォーカスが解除される', async () => {
+    const { fetchCyclingActivities } = await import('../../api/activitiesApi');
+    const startDate = '2026-06-15T01:00:00.000Z';
+    const formattedStartDate = new Date(startDate).toLocaleString('ja-JP');
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([
+      createActivity({ id: 'low', elevationGainMeters: 50, startDate }),
+      createActivity({ id: 'high', elevationGainMeters: 200, startDate })
+    ]);
+    const { getByRole, getByLabelText, queryByText, getByText } = renderWithChakra(<MapWorkspace />);
+
+    fireEvent.click(getByRole('checkbox', { name: '自転車ログ' }));
+    const mapInstance = getMapInstance();
+    await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalled());
+
+    mapInstance.queryRenderedFeatures.mockReturnValue([{ properties: { id: 'low' } }, { properties: { id: 'high' } }]);
+    const clickHandler = getClickHandler(mapInstance);
+    clickHandler({ point: { x: 0, y: 0 } });
+
+    await waitFor(() => expect(getByText(`1. ${formattedStartDate}`)).toBeInTheDocument());
+    fireEvent.click(getByText(`1. ${formattedStartDate}`));
+    await waitFor(() => expect(getByText('獲得標高: 50 m')).toBeInTheDocument());
+
+    fireEvent.click(getByRole('button', { name: '自転車ログ フィルタ' }));
+    await waitFor(() => expect(getByLabelText('獲得標高')).toBeInTheDocument());
+    fireEvent.change(getByLabelText('獲得標高'), { target: { value: '100' } });
+    fireEvent.click(getByRole('button', { name: '実行' }));
+
+    await waitFor(() => expect(queryByText('獲得標高: 50 m')).not.toBeInTheDocument());
+    expect(getByText(`1. ${formattedStartDate}`)).toBeInTheDocument();
+  }, 10000);
 
   test('複数のエラーが発生した場合、エラーダイアログにスタックして表示される', async () => {
     // モーダルダイアログが一度開くと背後の要素はaria-hiddenになり操作できなくなるため、

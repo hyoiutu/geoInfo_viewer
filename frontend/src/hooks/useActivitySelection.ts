@@ -14,6 +14,8 @@ type UseActivitySelectionResult = {
   clearFocus: () => void;
   /** 選択・フォーカスを両方解除する */
   clearSelection: () => void;
+  /** 表示対象外（フィルタで除外等）になったIDを選択から取り除く。フォーカス中のIDが取り除かれた場合はフォーカスも解除する */
+  pruneToVisible: (visibleIds: ReadonlySet<string>) => void;
 };
 
 /**
@@ -42,5 +44,26 @@ export const useActivitySelection = (): UseActivitySelectionResult => {
     setFocusedIndex(null);
   }, []);
 
-  return { selectedIds, focusedIndex, selectActivities, focusActivity, clearFocus, clearSelection };
+  const pruneToVisible = useCallback(
+    (visibleIds: ReadonlySet<string>) => {
+      const focusedId = focusedIndex === null ? null : (selectedIds[focusedIndex] ?? null);
+      const nextSelectedIds = selectedIds.filter((id) => visibleIds.has(id));
+      if (nextSelectedIds.length === selectedIds.length) {
+        return;
+      }
+      setSelectedIds(nextSelectedIds);
+      setFocusedIndex(focusedId !== null && visibleIds.has(focusedId) ? nextSelectedIds.indexOf(focusedId) : null);
+    },
+    [selectedIds, focusedIndex]
+  );
+
+  return {
+    selectedIds,
+    focusedIndex,
+    selectActivities,
+    focusActivity,
+    clearFocus,
+    clearSelection,
+    pruneToVisible
+  };
 };
