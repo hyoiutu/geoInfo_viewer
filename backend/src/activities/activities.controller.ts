@@ -1,9 +1,11 @@
-import { Controller, Get, Post } from '@nestjs/common';
+import { Controller, Get, Param, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { MunicipalitiesService, type PassedMunicipalityDto } from '../municipalities/municipalities.service';
 import {
   ACTIVITIES_BACKFILL_FORCE_REFETCH_ROUTE,
   ACTIVITIES_BACKFILL_ROUTE,
   ACTIVITIES_BACKFILL_STATUS_ROUTE,
+  ACTIVITIES_MUNICIPALITIES_ROUTE,
   ACTIVITIES_ROUTE,
   ACTIVITIES_SYNC_ROUTE
 } from './activities.constants';
@@ -15,13 +17,14 @@ import {
 } from './activities-backfill.service';
 import type { CyclingActivityDto } from './types/cycling-activity.dto';
 
-/** 自転車ログ(サイクリングアクティビティ)の参照・同期・初期取り込みに関するHTTP APIを提供するコントローラー */
+/** 自転車ログ(サイクリングアクティビティ)の参照・同期・初期取り込み・通過自治体取得に関するHTTP APIを提供するコントローラー */
 @ApiTags('activities')
 @Controller(ACTIVITIES_ROUTE)
 export class ActivitiesController {
   constructor(
     private readonly activitiesService: ActivitiesService,
-    private readonly activitiesBackfillService: ActivitiesBackfillService
+    private readonly activitiesBackfillService: ActivitiesBackfillService,
+    private readonly municipalitiesService: MunicipalitiesService
   ) {}
 
   /** GET /activities: DBに保存済みの全自転車ログを返す */
@@ -52,5 +55,11 @@ export class ActivitiesController {
   @Post(ACTIVITIES_BACKFILL_FORCE_REFETCH_ROUTE)
   startForceRefetch(): Promise<BackfillStartResult> {
     return this.activitiesBackfillService.startForceRefetch();
+  }
+
+  /** GET /activities/:id/municipalities: 指定したアクティビティが通過した自治体一覧を返す */
+  @Get(ACTIVITIES_MUNICIPALITIES_ROUTE)
+  getPassedMunicipalities(@Param('id') id: string): Promise<PassedMunicipalityDto[]> {
+    return this.municipalitiesService.findPassedMunicipalities(id);
   }
 }

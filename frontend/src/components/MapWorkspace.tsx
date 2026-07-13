@@ -69,6 +69,7 @@ export const MapWorkspace = () => {
         onFocus={focusActivity}
         onBackFromDetail={clearFocus}
         onBackFromList={clearSelection}
+        onError={addError}
       />
       <ErrorDialog errors={errors} onDismiss={dismissError} />
     </Flex>

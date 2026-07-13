@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { MunicipalitiesModule } from '../municipalities/municipalities.module';
 import { StravaModule } from '../strava/strava.module';
 import { ActivitiesController } from './activities.controller';
 import { ActivitiesService } from './activities.service';
@@ -8,7 +9,7 @@ import { CyclingActivityEntity } from './entities/cycling-activity.entity';
 import { SyncStateEntity } from './entities/sync-state.entity';
 
 @Module({
-  imports: [StravaModule, TypeOrmModule.forFeature([CyclingActivityEntity, SyncStateEntity])],
+  imports: [StravaModule, MunicipalitiesModule, TypeOrmModule.forFeature([CyclingActivityEntity, SyncStateEntity])],
   controllers: [ActivitiesController],
   providers: [ActivitiesService, ActivitiesBackfillService]
 })
