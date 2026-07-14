@@ -36,6 +36,7 @@ import type { LayerVisibility, ToggleableLayerId } from '../types/layer';
 import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
 import { filterActivities } from '../utils/filterActivities';
+import { findActivityById } from '../utils/findActivityById';
 import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
 import { createGoalMarkerElement, createStartMarkerElement } from '../utils/startGoalMarkerElement';
 
@@ -176,19 +177,6 @@ const registerBicycleLogClickHandler = (
       onSelectActivities(ids);
     }
   });
-};
-
-/**
- * アクティビティ一覧からIDで1件を探す
- * @param activities 検索対象のアクティビティ一覧
- * @param id 探すID。nullの場合は常にnullを返す
- * @returns 見つかったアクティビティ。無い場合はnull
- */
-const findActivityById = (activities: CyclingActivity[], id: string | null): CyclingActivity | null => {
-  if (id === null) {
-    return null;
-  }
-  return activities.find((activity) => activity.id === id) ?? null;
 };
 
 /**
