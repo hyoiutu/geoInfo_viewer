@@ -83,49 +83,69 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
   ...overrides
 });
 
+/**
+ * レイヤー切り替えダイアログを開き、指定したレイヤーのチェックボックスを切り替えて実行する。
+ * Chakra UIのCheckboxのonCheckedChangeは非同期のため、チェック状態の反映をwaitForで待つ
+ */
+const toggleLayerViaDialog = async (getByRole: ReturnType<typeof renderWithChakra>['getByRole'], layerName: string) => {
+  fireEvent.click(getByRole('button', { name: 'レイヤー切り替え' }));
+  const checkbox = await waitFor(() => getByRole('checkbox', { name: layerName }));
+  const wasChecked = checkbox.getAttribute('aria-checked') === 'true' || (checkbox as HTMLInputElement).checked;
+  fireEvent.click(checkbox);
+  await waitFor(() => {
+    const updated = getByRole('checkbox', { name: layerName }) as HTMLInputElement;
+    expect(updated.checked).toBe(!wasChecked);
+  });
+  fireEvent.click(getByRole('button', { name: '実行' }));
+};
+
 describe('MapWorkspaceに関するテスト', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  test('道路レイヤーのトグルをOFFにすると、地図の道路レイヤーが非表示になる', async () => {
+  test('道路レイヤーのトグルをOFFにして実行すると、地図の道路レイヤーが非表示になる', async () => {
     const { getByRole } = renderWithChakra(<MapWorkspace />);
     const mapInstance = getMapInstance();
     mapInstance.setLayoutProperty.mockClear();
 
-    fireEvent.click(getByRole('checkbox', { name: '道路' }));
+    await toggleLayerViaDialog(getByRole, '道路');
 
     await waitFor(() =>
       expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_motorway', 'visibility', 'none')
     );
   });
 
-  test('航空写真レイヤーのトグルをONにすると、地図の航空写真レイヤーが表示される', async () => {
+  test('航空写真レイヤーのトグルをONにして実行すると、地図の航空写真レイヤーが表示される', async () => {
     const { getByRole } = renderWithChakra(<MapWorkspace />);
     const mapInstance = getMapInstance();
     mapInstance.setLayoutProperty.mockClear();
 
-    fireEvent.click(getByRole('checkbox', { name: '航空写真' }));
+    await toggleLayerViaDialog(getByRole, '航空写真');
 
     await waitFor(() =>
       expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('aerial-photo-layer', 'visibility', 'visible')
     );
   });
 
-  test('初期取り込みボタンをクリックすると、startBackfillが呼ばれる', async () => {
+  test('設定ダイアログの初期取り込みボタンをクリックすると、startBackfillが呼ばれる', async () => {
     const { startBackfill } = await import('../../api/activitiesApi');
     const { getByRole } = renderWithChakra(<MapWorkspace />);
 
-    fireEvent.click(getByRole('button', { name: '自転車ログ初期取り込み' }));
+    fireEvent.click(getByRole('button', { name: '設定' }));
+    const backfillButton = await waitFor(() => getByRole('button', { name: '自転車ログ初期取り込み' }));
+    fireEvent.click(backfillButton);
 
     await waitFor(() => expect(startBackfill).toHaveBeenCalledTimes(1));
   });
 
-  test('強制再取得ボタンをクリックすると、startForceRefetchが呼ばれる', async () => {
+  test('設定ダイアログの強制再取得ボタンをクリックすると、startForceRefetchが呼ばれる', async () => {
     const { startForceRefetch } = await import('../../api/activitiesApi');
     const { getByRole } = renderWithChakra(<MapWorkspace />);
 
-    fireEvent.click(getByRole('button', { name: '自転車ログ強制再取得' }));
+    fireEvent.click(getByRole('button', { name: '設定' }));
+    const forceRefetchButton = await waitFor(() => getByRole('button', { name: '自転車ログ強制再取得' }));
+    fireEvent.click(forceRefetchButton);
 
     await waitFor(() => expect(startForceRefetch).toHaveBeenCalledTimes(1));
   });
@@ -142,7 +162,7 @@ describe('MapWorkspaceに関するテスト', () => {
     ]);
     const { getByRole, getByLabelText, queryByText, getByText } = renderWithChakra(<MapWorkspace />);
 
-    fireEvent.click(getByRole('checkbox', { name: '自転車ログ' }));
+    await toggleLayerViaDialog(getByRole, '自転車ログ');
     const mapInstance = getMapInstance();
     await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalled());
 
@@ -165,13 +185,17 @@ describe('MapWorkspaceに関するテスト', () => {
 
   test('複数のエラーが発生した場合、エラーダイアログにスタックして表示される', async () => {
     // モーダルダイアログが一度開くと背後の要素はaria-hiddenになり操作できなくなるため、
-    // ダイアログが開くより前（マウント直後）に2つの独立した非同期処理を同時に走らせて検証する。
+    // マウント時に自動発生する1件目のエラー（getBackfillStatus）を意図的に遅延させ、
+    // レイヤー切り替えダイアログの操作（2件目のエラーfetchCyclingActivitiesを誘発する）が
+    // ブロックされる前に完了できるようにする。
     const { getBackfillStatus, fetchCyclingActivities } = await import('../../api/activitiesApi');
-    vi.mocked(getBackfillStatus).mockRejectedValue(new Error('status fetch failed'));
+    vi.mocked(getBackfillStatus).mockImplementation(
+      () => new Promise((_resolve, reject) => setTimeout(() => reject(new Error('status fetch failed')), 100))
+    );
     vi.mocked(fetchCyclingActivities).mockRejectedValue(new Error('fetch failed'));
     const { getByRole } = renderWithChakra(<MapWorkspace />);
 
-    fireEvent.click(getByRole('checkbox', { name: '自転車ログ' }));
+    await toggleLayerViaDialog(getByRole, '自転車ログ');
 
     await waitFor(() => {
       expect(getByRole('heading', { name: 'エラーが発生しました（1/2）' })).toBeInTheDocument();

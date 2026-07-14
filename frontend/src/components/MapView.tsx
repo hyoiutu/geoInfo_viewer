@@ -410,5 +410,5 @@ export const MapView = ({
     }
   }, [layerVisibility, isStyleLoaded, addError, onActivitiesLoaded]);
 
-  return <Box ref={containerRef} flex="1" minWidth="0" height="100vh" data-testid="map-container" />;
+  return <Box ref={containerRef} flex="1" minWidth="0" height="100%" data-testid="map-container" />;
 };

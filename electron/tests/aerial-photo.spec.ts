@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { ElectronApplication, Page } from 'playwright';
 import { closeElectronApp, launchElectronApp } from './support/electron-app';
+import { toggleLayer } from './support/layer-controls';
 
 const AERIAL_PHOTO_TILE_HOST = 'cyberjapandata.gsi.go.jp';
 
@@ -23,7 +24,7 @@ test('航空写真レイヤーをONにすると、地図上に航空写真タイ
   // クリック前にタイル要求のレスポンスを待つPromiseを仕込んでおく。
   const tileResponsePromise = window.waitForResponse((response) => response.url().includes(AERIAL_PHOTO_TILE_HOST));
 
-  await window.getByText('航空写真', { exact: true }).click();
+  await toggleLayer(window, '航空写真');
   await tileResponsePromise;
   // 最初のタイル以外にも複数タイルの読み込みが続くため、落ち着くまで待つ。
   await window.waitForLoadState('networkidle');

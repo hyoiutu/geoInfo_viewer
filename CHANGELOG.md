@@ -14,6 +14,33 @@
 
 ## 変更履歴
 
+### [2026-07-14] GitHub Issue #32として左サイドバーを廃止しMap Controlsへ移行した
+* **修正の動機・概要**:
+  - 左サイドバーがレイヤー一覧・フィルタボタン・初期取り込み/強制再取得ボタンを縦に積んでおり、地図表示領域を常に圧迫しているという依頼（Issue #32）。自律モードで対応した。
+  - 左サイドバー（`LayerSidebar`）を廃止し、代わりに地図右下に浮かぶ3つのアイコンボタン（レイヤー・フィルタ・設定）「マップコントロール」から各ダイアログを開く構成に変更した。レイヤー切り替えは新設の`LayerDialog`（`FilterDialog`と同じdraft/applied方式、リセット/実行ボタン付き）に、初期取り込み・強制再取得は新設の`SettingsDialog`（ボタン押下と同時に処理実行・ダイアログを閉じる）に移した。
+  - 設定ダイアログが即座に閉じる仕様変更に伴い、初期取り込み/強制再取得の実行中・完了状態を表示する場所が無くなるため、地図下部に新設の`BackfillProgressFooter`（実行中は進捗%・件数・残り時間、完了後は閉じるボタンを押すまで完了メッセージを表示）を追加した。表示/非表示は新設フック`useBackfillProgressFooter`で管理する（実行開始を検知すると自動表示、閉じるボタンで非表示）。
+  - `useLayerVisibility`を、`useActivityFilter`と同じdraft(入力中)/applied(適用中)状態を持つ方式に書き換えた（従来は即時反映だったが、`LayerDialog`の「実行」ボタンで確定する方式に合わせるため）。
+  - 実装中に、Chakra UI v3の`Checkbox`（`Switch`と同じくArk UI/`@zag-js`ベース）で2つの非自明な問題を発見した。(1) 単体テスト（jsdom）で`onCheckedChange`がマイクロタスクで非同期に発火するため`fireEvent.click`直後の同期アサーションでは検知できない、(2) 実ブラウザ（Electron/Playwright）E2Eで、視覚的に隠されたinput要素の実座標がダイアログ本体等の他要素と重なりクリックがインターセプトされることがある。いずれも既存の`Switch`向けの同種の記載（test_rules.md）が既にあったため、新規ルールを追加するのではなくCheckbox向けに拡張する形で追記した。
+  - E2Eの`bicycle-log.spec.ts`で、初期取り込みボタン押下直後に進捗フッターの「取得中」表示を待つアサーションが、E2E環境（レート制限間隔を極小化・フィクスチャ3件のみ）では処理が一瞬で完了しPlaywrightのポーリングが実行中状態を捕捉できず失敗する事例を確認した。実行中表示の待機を削除し、最終的な完了表示のみを待つよう修正した。
+  - 左サイドバー廃止により地図表示領域の幅が変わったため、E2Eスクリーンショットのベースライン（`aerial-photo.png`・`bicycle-log-backfill.png`・`bicycle-log-sync.png`）を再生成し、目視で新しいマップコントロールのアイコンが正しく表示されていることを確認した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/components/MapControls.tsx`（新規）: レイヤー・フィルタ・設定の3アイコンボタン群。
+    - `frontend/src/components/LayerDialog.tsx`（新規）・`frontend/src/components/SettingsDialog.tsx`（新規）・`frontend/src/components/BackfillProgressFooter.tsx`（新規）。
+    - `frontend/src/hooks/useLayerVisibility.ts`: draft/applied方式へ書き換え。
+    - `frontend/src/hooks/useBackfillProgressFooter.ts`（新規）。
+    - `frontend/src/components/MapWorkspace.tsx`: 上記コンポーネント・フックを配線する構成に全面的に書き換え。
+    - `frontend/src/components/MapView.tsx`: 地図領域の高さを`height="100vh"`→`height="100%"`に変更（フッターと縦に並ぶflexレイアウトに対応）。
+    - `frontend/src/components/LayerSidebar.tsx`（削除）。
+    - `frontend/src/theme.ts`: 不要になった`sidebarCollapsedWidth`を削除。
+    - `electron/tests/support/layer-controls.ts`（新規）: レイヤー切り替えダイアログを開き、ラベルテキストのクリックでチェック状態を切り替えて実行する`toggleLayer`ヘルパー。
+    - `electron/tests/bicycle-log.spec.ts`・`electron/tests/aerial-photo.spec.ts`: 新UIに合わせてレイヤー切り替え手順・初期取り込み完了確認手順を修正。
+    - `test_rules.md`: `Checkbox`の非同期`onCheckedChange`（単体テスト）・実ブラウザでのクリックインターセプト（E2E）について、既存の`Switch`向け記載を拡張。
+    - 単体テスト（フロントエンド）・lint・typecheck・E2Eテスト4件は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「レイヤ一覧表示機能」「自転車ログフィルタリング機能」「自転車ログ初期取り込み機能」から左サイドバーに関する記載を除去し、マップコントロール・各ダイアログ・進捗フッターを用いる新しい操作方法に更新。`specs/glossary.md`から「左サイドバー」を削除し、「マップコントロール」「レイヤーダイアログ」「設定ダイアログ」「進捗フッター」を追加。
+  * **設計書**: `designs/class_diagram.md`のフロントエンドのクラス図を新しいコンポーネント構成に更新し、「`MapWorkspace`の責務の広さ」改善提案の該当箇所にIssue #32対応済みである旨を追記。
+
 ### [2026-07-14] GitHub Issue #31として用語集を作成した
 * **修正の動機・概要**:
   - 指示・レビュー・仕様書記載の際に一般的な用語（左サイドバー、ダイアログ等）を用いており、表記揺れや説明の冗長化が懸念されるという依頼（Issue #31）。自律モードで対応した。
