@@ -1,3 +1,4 @@
+import { useSetAtom } from 'jotai';
 import { useCallback, useEffect, useState } from 'react';
 import {
   type BackfillStartResult,
@@ -6,8 +7,8 @@ import {
   startBackfill,
   startForceRefetch as startForceRefetchApi
 } from '../api/activitiesApi';
+import { addErrorAtom } from '../atoms/errorsAtom';
 import { toAppErrorInfo } from '../utils/apiError';
-import { useErrorReporter } from './useErrorReporter';
 
 // バックフィル進捗表示(%・残り時間)をUI上でどのくらいの頻度で更新するかの間隔。
 // Strava APIのレート制限に合わせた9秒間隔（backend/src/strava/strava-rate-limiter.service.ts参照）とは無関係で、
@@ -26,12 +27,12 @@ type UseBackfillStatusResult = {
 
 /**
  * 初期取り込み(バックフィル)の進捗状況を取得・ポーリングし、開始操作を提供するフック。
- * 実行中は一定間隔で進捗状況を自動的に再取得する。エラーはグローバルなエラースタック（useErrorReporter）へ報告する
+ * 実行中は一定間隔で進捗状況を自動的に再取得する。エラーはグローバルなエラースタック（errorsAtom）へ報告する
  * @returns 進捗状況と開始関数
  */
 export const useBackfillStatus = (): UseBackfillStatusResult => {
   const [backfillStatus, setBackfillStatus] = useState<BackfillStatus | null>(null);
-  const addError = useErrorReporter();
+  const addError = useSetAtom(addErrorAtom);
 
   const refresh = useCallback(async () => {
     try {

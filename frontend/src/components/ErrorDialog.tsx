@@ -1,7 +1,7 @@
 import { Button, Dialog, Portal, Text } from '@chakra-ui/react';
-import { useAtom } from 'jotai';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { useState } from 'react';
-import { errorsAtom } from '../atoms/errorsAtom';
+import { dismissErrorAtom, errorsAtom } from '../atoms/errorsAtom';
 import type { AppErrorInfo } from '../types/apiError';
 
 const FIRST_INDEX = 0;
@@ -12,16 +12,13 @@ const SINGLE_ERROR_COUNT = 1;
  * 複数のエラーが同時に発生した場合はスタックし、1つのダイアログ内で前へ/次へで切り替えて閲覧できる。
  */
 export const ErrorDialog = () => {
-  const [errors, setErrors] = useAtom(errorsAtom);
+  const errors = useAtomValue(errorsAtom);
+  const dismiss = useSetAtom(dismissErrorAtom);
   const [viewIndex, setViewIndex] = useState(FIRST_INDEX);
   const lastIndex = Math.max(errors.length - SINGLE_ERROR_COUNT, FIRST_INDEX);
   // errorsが外部から縮む（dismiss等）とviewIndexが範囲外になりうるため、表示直前に範囲内へ丸める
   const currentIndex = Math.min(viewIndex, lastIndex);
   const currentError: AppErrorInfo | undefined = errors[currentIndex];
-
-  const dismiss = (index: number) => {
-    setErrors((current) => current.filter((_, currentErrorIndex) => currentErrorIndex !== index));
-  };
 
   const handleOpenChange = (details: { open: boolean }) => {
     if (!details.open && currentError) {
