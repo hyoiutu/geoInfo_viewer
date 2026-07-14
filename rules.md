@@ -102,6 +102,7 @@ const user: User = { id: 1, name: "name" };
 - ライブラリが提供する型が期待と違う場合、そのライブラリが依存する別パッケージ（transitive dependency）が本来の型を公開していないか確認する（例: `maplibre-gl`の式(expression)の型は`maplibre-gl`自身からは再エクスポートされていないが、依存先の`@maplibre/maplibre-gl-style-spec`が`ExpressionSpecification`等として公開している）。見つかった場合はそのパッケージをdevDependenciesに明示的に追加してimportする。
 - 配列・タプルリテラルがユニオン型に一致しないというエラーが出る場合、変数宣言に型注釈を付けて「期待される型」をTypeScriptに伝える（コンテキスト型を与える）ことで解消できることが多い。キャストの前に必ず試すこと。
 - ライブラリの関数がジェネリック引数を取るオーバーロードを持っていないか確認する（例: `maplibre-gl`の`Map#getSource`は`getSource(id: string): Source | undefined`だけでなく`getSource<TSource extends Source>(id: string): TSource | undefined`という宣言も持っており、`map.getSource(id) as maplibregl.GeoJSONSource`と書く代わりに`map.getSource<maplibregl.GeoJSONSource>(id)`と書けばキャスト無しで済む）。ライブラリの型定義ファイル（`node_modules`配下の`.d.ts`）を実際に検索し、同名メソッドの別シグネチャが無いか確認すること。
+- 既存の配列・オブジェクトの要素の型が広すぎる（例: geojsonの`Position`型は`number[]`で、緯度経度2要素のタプルより広い）場合、`.map()`等で各要素から明示的に狭い型（タプル等）を組み立てる変換関数を挟むことでキャストを避けられる（例: `const toLngLat = (position: Position): [number, number] => [position[0], position[1]]`）。
 
 上記の回避手順を試した上でなお`as T`によるキャストが避けられないと判断した場合は、**そのキャストの直前に、なぜ回避できないのか（どの回避手順を試して駄目だったか）を説明する`//`コメントを必ず添えること。** コメント無しの型キャストは、理由を検討せず安易に使った結果なのか、検討した上でやむを得ず使ったのかが後から判別できず、レビューのたびに同じ確認が発生してしまう。
 
