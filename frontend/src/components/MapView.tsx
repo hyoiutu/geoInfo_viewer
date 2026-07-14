@@ -329,8 +329,12 @@ export const MapView = ({
       container: containerRef.current,
       style: OSM_VECTOR_STYLE_URL,
       center: DEFAULT_CENTER,
-      zoom: DEFAULT_ZOOM
+      zoom: DEFAULT_ZOOM,
+      // マップコントロール（地図右下、Issue #32）とライセンス表記が重ならないよう、
+      // デフォルトの右下配置ではなく左下へ変更する
+      attributionControl: false
     });
+    map.addControl(new maplibregl.AttributionControl(), 'bottom-left');
     mapRef.current = map;
 
     map.once('load', () => {

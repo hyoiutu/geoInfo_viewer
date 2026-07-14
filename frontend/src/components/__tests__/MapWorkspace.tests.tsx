@@ -45,6 +45,7 @@ vi.mock('maplibre-gl', () => {
   const on = vi.fn();
   const queryRenderedFeatures = vi.fn(() => []);
   const setFeatureState = vi.fn();
+  const addControl = vi.fn();
   const MapMock = vi.fn().mockImplementation(function MockMap() {
     return {
       remove,
@@ -56,11 +57,13 @@ vi.mock('maplibre-gl', () => {
       getSource,
       on,
       queryRenderedFeatures,
-      setFeatureState
+      setFeatureState,
+      addControl
     };
   });
-  // biome-ignore lint/style/useNamingConvention: maplibre-glの実APIに合わせクラス名(Map)をPascalCaseのまま公開する
-  return { default: { Map: MapMock } };
+  const AttributionControlMock = vi.fn();
+  // biome-ignore lint/style/useNamingConvention: maplibre-glの実APIに合わせクラス名(Map/AttributionControl)をPascalCaseのまま公開する
+  return { default: { Map: MapMock, AttributionControl: AttributionControlMock } };
 });
 
 const getMapInstance = () => vi.mocked(maplibregl.Map).mock.results[0].value;
