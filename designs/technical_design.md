@@ -47,14 +47,14 @@
   - その他ドキュメントなど
 
 # 自転車ログ表示機能
-- レイヤONのタイミングでStrava APIを呼び出し、前回の切り替えからアクティビティが更新されていないか同期し、更新されていれば、バックエンドのDBを更新した上でフロントエンドの地図上に自転車ログを表示する（`ActivitiesService.sync()`）
+- レイヤONのタイミングでStrava APIを呼び出し、前回の切り替えからアクティビティが更新されていないか新規アクティビティ取得を行い、更新されていれば、バックエンドのDBを更新した上でフロントエンドの地図上に自転車ログを表示する（`ActivitiesService.sync()`）
   - Strava のAPIトークンは6時間で失効するため、失効していた場合リフレッシュトークンを使ってAPIトークンを更新する（`StravaAuthService`）
 - アクティビティの取得には詳細API（`GET /activities/{id}`、1ログにつき1リクエスト）を使い、常に高解像度の軌跡を取得する。一覧APIが返す簡略化された軌跡（低解像度）は使用しない
 - 取得した軌跡（`path`）は、隣接する2点間の距離が10km以上離れている箇所（トンネル内・フェリー乗船中等の測定不能区間）で複数の区間に分割して保持する
   - 距離の算出はHaversine公式（大圏距離）を用いる（`splitPathAtJumps`、`backend/src/activities/split-path-at-jumps.util.ts`）
   - 分割した結果2点未満（線を描画できない孤立した1点）になった区間は除外する
   - DBの`path`列は単一の線（PostGIS `geometry(LineString,4326)`）ではなく、複数の線をまとめて持てる`geometry(MultiLineString,4326)`として保持する（マイグレーション`1720800000000-ChangeCyclingActivitiesPathToMultiLineString`）
-  - この分割は詳細API呼び出し時（`toCyclingActivityEntityFromDetail`）に行われるため、初期取り込み・強制再取得・更新API呼び出しのいずれも、対象アクティビティの詳細取得を行うタイミングで共通して適用される
+  - この分割は詳細API呼び出し時（`toCyclingActivityEntityFromDetail`）に行われるため、バックフィル・フォースリフェッチ・新規アクティビティ取得のいずれも、対象アクティビティの詳細取得を行うタイミングで共通して適用される
   - フロントエンドの`path`型は区間ごとの座標配列の配列（`[number, number][][]`）であり、地図描画は`MultiLineString`ジオメトリとして行う（`cyclingActivityToGeoJson`）
 
 # 自転車ログフィルタリング機能
@@ -62,7 +62,7 @@
 - ダイアログの入力中（draft）状態と実際に地図へ適用される状態（applied）は`useActivityFilter`フックで分離管理し、「実行を押したときのみ確定し、閉じるボタンでは破棄され、再度開いたときは直近の適用内容を復元する」という挙動を実現する
 - フィルタで除外され地図上に表示されなくなったアクティビティの選択・フォーカス解除は、`useActivitySelection`の`pruneToVisible(visibleIds)`で実現する。`MapWorkspace`がフィルタ適用後の表示対象ID集合を`useMemo`で求め、変化のたびに`pruneToVisible`を呼ぶ
 
-# 自転車ログ初期取り込み機能
+# 自転車ログバックフィル機能
 - Stravaのレート制限は「非アップロード系エンドポイント: 15分あたり100リクエスト」を採用し、リクエスト間隔を9秒（15分 ÷ 100 = 9秒、`StravaRateLimiterService`）に固定してペーシングする
 - 実行中フラグ（`ActivitiesBackfillService`の`running`）はインメモリ管理とする（DBには永続化しない）。バックエンドが再起動した場合はフラグがリセットされ、ユーザーが再度ボタンを押すことでDB上の未取得分から再開する
 - 一覧取得は1ページあたりの最大件数でページングし、空のページが返るまで取得を繰り返すことで全件を取得する
@@ -87,8 +87,8 @@
   - `errorCode`: `STRAVA_AUTH_FAILED`（Strava認証失敗）・`STRAVA_RATE_LIMITED`（Strava APIレート制限）・`STRAVA_API_ERROR`（その他のStrava API通信エラー）・`INTERNAL_ERROR`（DBエラー等、上記以外の予期しないエラー）の4種類
 - 上記の統一形式は、NestJSのグローバル例外フィルタ`AllExceptionsFilter`によって実現する。個別のエンドポイント・サービスは意図的に投げる例外を`AppException`として扱い、フィルタがこれをそのままレスポンスボディとして返す。それ以外の予期しない例外は`INTERNAL_ERROR`として整形して返す
 - Strava API呼び出し（`StravaAuthService`・`StravaActivitiesService`）は、axiosのエラーレスポンスのHTTPステータス（401→認証失敗、429→レート制限、それ以外→通信エラー）に応じて、変換関数`toStravaApiException`（`common/errors/strava-api.exception.ts`）で`AppException`へ変換して投げる。`toStravaApiException`は独立した例外クラスではなく、axiosエラーを判定して適切な`AppException`インスタンスを組み立てる純粋関数である。console.logでの記録や、エラーを握りつぶしてfalsyな値を返す実装は行わない
-- `POST /activities/sync`は、初期取り込み(バックフィル)実行中のガード（既に実行中のため同期をスキップした場合）に限り`{ success: false }`をエラーではない200レスポンスとして返す。それ以外の失敗（Strava APIエラー等）は例外として投げ、上記のエラーレスポンス形式で返す
-- 初期取り込み(バックフィル)は非同期のfire-and-forget処理であるため、実行中に発生したエラーはHTTPレスポンスとしては返せない。代わりに直近のエラーを`lastError`としてサービス内に保持し、`GET /activities/backfill/status`のレスポンスに含めることで、ポーリングしているフロントエンドが参照できるようにする。新たに`start()`が呼ばれた時点で`lastError`はリセットされる
+- `POST /activities/sync`は、バックフィル実行中のガード（既に実行中のため新規アクティビティ取得をスキップした場合）に限り`{ success: false }`をエラーではない200レスポンスとして返す。それ以外の失敗（Strava APIエラー等）は例外として投げ、上記のエラーレスポンス形式で返す
+- バックフィルは非同期のfire-and-forget処理であるため、実行中に発生したエラーはHTTPレスポンスとしては返せない。代わりに直近のエラーを`lastError`としてサービス内に保持し、`GET /activities/backfill/status`のレスポンスに含めることで、ポーリングしているフロントエンドが参照できるようにする。新たに`start()`が呼ばれた時点で`lastError`はリセットされる
 
 ## フロントエンド
 - APIレスポンスが異常な場合、レスポンスボディを`AppErrorInfo`としてパースし、`ApiError`（`errorCode`/`hint`を保持する`Error`のサブクラス）としてthrowする
