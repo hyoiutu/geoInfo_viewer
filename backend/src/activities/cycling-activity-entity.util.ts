@@ -1,6 +1,7 @@
 import polyline from '@mapbox/polyline';
 import type { StravaActivity, StravaActivityDetail } from '../strava/types/strava-activity.type';
 import { CyclingActivityEntity } from './entities/cycling-activity.entity';
+import { splitPathAtJumps } from './split-path-at-jumps.util';
 
 const EMPTY_POLYLINE = '';
 
@@ -54,6 +55,8 @@ export const toPlaceholderCyclingActivityEntity = (activity: StravaActivity): Cy
 /**
  * 詳細API(GET /activities/{id})のレスポンスから高解像度のEntityを作る。
  * 高解像度のpolylineを優先し、GPSルートの無い手動記録等でpolylineが空の場合はsummary_polylineにフォールバックする。
+ * デコードした軌跡は、トンネル内・フェリー乗船中等の測定不能区間による位置飛び（隣接点間10km以上）で
+ * 区間分割してから保持する（Issue #27）。分割後に区間が1つも残らない場合はpathをnullにする
  * @param detail 変換元の詳細APIレスポンス
  * @returns 位置情報を含むEntity
  */
@@ -61,7 +64,8 @@ export const toCyclingActivityEntityFromDetail = (detail: StravaActivityDetail):
   const entity = mapBaseFields(detail, new CyclingActivityEntity());
   const encodedPolyline = detail.map.polyline !== EMPTY_POLYLINE ? detail.map.polyline : detail.map.summary_polyline;
   const path = decodePolylineToPath(encodedPolyline);
-  entity.path = path === null ? null : { type: 'LineString', coordinates: path };
+  const segments = path === null ? [] : splitPathAtJumps(path);
+  entity.path = segments.length === 0 ? null : { type: 'MultiLineString', coordinates: segments };
   entity.detailFetchedAt = new Date();
   return entity;
 };

@@ -274,8 +274,10 @@ describe('MapViewに関するテスト', () => {
         elevationGainMeters: 50,
         startDate: '2026-07-01T00:00:00Z',
         path: [
-          [139.7, 35.6],
-          [139.8, 35.7]
+          [
+            [139.7, 35.6],
+            [139.8, 35.7]
+          ]
         ]
       }
     ]);
@@ -318,8 +320,10 @@ describe('MapViewに関するテスト', () => {
         elevationGainMeters: 50,
         startDate: '2026-07-01T00:00:00Z',
         path: [
-          [139.7, 35.6],
-          [139.8, 35.7]
+          [
+            [139.7, 35.6],
+            [139.8, 35.7]
+          ]
         ]
       },
       {
@@ -331,8 +335,10 @@ describe('MapViewに関するテスト', () => {
         elevationGainMeters: 500,
         startDate: '2026-07-02T00:00:00Z',
         path: [
-          [139.7, 35.6],
-          [139.9, 35.8]
+          [
+            [139.7, 35.6],
+            [139.9, 35.8]
+          ]
         ]
       }
     ]);
@@ -605,8 +611,10 @@ describe('MapViewに関するテスト', () => {
         elevationGainMeters: 50,
         startDate: '2026-07-01T00:00:00Z',
         path: [
-          [139.7, 35.6],
-          [139.8, 35.7]
+          [
+            [139.7, 35.6],
+            [139.8, 35.7]
+          ]
         ]
       },
       {
@@ -618,8 +626,10 @@ describe('MapViewに関するテスト', () => {
         elevationGainMeters: 80,
         startDate: '2026-07-02T00:00:00Z',
         path: [
-          [139.7, 35.6],
-          [139.9, 35.8]
+          [
+            [139.7, 35.6],
+            [139.9, 35.8]
+          ]
         ]
       },
       {
@@ -631,8 +641,10 @@ describe('MapViewに関するテスト', () => {
         elevationGainMeters: 100,
         startDate: '2026-07-03T00:00:00Z',
         path: [
-          [139.7, 35.6],
-          [140.0, 35.9]
+          [
+            [139.7, 35.6],
+            [140.0, 35.9]
+          ]
         ]
       }
     ]);
@@ -683,8 +695,10 @@ describe('MapViewに関するテスト', () => {
         elevationGainMeters: 50,
         startDate: '2026-07-01T00:00:00Z',
         path: [
-          [139.7, 35.6],
-          [139.8, 35.7]
+          [
+            [139.7, 35.6],
+            [139.8, 35.7]
+          ]
         ]
       },
       {
@@ -696,8 +710,10 @@ describe('MapViewに関するテスト', () => {
         elevationGainMeters: 80,
         startDate: '2026-07-02T00:00:00Z',
         path: [
-          [139.7, 35.6],
-          [139.9, 35.8]
+          [
+            [139.7, 35.6],
+            [139.9, 35.8]
+          ]
         ]
       }
     ]);
@@ -746,10 +762,12 @@ describe('MapViewに関するテスト', () => {
       elevationGainMeters: 50,
       startDate: '2026-07-01T00:00:00Z',
       path: [
-        [139.7, 35.6],
-        [139.75, 35.65],
-        [139.8, 35.7]
-      ] as [number, number][]
+        [
+          [139.7, 35.6],
+          [139.75, 35.65],
+          [139.8, 35.7]
+        ]
+      ] as [number, number][][]
     };
 
     test('何もフォーカスされていない場合、マーカーは表示されない', async () => {
@@ -864,10 +882,12 @@ describe('MapViewに関するテスト', () => {
       const roundTripActivity = {
         ...activityWithPath,
         path: [
-          [139.7, 35.6],
-          [139.75, 35.65],
-          [139.7, 35.6]
-        ] as [number, number][]
+          [
+            [139.7, 35.6],
+            [139.75, 35.65],
+            [139.7, 35.6]
+          ]
+        ] as [number, number][][]
       };
       vi.mocked(fetchCyclingActivities).mockResolvedValue([roundTripActivity]);
       const { rerender } = renderWithChakra(
