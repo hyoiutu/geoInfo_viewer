@@ -3,6 +3,7 @@ import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Root } from 'react-dom/client';
 import {
   type CyclingActivity,
   fetchCyclingActivities,
@@ -36,6 +37,7 @@ import type { LayerVisibility, ToggleableLayerId } from '../types/layer';
 import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
 import { filterActivities } from '../utils/filterActivities';
+import { findActivityById } from '../utils/findActivityById';
 import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
 import { createGoalMarkerElement, createStartMarkerElement } from '../utils/startGoalMarkerElement';
 
@@ -179,19 +181,6 @@ const registerBicycleLogClickHandler = (
 };
 
 /**
- * アクティビティ一覧からIDで1件を探す
- * @param activities 検索対象のアクティビティ一覧
- * @param id 探すID。nullの場合は常にnullを返す
- * @returns 見つかったアクティビティ。無い場合はnull
- */
-const findActivityById = (activities: CyclingActivity[], id: string | null): CyclingActivity | null => {
-  if (id === null) {
-    return null;
-  }
-  return activities.find((activity) => activity.id === id) ?? null;
-};
-
-/**
  * 選択・フォーカス状態を、自転車ログの選択用・フォーカス用レイヤーのGeoJSONデータへ反映する。
  * selectedIdsの並び順（通し番号の昇順）をそのままfeatures配列の並びとして使う。MapLibreは
  * 単一ソース内で後の要素ほど手前に描画するため、これにより「通し番号が大きいものほど手前」というdraw順が実現される
@@ -223,21 +212,30 @@ const applySelectionLayers = (
   focusedSource.setData(cyclingActivityToGeoJson(focusedActivity ? [focusedActivity] : []));
 };
 
+/** スタート・ゴールマーカー1件分の、地図上のMarkerとそのアイコンを描画しているReact rootの組 */
+type StartGoalMarkerEntry = {
+  /** 地図上のMarkerインスタンス */
+  marker: maplibregl.Marker;
+  /** マーカーのアイコンをレンダリングしているReact root */
+  root: Root;
+};
+
 /**
  * フォーカス中のアクティビティの開始地点・終了地点に、スタート・ゴールを示すマーカーを表示する。
  * フォーカスが無い場合、または軌跡(path)を持たないアクティビティの場合はマーカーを全て取り除く。
  * 開始地点と終了地点が同じ座標の場合（周回ルート等）に手前へ描画されるよう、スタートのマーカーを後から追加する
  * @param map 反映先のMapLibre地図インスタンス
- * @param markersRef 直前に表示していたマーカーを保持するref（今回分の反映前に取り除くために使う）
+ * @param markersRef 直前に表示していたマーカー・React rootの組を保持するref（今回分の反映前に取り除くために使う）
  * @param focusedActivity フォーカス中のアクティビティ。未フォーカスの場合はnull
  */
 const applyStartGoalMarkers = (
   map: maplibregl.Map,
-  markersRef: { current: maplibregl.Marker[] },
+  markersRef: { current: StartGoalMarkerEntry[] },
   focusedActivity: CyclingActivity | null
 ) => {
-  for (const marker of markersRef.current) {
+  for (const { marker, root } of markersRef.current) {
     marker.remove();
+    root.unmount();
   }
   markersRef.current = [];
 
@@ -248,10 +246,15 @@ const applyStartGoalMarkers = (
 
   const startPoint = path[0];
   const goalPoint = path[path.length - 1];
-  const goalMarker = new maplibregl.Marker({ element: createGoalMarkerElement() }).setLngLat(goalPoint).addTo(map);
-  const startMarker = new maplibregl.Marker({ element: createStartMarkerElement() }).setLngLat(startPoint).addTo(map);
+  const goal = createGoalMarkerElement();
+  const goalMarker = new maplibregl.Marker({ element: goal.element }).setLngLat(goalPoint).addTo(map);
+  const start = createStartMarkerElement();
+  const startMarker = new maplibregl.Marker({ element: start.element }).setLngLat(startPoint).addTo(map);
 
-  markersRef.current = [goalMarker, startMarker];
+  markersRef.current = [
+    { marker: goalMarker, root: goal.root },
+    { marker: startMarker, root: start.root }
+  ];
 };
 
 /**
@@ -306,7 +309,7 @@ export const MapView = ({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
   const wasBicycleLogVisibleRef = useRef(false);
-  const startGoalMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const startGoalMarkersRef = useRef<StartGoalMarkerEntry[]>([]);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
   const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
