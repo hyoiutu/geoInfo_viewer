@@ -297,7 +297,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
       expect(service.isRunning()).toBe(true);
     });
 
-    test('既に初期取り込み(start)が実行中の場合、started:falseを返す（isRunningガードを共有する）', async () => {
+    test('既にバックフィル(start)が実行中の場合、started:falseを返す（isRunningガードを共有する）', async () => {
       fetchAllCyclingActivities.mockReturnValue(new Promise(() => {}));
       const service = await createService();
       await service.start();

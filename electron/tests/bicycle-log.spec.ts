@@ -21,7 +21,7 @@ const enableBicycleLogLayer = async (): Promise<void> => {
   await window.waitForTimeout(500);
 };
 
-// 初期取り込み(バックフィル)と自転車ログの同期(sync())は、どちらもcycling_activities・sync_stateテーブルと
+// バックフィルと自転車ログの新規アクティビティ取得(sync())は、どちらもcycling_activities・sync_stateテーブルと
 // モックStravaサーバーの状態を共有し、互いのデータを壊し合うため直列実行が必須（Issue #8）。
 // 1ファイルにまとめ、describe.serial()で「前のテストが失敗したら後続はスキップする」順序保証をかけることで、
 // 他の独立したテストファイル（app.spec.ts等）とは並列実行できるようにする。

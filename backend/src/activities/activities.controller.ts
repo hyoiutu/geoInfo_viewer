@@ -17,7 +17,7 @@ import {
 } from './activities-backfill.service';
 import type { CyclingActivityDto } from './types/cycling-activity.dto';
 
-/** 自転車ログ(サイクリングアクティビティ)の参照・同期・初期取り込み・通過自治体取得に関するHTTP APIを提供するコントローラー */
+/** 自転車ログ(サイクリングアクティビティ)の参照・新規アクティビティ取得・バックフィル・通過自治体取得に関するHTTP APIを提供するコントローラー */
 @ApiTags('activities')
 @Controller(ACTIVITIES_ROUTE)
 export class ActivitiesController {
@@ -39,13 +39,13 @@ export class ActivitiesController {
     return this.activitiesService.sync();
   }
 
-  /** POST /activities/backfill: 初期取り込み(バックフィル)を開始する */
+  /** POST /activities/backfill: バックフィルを開始する */
   @Post(ACTIVITIES_BACKFILL_ROUTE)
   startBackfill(): Promise<BackfillStartResult> {
     return this.activitiesBackfillService.start();
   }
 
-  /** GET /activities/backfill/status: 初期取り込みの進捗状況を返す */
+  /** GET /activities/backfill/status: バックフィルの進捗状況を返す */
   @Get(ACTIVITIES_BACKFILL_STATUS_ROUTE)
   getBackfillStatus(): Promise<BackfillStatus> {
     return this.activitiesBackfillService.getStatus();
