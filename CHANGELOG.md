@@ -24,6 +24,22 @@
   * **README.md**: 変更なし。
   * **仕様書**: 変更なし（AIエージェントの内部運用スキルであり、アプリケーションの機能仕様には影響しないため）。
 
+### [2026-07-14] GitHub Issue #24としてフォーカス中のアクティビティにスタート・ゴールマーカーを表示する機能を実装した
+* **修正の動機・概要**:
+  - フォーカス中のアクティビティが単なる線の表示のため、他の線と重なるとスタート地点・ゴール地点が分かりにくいという依頼（Issue #24）。自律モードで対応した。
+  - `lucide-react`を新規導入し、フォーカス中アクティビティの軌跡（`path`）の先頭・末尾の座標に、`maplibregl.Marker`でスタート（再生アイコン）・ゴール（旗アイコン）を示すマーカーを表示するようにした。
+  - 開始地点と終了地点が同じ座標になる周回ルートの場合にスタートのマーカーが埋もれないよう、ゴールのマーカーを先に、スタートのマーカーを後に地図へ追加することで、スタートが手前に描画されるようにした。
+  - 軌跡（GPSルート）を持たないアクティビティがフォーカスされた場合はマーカーを表示しない（既存の`cyclingActivityToGeoJson`同様、`path`が`null`のケースを考慮）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/package.json`・`pnpm-lock.yaml`: `lucide-react`を追加。
+    - `frontend/src/constants/startGoalMarkers.ts`（新規）: マーカーのアイコン色・サイズの定数。
+    - `frontend/src/utils/startGoalMarkerElement.ts`（新規）: `lucide-react`のアイコンを`react-dom/server`の`renderToStaticMarkup`で静的にレンダリングし、`maplibregl.Marker`にそのまま渡せるDOM要素を組み立てる`createStartMarkerElement`・`createGoalMarkerElement`。
+    - `frontend/src/components/MapView.tsx`: `findActivityById`（`applySelectionLayers`と共通化）・`applyStartGoalMarkers`を追加し、フォーカス中のアクティビティが変化するたびにマーカーを更新する`useEffect`を追加。
+    - 単体テスト（フロントエンド177件）・lint・typecheck・E2Eテスト4件は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「アクティビティ詳細閲覧機能」節に、スタート・ゴールマーカーの表示条件（アイコン種別、開始・終了地点が重なる場合の手前関係、軌跡が無い場合の非表示）を追記。
+
 ### [2026-07-14] PR #22のレビュー対応として選択・フォーカス中のアクティビティがフィルタで除外された際に選択・フォーカスを解除するようにした
 * **修正の動機・概要**:
   - PR #22のレビューで、フィルタにより選択中・フォーカス中のアクティビティが地図上から除外された場合でも選択・フォーカス状態自体は保持される、という当初の設計判断について「選択やフォーカスを解除するようにしてください」との指摘を受けた。

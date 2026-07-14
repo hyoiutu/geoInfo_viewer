@@ -23,6 +23,7 @@ import {
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { DEFAULT_ACTIVITY_FILTER } from '../../types/activityFilter';
 import type { LayerVisibility } from '../../types/layer';
+import { createStartMarkerElement } from '../../utils/startGoalMarkerElement';
 import { MapView } from '../MapView';
 
 vi.mock('../../api/activitiesApi', () => ({
@@ -92,11 +93,28 @@ vi.mock('maplibre-gl', () => {
   const MapMock = vi.fn().mockImplementation(function MockMap() {
     return { remove, once, getStyle, addSource, addLayer, setLayoutProperty, getSource, on, queryRenderedFeatures };
   });
-  // biome-ignore lint/style/useNamingConvention: maplibre-glの実APIに合わせクラス名(Map)をPascalCaseのまま公開する
-  return { default: { Map: MapMock } };
+  const MarkerMock = vi.fn().mockImplementation(function MockMarker(options: { element: HTMLElement }) {
+    const instance = {
+      element: options.element,
+      lngLat: null as [number, number] | null,
+      setLngLat(lngLat: [number, number]) {
+        instance.lngLat = lngLat;
+        return instance;
+      },
+      addTo() {
+        return instance;
+      },
+      remove: vi.fn()
+    };
+    return instance;
+  });
+  // biome-ignore lint/style/useNamingConvention: maplibre-glの実APIに合わせクラス名(Map/Marker)をPascalCaseのまま公開する
+  return { default: { Map: MapMock, Marker: MarkerMock } };
 });
 
 const getMapInstance = () => vi.mocked(maplibregl.Map).mock.results[0].value;
+/** テスト中に生成された全てのMarkerモックインスタンスを取得する */
+const getMarkerInstances = () => vi.mocked(maplibregl.Marker).mock.results.map((result) => result.value);
 
 /** mapInstance.onで登録された'click'ハンドラを取り出す */
 const getClickHandler = (mapInstance: ReturnType<typeof getMapInstance>) => {
@@ -715,6 +733,171 @@ describe('MapViewに関するテスト', () => {
         '2',
         '1'
       ]);
+    });
+  });
+
+  describe('スタート・ゴールマーカーに関するテスト', () => {
+    const activityWithPath = {
+      id: '1',
+      name: 'ライド1',
+      distanceMeters: 1000,
+      movingTimeSeconds: 600,
+      elapsedTimeSeconds: 650,
+      elevationGainMeters: 50,
+      startDate: '2026-07-01T00:00:00Z',
+      path: [
+        [139.7, 35.6],
+        [139.75, 35.65],
+        [139.8, 35.7]
+      ] as [number, number][]
+    };
+
+    test('何もフォーカスされていない場合、マーカーは表示されない', async () => {
+      vi.mocked(fetchCyclingActivities).mockResolvedValue([activityWithPath]);
+      const { rerender } = renderWithChakra(
+        <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+      );
+
+      rerender(
+        <MapView
+          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          onError={vi.fn()}
+          {...DEFAULT_SELECTION_PROPS}
+        />
+      );
+
+      await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
+      expect(getMarkerInstances()).toHaveLength(0);
+    });
+
+    test('アクティビティをフォーカスすると、開始地点・終了地点にマーカーが表示される', async () => {
+      vi.mocked(fetchCyclingActivities).mockResolvedValue([activityWithPath]);
+      const { rerender } = renderWithChakra(
+        <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+      );
+      rerender(
+        <MapView
+          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          onError={vi.fn()}
+          {...DEFAULT_SELECTION_PROPS}
+        />
+      );
+      await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
+
+      rerender(
+        <MapView
+          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          onError={vi.fn()}
+          {...DEFAULT_SELECTION_PROPS}
+          selectedIds={['1']}
+          focusedId="1"
+        />
+      );
+
+      await waitFor(() => expect(getMarkerInstances()).toHaveLength(2));
+      const lngLats = getMarkerInstances().map((marker) => marker.lngLat);
+      expect(lngLats).toContainEqual([139.7, 35.6]);
+      expect(lngLats).toContainEqual([139.8, 35.7]);
+    });
+
+    test('フォーカスを解除すると、マーカーが取り除かれる', async () => {
+      vi.mocked(fetchCyclingActivities).mockResolvedValue([activityWithPath]);
+      const { rerender } = renderWithChakra(
+        <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+      );
+      rerender(
+        <MapView
+          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          onError={vi.fn()}
+          {...DEFAULT_SELECTION_PROPS}
+          selectedIds={['1']}
+          focusedId="1"
+        />
+      );
+      await waitFor(() => expect(getMarkerInstances()).toHaveLength(2));
+      const previousMarkers = getMarkerInstances();
+
+      rerender(
+        <MapView
+          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          onError={vi.fn()}
+          {...DEFAULT_SELECTION_PROPS}
+        />
+      );
+
+      await waitFor(() => {
+        for (const marker of previousMarkers) {
+          expect(marker.remove).toHaveBeenCalled();
+          // Reactのroot.unmount()も呼ばれ、DOM要素の中身が空になっていることを確認する
+          expect(marker.element.querySelector('svg')).toBeNull();
+        }
+      });
+    });
+
+    test('軌跡(path)を持たないアクティビティをフォーカスしても、マーカーは表示されない', async () => {
+      vi.mocked(fetchCyclingActivities).mockResolvedValue([{ ...activityWithPath, path: null }]);
+      const { rerender } = renderWithChakra(
+        <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+      );
+      rerender(
+        <MapView
+          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          onError={vi.fn()}
+          {...DEFAULT_SELECTION_PROPS}
+        />
+      );
+      await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
+
+      rerender(
+        <MapView
+          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          onError={vi.fn()}
+          {...DEFAULT_SELECTION_PROPS}
+          selectedIds={['1']}
+          focusedId="1"
+        />
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(getMarkerInstances()).toHaveLength(0);
+    });
+
+    test('開始地点と終了地点が同じ座標の場合、スタートのマーカーが後に追加され手前に描画される', async () => {
+      const roundTripActivity = {
+        ...activityWithPath,
+        path: [
+          [139.7, 35.6],
+          [139.75, 35.65],
+          [139.7, 35.6]
+        ] as [number, number][]
+      };
+      vi.mocked(fetchCyclingActivities).mockResolvedValue([roundTripActivity]);
+      const { rerender } = renderWithChakra(
+        <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+      );
+      rerender(
+        <MapView
+          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          onError={vi.fn()}
+          {...DEFAULT_SELECTION_PROPS}
+        />
+      );
+      await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
+
+      rerender(
+        <MapView
+          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          onError={vi.fn()}
+          {...DEFAULT_SELECTION_PROPS}
+          selectedIds={['1']}
+          focusedId="1"
+        />
+      );
+
+      await waitFor(() => expect(getMarkerInstances()).toHaveLength(2));
+      // 後から地図に追加された方（配列の末尾）がスタートのマーカーであり、DOM上で手前に描画される
+      const lastMarker = getMarkerInstances()[getMarkerInstances().length - 1];
+      expect(lastMarker.element.innerHTML).toEqual(createStartMarkerElement().element.innerHTML);
     });
   });
 });
