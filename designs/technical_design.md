@@ -26,25 +26,20 @@
 - パッケージマネージャー: pnpm
 
 ## ディレクトリ構造
-- root
-  - electron
-    - main
-      - ...
-    - preload
-      - ...
-    - ...（Electronのメインプロセス・プリロードスクリプト。共通基盤として frontend/backend のどちらにも属さない）
-  - backend
-    - src
-      - ...
-    - ...
-  - frontend
-    - src
-      - ...
-    - ...
-  - specs（仕様書）
-  - designs（本ファイルを含む設計書）
-  - README.md
-  - その他ドキュメントなど
+```
+root/
+├── electron/            # Electronのメインプロセス・プリロードスクリプト（共通基盤として frontend/backend のどちらにも属さない）
+│   ├── main/
+│   └── preload/
+├── backend/
+│   └── src/
+├── frontend/
+│   └── src/
+├── specs/               # 仕様書
+├── designs/             # 設計書（本ファイルを含む）
+├── README.md
+└── ...（その他ドキュメントなど）
+```
 
 # 自転車ログ表示機能
 - レイヤONのタイミングでStrava APIを呼び出し、前回の切り替えからアクティビティログが更新されていないかチェックし、更新されていれば、バックエンドのDBを更新した上でフロントエンドの地図上に自転車ログを表示する（`ActivitiesService.sync()`）
