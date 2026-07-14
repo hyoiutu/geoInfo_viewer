@@ -828,6 +828,8 @@ describe('MapViewに関するテスト', () => {
       await waitFor(() => {
         for (const marker of previousMarkers) {
           expect(marker.remove).toHaveBeenCalled();
+          // Reactのroot.unmount()も呼ばれ、DOM要素の中身が空になっていることを確認する
+          expect(marker.element.querySelector('svg')).toBeNull();
         }
       });
     });
@@ -895,7 +897,7 @@ describe('MapViewに関するテスト', () => {
       await waitFor(() => expect(getMarkerInstances()).toHaveLength(2));
       // 後から地図に追加された方（配列の末尾）がスタートのマーカーであり、DOM上で手前に描画される
       const lastMarker = getMarkerInstances()[getMarkerInstances().length - 1];
-      expect(lastMarker.element.innerHTML).toEqual(createStartMarkerElement().innerHTML);
+      expect(lastMarker.element.innerHTML).toEqual(createStartMarkerElement().element.innerHTML);
     });
   });
 });
