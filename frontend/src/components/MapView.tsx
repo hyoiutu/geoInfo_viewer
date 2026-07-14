@@ -110,7 +110,7 @@ const addBicycleLogLayer = (map: maplibregl.Map) => {
 };
 
 /**
- * Strava上の新規アクティビティを同期し、取得したアクティビティ一覧をコールバックで通知する。
+ * Strava上の新規アクティビティを取得し、取得したアクティビティ一覧をコールバックで通知する。
  * 地図への反映（フィルタ適用後のGeoJSON設定）はこの関数の呼び出し元が別途行う
  * @param onError API呼び出し失敗時に呼ばれるコールバック
  * @param onActivitiesLoaded 取得に成功したアクティビティ一覧を渡すコールバック
@@ -119,7 +119,7 @@ const syncAndLoadBicycleLog = async (
   onError: (error: AppErrorInfo) => void,
   onActivitiesLoaded: (activities: CyclingActivity[]) => void
 ) => {
-  // 初期取り込み(バックフィル)実行中は同期を呼ばず、その時点でDBに取得済みの分だけ表示する
+  // バックフィル実行中は新規アクティビティ取得を呼ばず、その時点でDBに取得済みの分だけ表示する
   const backfillStatus = await getBackfillStatus().catch(() => null);
   if (!backfillStatus?.isRunning) {
     let syncResult: SyncResult;
@@ -295,7 +295,7 @@ const applyLayerVisibility = (
   }
 };
 
-/** MapLibreの地図本体を表示し、レイヤーの表示/非表示・自転車ログの同期・選択状態の描画を行うコンポーネント */
+/** MapLibreの地図本体を表示し、レイヤーの表示/非表示・自転車ログの新規アクティビティ取得・選択状態の描画を行うコンポーネント */
 export const MapView = ({
   layerVisibility,
   selectedIds,
@@ -388,7 +388,7 @@ export const MapView = ({
   }, [filteredActivities, focusedId, isStyleLoaded]);
 
   // layerVisibilityが変化するたびに各レイヤーの表示/非表示を反映し、
-  // 自転車ログレイヤーがOFF→ONに変化した場合はStrava同期・データ取得を行う
+  // 自転車ログレイヤーがOFF→ONに変化した場合はStrava新規アクティビティ取得・データ取得を行う
   useEffect(() => {
     const map = mapRef.current;
     const categorizedLayerIds = categorizedLayerIdsRef.current;

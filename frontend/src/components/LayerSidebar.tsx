@@ -22,9 +22,9 @@ type LayerSidebarProps = {
   layers: LayerSidebarLayer[];
   /** レイヤーのスイッチが操作されたときに呼ばれるコールバック */
   onToggleLayer: (id: ToggleableLayerId) => void;
-  /** 初期取り込み(バックフィル)の進捗状況。未取得の間はnull */
+  /** バックフィルの進捗状況。未取得の間はnull */
   backfillStatus: BackfillStatus | null;
-  /** 初期取り込みボタンが押されたときに呼ばれるコールバック */
+  /** バックフィルボタンが押されたときに呼ばれるコールバック */
   onStartBackfill: () => void;
   /** 強制再取得ボタンが押されたときに呼ばれるコールバック */
   onStartForceRefetch: () => void;
@@ -32,7 +32,7 @@ type LayerSidebarProps = {
   onOpenFilterDialog: () => void;
 };
 
-/** レイヤーの一覧表示・ON/OFF切り替え・初期取り込み・フィルタダイアログを開くボタンを提供するサイドバー */
+/** レイヤーの一覧表示・ON/OFF切り替え・バックフィル・フィルタダイアログを開くボタンを提供するサイドバー */
 export const LayerSidebar = ({
   layers,
   onToggleLayer,

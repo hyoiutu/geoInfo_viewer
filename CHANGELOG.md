@@ -14,7 +14,18 @@
 
 ## 変更履歴
 
-### [2026-07-14] GitHub Issue #31として用語集を作成した
+### [2026-07-14] PR #43のレビュー対応として用語集の表記統一をコード上のコメントにも適用した
+* **修正の動機・概要**:
+  - PR #43のレビューで「用語集で定義した用語（同期→新規アクティビティ取得、初期取り込み→バックフィル、自転車ログ強制再取得→フォースリフェッチ、左右サイドバー→操作パネル/アクティビティパネル）はコード中のコメントにも適用されているか。少なくともMapView.tsxは依然として『同期』という用語が使われている」との指摘を受けた。
+  - 実際に確認したところ、直前のコミットでは`specs/`・`designs/`配下のドキュメントのみを更新しており、AGENTS.mdが規定する「コード上のコメント」への適用が漏れていた。バックエンド・フロントエンド・electron/tests配下のコメントを再度全件確認し、22ファイルにわたる旧用語を新用語へ統一した。
+  - UI上に実際に表示されるボタンラベル文字列（「自転車ログ初期取り込み」「自転車ログ強制再取得」）と、それに対応するテストのセレクタ文字列（`getByRole('button', { name: '...' })`等）は、コメントではなく実装のUI仕様そのものであるため、今回は変更対象外とした（変更する場合はUI表示文言自体の変更という別の設計判断になるため）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: 以下のファイルのコメント（TSDoc・`//`コメント・テスト名）を新用語へ統一。
+    - バックエンド: `activities.controller.ts`・`activities.service.ts`・`activities-backfill.service.ts`・`cycling-activity-entity.util.ts`・`strava-activities.service.ts`・`entities/cycling-activity.entity.ts`・migrations 2件・`__tests__/activities.service.tests.ts`・`__tests__/activities-backfill.service.tests.ts`
+    - フロントエンド: `MapView.tsx`・`LayerSidebar.tsx`・`ActivityDetailSidebar.tsx`・`errorsAtom.ts`・`activityDetailView.ts`・`useBackfillStatus.ts`・`activitiesApi.ts`
+    - electron/tests: `fixtures/activities.js`・`support/mock-strava-server.js`・`bicycle-log.spec.ts`
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（前回のPR #43対応で既に更新済みのため）。
 * **修正の動機・概要**:
   - 指示・レビュー・仕様書記載の際に一般的な用語（左サイドバー、ダイアログ等）を用いており、表記揺れや説明の冗長化が懸念されるという依頼（Issue #31）。自律モードで対応した。
   - `specs/system_specification.md`・`designs/technical_design.md`・コード上のコメントを調査し、一意に定めておくべき用語（自転車ログ、アクティビティ、同期、初期取り込み、選択/フォーカス、左右サイドバー等）をリストアップし、`specs/glossary.md`（新規）にまとめた。
