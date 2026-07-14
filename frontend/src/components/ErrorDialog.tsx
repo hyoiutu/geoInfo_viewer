@@ -1,23 +1,19 @@
 import { Button, Dialog, Portal, Text } from '@chakra-ui/react';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { useState } from 'react';
+import { dismissErrorAtom, errorsAtom } from '../atoms/errorsAtom';
 import type { AppErrorInfo } from '../types/apiError';
-
-/** ErrorDialogのprops */
-type ErrorDialogProps = {
-  /** 表示するエラーのスタック（発生順）。空配列の場合はダイアログを表示しない */
-  errors: AppErrorInfo[];
-  /** 表示中のエラーが閉じられたとき、そのインデックスを引数に呼ばれるコールバック */
-  onDismiss: (index: number) => void;
-};
 
 const FIRST_INDEX = 0;
 const SINGLE_ERROR_COUNT = 1;
 
 /**
- * APIエラー(AppErrorInfo)をユーザーへ提示する共通ダイアログ。
+ * APIエラー(AppErrorInfo)をユーザーへ提示する共通ダイアログ。グローバルなエラースタック（errorsAtom）を直接参照する。
  * 複数のエラーが同時に発生した場合はスタックし、1つのダイアログ内で前へ/次へで切り替えて閲覧できる。
  */
-export const ErrorDialog = ({ errors, onDismiss }: ErrorDialogProps) => {
+export const ErrorDialog = () => {
+  const errors = useAtomValue(errorsAtom);
+  const dismiss = useSetAtom(dismissErrorAtom);
   const [viewIndex, setViewIndex] = useState(FIRST_INDEX);
   const lastIndex = Math.max(errors.length - SINGLE_ERROR_COUNT, FIRST_INDEX);
   // errorsが外部から縮む（dismiss等）とviewIndexが範囲外になりうるため、表示直前に範囲内へ丸める
@@ -26,13 +22,13 @@ export const ErrorDialog = ({ errors, onDismiss }: ErrorDialogProps) => {
 
   const handleOpenChange = (details: { open: boolean }) => {
     if (!details.open && currentError) {
-      onDismiss(currentIndex);
+      dismiss(currentIndex);
     }
   };
 
   const handleDismiss = () => {
     if (currentError) {
-      onDismiss(currentIndex);
+      dismiss(currentIndex);
     }
   };
 

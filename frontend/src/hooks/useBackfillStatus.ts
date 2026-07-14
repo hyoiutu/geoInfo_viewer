@@ -1,3 +1,4 @@
+import { useSetAtom } from 'jotai';
 import { useCallback, useEffect, useState } from 'react';
 import {
   type BackfillStartResult,
@@ -6,7 +7,7 @@ import {
   startBackfill,
   startForceRefetch as startForceRefetchApi
 } from '../api/activitiesApi';
-import type { AppErrorInfo } from '../types/apiError';
+import { addErrorAtom } from '../atoms/errorsAtom';
 import { toAppErrorInfo } from '../utils/apiError';
 
 // バックフィル進捗表示(%・残り時間)をUI上でどのくらいの頻度で更新するかの間隔。
@@ -26,12 +27,12 @@ type UseBackfillStatusResult = {
 
 /**
  * 初期取り込み(バックフィル)の進捗状況を取得・ポーリングし、開始操作を提供するフック。
- * 実行中は一定間隔で進捗状況を自動的に再取得する
- * @param onError APIエラー発生時に呼ばれるコールバック
+ * 実行中は一定間隔で進捗状況を自動的に再取得する。エラーはグローバルなエラースタック（errorsAtom）へ報告する
  * @returns 進捗状況と開始関数
  */
-export const useBackfillStatus = (onError?: (error: AppErrorInfo) => void): UseBackfillStatusResult => {
+export const useBackfillStatus = (): UseBackfillStatusResult => {
   const [backfillStatus, setBackfillStatus] = useState<BackfillStatus | null>(null);
+  const addError = useSetAtom(addErrorAtom);
 
   const refresh = useCallback(async () => {
     try {
@@ -40,14 +41,14 @@ export const useBackfillStatus = (onError?: (error: AppErrorInfo) => void): UseB
       // 初期取り込みはfire-and-forgetのため、発生したエラーはHTTPレスポンスの成否ではなく
       // レスポンスボディのlastErrorフィールドとして返ってくる。ポーリング側で明示的にチェックする。
       if (result.lastError !== null) {
-        onError?.(result.lastError);
+        addError(result.lastError);
       }
       return result;
     } catch (error) {
-      onError?.(toAppErrorInfo(error));
+      addError(toAppErrorInfo(error));
       return null;
     }
-  }, [onError]);
+  }, [addError]);
 
   // マウント時に一度だけ現在の進捗状況を取得する
   useEffect(() => {
@@ -76,11 +77,11 @@ export const useBackfillStatus = (onError?: (error: AppErrorInfo) => void): UseB
         await refresh();
         return result;
       } catch (error) {
-        onError?.(toAppErrorInfo(error));
+        addError(toAppErrorInfo(error));
         return null;
       }
     },
-    [refresh, onError]
+    [refresh, addError]
   );
 
   const start = useCallback(() => runStartAction(startBackfill), [runStartAction]);

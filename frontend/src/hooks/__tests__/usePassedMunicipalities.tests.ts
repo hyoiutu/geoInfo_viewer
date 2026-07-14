@@ -1,6 +1,8 @@
 import { renderHook, waitFor } from '@testing-library/react';
+import { Provider as JotaiProvider, useAtomValue } from 'jotai';
 import { describe, expect, test, vi } from 'vitest';
 import { fetchPassedMunicipalities } from '../../api/activitiesApi';
+import { errorsAtom } from '../../atoms/errorsAtom';
 import { usePassedMunicipalities } from '../usePassedMunicipalities';
 
 vi.mock('../../api/activitiesApi', () => ({
@@ -47,14 +49,19 @@ describe('usePassedMunicipalitiesに関するテスト', () => {
     });
   });
 
-  test('取得に失敗した場合、onErrorを呼び出す', async () => {
+  test('取得に失敗した場合、グローバルなエラースタックに追加する', async () => {
     vi.mocked(fetchPassedMunicipalities).mockRejectedValue(new Error('fetch failed'));
-    const onError = vi.fn();
 
-    renderHook(() => usePassedMunicipalities('123', onError));
+    const { result } = renderHook(
+      () => {
+        usePassedMunicipalities('123');
+        return useAtomValue(errorsAtom);
+      },
+      { wrapper: JotaiProvider }
+    );
 
     await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'fetch failed' }));
+      expect(result.current).toEqual([expect.objectContaining({ message: 'fetch failed' })]);
     });
   });
 });

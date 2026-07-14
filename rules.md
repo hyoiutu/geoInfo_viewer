@@ -1167,3 +1167,38 @@ const INSERT_BATCH_SIZE = 500;
 ```
 
 定数の値そのものだけでは、それが「なぜその値なのか」「省略するとどう壊れるのか」がコードから読み取れない場合（DBのバインドパラメータ上限・外部APIのレート制限・OSやライブラリの既知の制約など、実装対象のドメインロジックではなく外部システムの仕様に起因する制約）は、値の意図をコメントで明示すること。特に「なぜこの値を超えてはいけないか」という制約の出どころ（PostgreSQL・Strava API等、具体的な対象）を明記する。
+
+---
+
+# Jotaiのグローバルステートはsetterをそのまま外部へ公開しない
+
+NG
+```typescript
+// errorsAtom.ts
+export const errorsAtom = atom<AppErrorInfo[]>([]);
+
+// 呼び出し側: 誰でも自由に配列全体を上書きできてしまう
+const [errors, setErrors] = useAtom(errorsAtom);
+setErrors((current) => [...current, error]);
+```
+
+OK
+```typescript
+// errorsAtom.ts
+const errorsStateAtom = atom<AppErrorInfo[]>([]);
+
+/** 読み取り専用。useSetAtomで書き込もうとするとコンパイルエラーになる */
+export const errorsAtom = atom((get) => get(errorsStateAtom));
+
+/** エラーを1件追加するwrite-only atom。書き込み方法をここに閉じ込める */
+export const addErrorAtom = atom(null, (get, set, error: AppErrorInfo) => {
+  set(errorsStateAtom, [...get(errorsStateAtom), error]);
+});
+
+// 呼び出し側
+const errors = useAtomValue(errorsAtom);
+const addError = useSetAtom(addErrorAtom);
+addError(error);
+```
+
+生のatomをそのまま`export`して`useAtom`/`useSetAtom(errorsAtom)`で自由に書き換えられる状態にすると、更新ロジック（追加時に上書きせず末尾へ追加する等の不変条件）が呼び出し側ごとにバラバラに実装されうる。状態を持つatom（`errorsStateAtom`等）は`export`せず、外部には「読み取り専用の派生atom」と「更新方法ごとのwrite-only atom（`atom(null, (get, set, arg) => {...})`）」のみを公開すること。これによりTypeScriptの型システムレベルで誤用（外部からの直接書き換え）を防げる。汎用的な`useReducer`のような単一の`dispatch`ではなく、`addErrorAtom`/`dismissErrorAtom`のように操作ごとに独立したatomへ分けることで、各呼び出し元は自分が使う操作だけをimportでき、利用可能な操作が一覧しやすくなる。

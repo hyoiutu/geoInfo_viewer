@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity } from '../../api/activitiesApi';
 import { fetchPassedMunicipalities } from '../../api/activitiesApi';
+import { ErrorsProbe } from '../../test-utils/ErrorsProbe';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { ActivityDetailSidebar } from '../ActivityDetailSidebar';
 
@@ -34,7 +35,6 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
-        onError={vi.fn()}
       />
     );
 
@@ -54,7 +54,6 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
-        onError={vi.fn()}
       />
     );
 
@@ -73,7 +72,6 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={onFocus}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
-        onError={vi.fn()}
       />
     );
     fireEvent.click(screen.getByText(`2. ${new Date('2026-07-01T01:00:00.000Z').toLocaleString('ja-JP')}`));
@@ -91,7 +89,6 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={onBackFromList}
-        onError={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: '戻る' }));
@@ -116,7 +113,6 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
-        onError={vi.fn()}
       />
     );
 
@@ -136,7 +132,6 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={onBackFromDetail}
         onBackFromList={vi.fn()}
-        onError={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: '戻る' }));
@@ -158,7 +153,6 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
-        onError={vi.fn()}
       />
     );
 
@@ -179,7 +173,6 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
-        onError={vi.fn()}
       />
     );
 
@@ -188,23 +181,24 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     });
   });
 
-  test('通過自治体の取得に失敗した場合、onErrorが呼ばれる', async () => {
+  test('通過自治体の取得に失敗した場合、グローバルなエラースタックに追加される', async () => {
     vi.mocked(fetchPassedMunicipalities).mockRejectedValue(new Error('fetch failed'));
-    const onError = vi.fn();
 
     renderWithChakra(
-      <ActivityDetailSidebar
-        activities={[createActivity({})]}
-        focusedIndex={0}
-        onFocus={vi.fn()}
-        onBackFromDetail={vi.fn()}
-        onBackFromList={vi.fn()}
-        onError={onError}
-      />
+      <>
+        <ActivityDetailSidebar
+          activities={[createActivity({})]}
+          focusedIndex={0}
+          onFocus={vi.fn()}
+          onBackFromDetail={vi.fn()}
+          onBackFromList={vi.fn()}
+        />
+        <ErrorsProbe />
+      </>
     );
 
     await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'fetch failed' }));
+      expect(screen.getByTestId('errors-probe').textContent).toContain('fetch failed');
     });
   });
 });

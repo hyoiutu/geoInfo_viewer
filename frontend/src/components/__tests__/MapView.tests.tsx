@@ -1,4 +1,4 @@
-import { waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { fetchCyclingActivities, getBackfillStatus, syncCyclingActivities } from '../../api/activitiesApi';
@@ -20,6 +20,7 @@ import {
   BICYCLE_LOG_SELECTED_SOURCE_ID,
   BICYCLE_LOG_SOURCE_ID
 } from '../../constants/bicycleLog';
+import { ErrorsProbe } from '../../test-utils/ErrorsProbe';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { DEFAULT_ACTIVITY_FILTER } from '../../types/activityFilter';
 import type { LayerVisibility } from '../../types/layer';
@@ -134,7 +135,7 @@ describe('MapViewに関するテスト', () => {
 
   test('マウントされたとき、コンテナ要素を指定して地図が生成される', () => {
     const { getByTestId } = renderWithChakra(
-      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+      <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
     );
 
     const container = getByTestId('map-container');
@@ -143,9 +144,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('アンマウントされたとき、地図のremoveが呼ばれる', () => {
-    const { unmount } = renderWithChakra(
-      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
-    );
+    const { unmount } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
     const mapInstance = getMapInstance();
 
     unmount();
@@ -154,7 +153,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('スタイルロード時、GSI航空写真のソースが追加される', () => {
-    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />);
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
     const mapInstance = getMapInstance();
 
     expect(mapInstance.addSource).toHaveBeenCalledWith(AERIAL_PHOTO_SOURCE_ID, {
@@ -167,7 +166,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('スタイルロード時、GSI航空写真のレイヤーが道路カテゴリの最初のレイヤーより手前に追加される', () => {
-    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />);
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
     const mapInstance = getMapInstance();
 
     expect(mapInstance.addLayer).toHaveBeenCalledWith(
@@ -177,7 +176,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('スタイルロード時、ONのカテゴリに属するレイヤーはvisibility:visibleになる', () => {
-    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />);
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
     const mapInstance = getMapInstance();
 
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_motorway', 'visibility', 'visible');
@@ -187,7 +186,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('スタイルロード時、OFFのカテゴリに属するレイヤーはvisibility:noneになる', () => {
-    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />);
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
     const mapInstance = getMapInstance();
 
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(AERIAL_PHOTO_LAYER_ID, 'visibility', 'none');
@@ -197,26 +196,18 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('layerVisibilityが変化したとき、該当レイヤーのvisibilityが更新される', () => {
-    const { rerender } = renderWithChakra(
-      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
-    );
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
     const mapInstance = getMapInstance();
     mapInstance.setLayoutProperty.mockClear();
 
-    rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'osm-road': false }}
-        onError={vi.fn()}
-        {...DEFAULT_SELECTION_PROPS}
-      />
-    );
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'osm-road': false }} {...DEFAULT_SELECTION_PROPS} />);
 
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_motorway', 'visibility', 'none');
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_minor', 'visibility', 'none');
   });
 
   test('スタイルロード時、自転車ログの通常・選択・フォーカス用の空のGeoJSONソース・ラインレイヤーが追加される', () => {
-    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />);
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
     const mapInstance = getMapInstance();
     const emptyData = { type: 'FeatureCollection', features: [] };
 
@@ -281,17 +272,9 @@ describe('MapViewに関するテスト', () => {
         ]
       }
     ]);
-    const { rerender } = renderWithChakra(
-      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
-    );
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
 
-    rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={vi.fn()}
-        {...DEFAULT_SELECTION_PROPS}
-      />
-    );
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
 
     await waitFor(() => {
       expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
@@ -345,7 +328,6 @@ describe('MapViewに関するテスト', () => {
     const { rerender } = renderWithChakra(
       <MapView
         layerVisibility={ALL_ON_VISIBILITY}
-        onError={vi.fn()}
         {...DEFAULT_SELECTION_PROPS}
         filter={{ ...DEFAULT_ACTIVITY_FILTER, minDistanceKm: 10 }}
       />
@@ -354,7 +336,6 @@ describe('MapViewに関するテスト', () => {
     rerender(
       <MapView
         layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={vi.fn()}
         {...DEFAULT_SELECTION_PROPS}
         filter={{ ...DEFAULT_ACTIVITY_FILTER, minDistanceKm: 10 }}
       />
@@ -371,17 +352,9 @@ describe('MapViewに関するテスト', () => {
 
   test('自転車ログレイヤーがOFF→ONに変化したとき、同期に失敗した場合は参照APIを呼ばない', async () => {
     vi.mocked(syncCyclingActivities).mockResolvedValue({ success: false });
-    const { rerender } = renderWithChakra(
-      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
-    );
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
 
-    rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={vi.fn()}
-        {...DEFAULT_SELECTION_PROPS}
-      />
-    );
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
 
     await waitFor(() => {
       expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
@@ -398,17 +371,9 @@ describe('MapViewに関するテスト', () => {
       estimatedRemainingSeconds: 27,
       lastError: null
     });
-    const { rerender } = renderWithChakra(
-      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
-    );
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
 
-    rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={vi.fn()}
-        {...DEFAULT_SELECTION_PROPS}
-      />
-    );
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
 
     await waitFor(() => {
       expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
@@ -418,99 +383,71 @@ describe('MapViewに関するテスト', () => {
 
   test('自転車ログレイヤーがON→OFFに変化したときは、同期用APIを呼ばない', () => {
     const { rerender } = renderWithChakra(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={vi.fn()}
-        {...DEFAULT_SELECTION_PROPS}
-      />
+      <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
     );
     vi.mocked(syncCyclingActivities).mockClear();
 
-    rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }}
-        onError={vi.fn()}
-        {...DEFAULT_SELECTION_PROPS}
-      />
-    );
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }} {...DEFAULT_SELECTION_PROPS} />);
 
     expect(syncCyclingActivities).not.toHaveBeenCalled();
   });
 
   test('自転車ログレイヤーがOFF→ON→OFF→ONと変化した場合、ONになる度に同期用APIが呼ばれる', async () => {
-    const { rerender } = renderWithChakra(
-      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
-    );
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
 
-    rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={vi.fn()}
-        {...DEFAULT_SELECTION_PROPS}
-      />
-    );
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
     await waitFor(() => {
       expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
     });
 
-    rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }}
-        onError={vi.fn()}
-        {...DEFAULT_SELECTION_PROPS}
-      />
-    );
-    rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={vi.fn()}
-        {...DEFAULT_SELECTION_PROPS}
-      />
-    );
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }} {...DEFAULT_SELECTION_PROPS} />);
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
 
     await waitFor(() => {
       expect(syncCyclingActivities).toHaveBeenCalledTimes(2);
     });
   });
 
-  test('同期用APIの呼び出しが失敗した場合、onErrorが呼ばれる', async () => {
+  test('同期用APIの呼び出しが失敗した場合、グローバルなエラースタックに追加される', async () => {
     vi.mocked(syncCyclingActivities).mockRejectedValue(new Error('sync failed'));
-    const onError = vi.fn();
     const { rerender } = renderWithChakra(
-      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={onError} {...DEFAULT_SELECTION_PROPS} />
+      <>
+        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
+        <ErrorsProbe />
+      </>
     );
 
     rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={onError}
-        {...DEFAULT_SELECTION_PROPS}
-      />
+      <>
+        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
+        <ErrorsProbe />
+      </>
     );
 
     await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'sync failed' }));
+      expect(screen.getByTestId('errors-probe').textContent).toContain('sync failed');
     });
     expect(fetchCyclingActivities).not.toHaveBeenCalled();
   });
 
-  test('参照用APIの呼び出しが失敗した場合、onErrorが呼ばれる', async () => {
+  test('参照用APIの呼び出しが失敗した場合、グローバルなエラースタックに追加される', async () => {
     vi.mocked(fetchCyclingActivities).mockRejectedValue(new Error('fetch failed'));
-    const onError = vi.fn();
     const { rerender } = renderWithChakra(
-      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={onError} {...DEFAULT_SELECTION_PROPS} />
+      <>
+        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
+        <ErrorsProbe />
+      </>
     );
 
     rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={onError}
-        {...DEFAULT_SELECTION_PROPS}
-      />
+      <>
+        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
+        <ErrorsProbe />
+      </>
     );
 
     await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'fetch failed' }));
+      expect(screen.getByTestId('errors-probe').textContent).toContain('fetch failed');
     });
   });
 
@@ -519,7 +456,6 @@ describe('MapViewに関するテスト', () => {
     renderWithChakra(
       <MapView
         layerVisibility={ALL_ON_VISIBILITY}
-        onError={vi.fn()}
         {...DEFAULT_SELECTION_PROPS}
         onSelectActivities={onSelectActivities}
       />
@@ -545,7 +481,6 @@ describe('MapViewに関するテスト', () => {
     renderWithChakra(
       <MapView
         layerVisibility={ALL_ON_VISIBILITY}
-        onError={vi.fn()}
         {...DEFAULT_SELECTION_PROPS}
         onSelectActivities={onSelectActivities}
       />
@@ -564,7 +499,6 @@ describe('MapViewに関するテスト', () => {
     renderWithChakra(
       <MapView
         layerVisibility={ALL_ON_VISIBILITY}
-        onError={vi.fn()}
         {...DEFAULT_SELECTION_PROPS}
         onSelectActivities={onSelectActivities}
       />
@@ -583,7 +517,6 @@ describe('MapViewに関するテスト', () => {
     renderWithChakra(
       <MapView
         layerVisibility={ALL_ON_VISIBILITY}
-        onError={vi.fn()}
         {...DEFAULT_SELECTION_PROPS}
         selectedIds={['1']}
         focusedId="1"
@@ -648,17 +581,9 @@ describe('MapViewに関するテスト', () => {
         ]
       }
     ]);
-    const { rerender } = renderWithChakra(
-      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
-    );
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
 
-    rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={vi.fn()}
-        {...DEFAULT_SELECTION_PROPS}
-      />
-    );
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
     await waitFor(() => {
       expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
     });
@@ -666,7 +591,6 @@ describe('MapViewに関するテスト', () => {
     rerender(
       <MapView
         layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={vi.fn()}
         {...DEFAULT_SELECTION_PROPS}
         selectedIds={['2', '3']}
         focusedId="3"
@@ -717,16 +641,8 @@ describe('MapViewに関するテスト', () => {
         ]
       }
     ]);
-    const { rerender } = renderWithChakra(
-      <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
-    );
-    rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={vi.fn()}
-        {...DEFAULT_SELECTION_PROPS}
-      />
-    );
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
+    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
     await waitFor(() => {
       expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
     });
@@ -735,7 +651,6 @@ describe('MapViewに関するテスト', () => {
     rerender(
       <MapView
         layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        onError={vi.fn()}
         {...DEFAULT_SELECTION_PROPS}
         selectedIds={['2', '1']}
         focusedId={null}
@@ -773,15 +688,11 @@ describe('MapViewに関するテスト', () => {
     test('何もフォーカスされていない場合、マーカーは表示されない', async () => {
       vi.mocked(fetchCyclingActivities).mockResolvedValue([activityWithPath]);
       const { rerender } = renderWithChakra(
-        <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
       );
 
       rerender(
-        <MapView
-          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-          onError={vi.fn()}
-          {...DEFAULT_SELECTION_PROPS}
-        />
+        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
       );
 
       await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
@@ -791,21 +702,16 @@ describe('MapViewに関するテスト', () => {
     test('アクティビティをフォーカスすると、開始地点・終了地点にマーカーが表示される', async () => {
       vi.mocked(fetchCyclingActivities).mockResolvedValue([activityWithPath]);
       const { rerender } = renderWithChakra(
-        <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
       );
       rerender(
-        <MapView
-          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-          onError={vi.fn()}
-          {...DEFAULT_SELECTION_PROPS}
-        />
+        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
       );
       await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
 
       rerender(
         <MapView
           layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-          onError={vi.fn()}
           {...DEFAULT_SELECTION_PROPS}
           selectedIds={['1']}
           focusedId="1"
@@ -821,12 +727,11 @@ describe('MapViewに関するテスト', () => {
     test('フォーカスを解除すると、マーカーが取り除かれる', async () => {
       vi.mocked(fetchCyclingActivities).mockResolvedValue([activityWithPath]);
       const { rerender } = renderWithChakra(
-        <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
       );
       rerender(
         <MapView
           layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-          onError={vi.fn()}
           {...DEFAULT_SELECTION_PROPS}
           selectedIds={['1']}
           focusedId="1"
@@ -836,11 +741,7 @@ describe('MapViewに関するテスト', () => {
       const previousMarkers = getMarkerInstances();
 
       rerender(
-        <MapView
-          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-          onError={vi.fn()}
-          {...DEFAULT_SELECTION_PROPS}
-        />
+        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
       );
 
       await waitFor(() => {
@@ -853,21 +754,16 @@ describe('MapViewに関するテスト', () => {
     test('軌跡(path)を持たないアクティビティをフォーカスしても、マーカーは表示されない', async () => {
       vi.mocked(fetchCyclingActivities).mockResolvedValue([{ ...activityWithPath, path: null }]);
       const { rerender } = renderWithChakra(
-        <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
       );
       rerender(
-        <MapView
-          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-          onError={vi.fn()}
-          {...DEFAULT_SELECTION_PROPS}
-        />
+        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
       );
       await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
 
       rerender(
         <MapView
           layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-          onError={vi.fn()}
           {...DEFAULT_SELECTION_PROPS}
           selectedIds={['1']}
           focusedId="1"
@@ -891,21 +787,16 @@ describe('MapViewに関するテスト', () => {
       };
       vi.mocked(fetchCyclingActivities).mockResolvedValue([roundTripActivity]);
       const { rerender } = renderWithChakra(
-        <MapView layerVisibility={ALL_ON_VISIBILITY} onError={vi.fn()} {...DEFAULT_SELECTION_PROPS} />
+        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
       );
       rerender(
-        <MapView
-          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-          onError={vi.fn()}
-          {...DEFAULT_SELECTION_PROPS}
-        />
+        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
       );
       await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
 
       rerender(
         <MapView
           layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-          onError={vi.fn()}
           {...DEFAULT_SELECTION_PROPS}
           selectedIds={['1']}
           focusedId="1"

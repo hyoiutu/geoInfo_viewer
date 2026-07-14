@@ -1,6 +1,9 @@
-import { fireEvent, screen } from '@testing-library/react';
-import { describe, expect, test, vi } from 'vitest';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { createStore } from 'jotai';
+import { describe, expect, test } from 'vitest';
+import { addErrorAtom } from '../../atoms/errorsAtom';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
+import type { AppErrorInfo } from '../../types/apiError';
 import { ErrorDialog } from '../ErrorDialog';
 
 const ERROR_A = {
@@ -10,15 +13,24 @@ const ERROR_A = {
 };
 const ERROR_B = { errorCode: 'INTERNAL_ERROR' as const, message: '予期しないエラー', hint: null };
 
+/** テスト専用のストアを作り、addErrorAtom経由でグローバルなエラースタック（errorsAtom）の初期値を注入した上でレンダリングする */
+const renderDialog = (errors: AppErrorInfo[]) => {
+  const store = createStore();
+  for (const error of errors) {
+    store.set(addErrorAtom, error);
+  }
+  return renderWithChakra(<ErrorDialog />, { store });
+};
+
 describe('ErrorDialogに関するテスト', () => {
   test('errorsが空の場合、ダイアログは表示されない', () => {
-    renderWithChakra(<ErrorDialog errors={[]} onDismiss={vi.fn()} />);
+    renderDialog([]);
 
     expect(screen.queryByText('エラーが発生しました')).not.toBeInTheDocument();
   });
 
   test('errorsが1件の場合、messageとhintを表示し件数表示はしない', () => {
-    renderWithChakra(<ErrorDialog errors={[ERROR_A]} onDismiss={vi.fn()} />);
+    renderDialog([ERROR_A]);
 
     expect(screen.getByText('エラーが発生しました')).toBeInTheDocument();
     expect(screen.getByText('Strava APIとの通信に失敗しました')).toBeInTheDocument();
@@ -26,22 +38,23 @@ describe('ErrorDialogに関するテスト', () => {
   });
 
   test('hintがnullの場合、hint部分は表示しない', () => {
-    renderWithChakra(<ErrorDialog errors={[ERROR_B]} onDismiss={vi.fn()} />);
+    renderDialog([ERROR_B]);
 
     expect(screen.getByText('予期しないエラー')).toBeInTheDocument();
   });
 
-  test('OKボタンを押すと、現在表示中のエラーのインデックスでonDismissが呼ばれる', () => {
-    const onDismiss = vi.fn();
-    renderWithChakra(<ErrorDialog errors={[ERROR_A]} onDismiss={onDismiss} />);
+  test('OKボタンを押すと、現在表示中のエラーがスタックから取り除かれダイアログが閉じる', async () => {
+    renderDialog([ERROR_A]);
 
     fireEvent.click(screen.getByRole('button', { name: 'OK' }));
 
-    expect(onDismiss).toHaveBeenCalledWith(0);
+    await waitFor(() => {
+      expect(screen.queryByText('エラーが発生しました')).not.toBeInTheDocument();
+    });
   });
 
   test('errorsが複数件の場合、件数(1/2)を表示し前へ/次へで切り替えられる', () => {
-    renderWithChakra(<ErrorDialog errors={[ERROR_A, ERROR_B]} onDismiss={vi.fn()} />);
+    renderDialog([ERROR_A, ERROR_B]);
 
     expect(screen.getByText('エラーが発生しました（1/2）')).toBeInTheDocument();
     expect(screen.getByText('Strava APIとの通信に失敗しました')).toBeInTheDocument();
@@ -54,18 +67,18 @@ describe('ErrorDialogに関するテスト', () => {
     expect(screen.getByRole('button', { name: '次へ' })).toBeDisabled();
   });
 
-  test('複数件のうち2件目を表示中にOKを押すと、インデックス1でonDismissが呼ばれる', () => {
-    const onDismiss = vi.fn();
-    renderWithChakra(<ErrorDialog errors={[ERROR_A, ERROR_B]} onDismiss={onDismiss} />);
+  test('複数件のうち2件目を表示中にOKを押すと、2件目がスタックから取り除かれ1件目の表示に戻る', () => {
+    renderDialog([ERROR_A, ERROR_B]);
     fireEvent.click(screen.getByRole('button', { name: '次へ' }));
 
     fireEvent.click(screen.getByRole('button', { name: 'OK' }));
 
-    expect(onDismiss).toHaveBeenCalledWith(1);
+    expect(screen.getByText('エラーが発生しました')).toBeInTheDocument();
+    expect(screen.getByText('Strava APIとの通信に失敗しました')).toBeInTheDocument();
   });
 
   test('単一件の場合、前へ/次へボタンは表示しない', () => {
-    renderWithChakra(<ErrorDialog errors={[ERROR_A]} onDismiss={vi.fn()} />);
+    renderDialog([ERROR_A]);
 
     expect(screen.queryByRole('button', { name: '前へ' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '次へ' })).not.toBeInTheDocument();

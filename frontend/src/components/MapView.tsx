@@ -2,7 +2,8 @@ import { Box } from '@chakra-ui/react';
 import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSetAtom } from 'jotai';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   type CyclingActivity,
   fetchCyclingActivities,
@@ -10,6 +11,7 @@ import {
   type SyncResult,
   syncCyclingActivities
 } from '../api/activitiesApi';
+import { addErrorAtom } from '../atoms/errorsAtom';
 import {
   AERIAL_PHOTO_ATTRIBUTION,
   AERIAL_PHOTO_LAYER_ID,
@@ -31,7 +33,6 @@ import {
   BICYCLE_LOG_SOURCE_ID
 } from '../constants/bicycleLog';
 import type { ActivityFilter } from '../types/activityFilter';
-import type { AppErrorInfo } from '../types/apiError';
 import type { LayerVisibility, ToggleableLayerId } from '../types/layer';
 import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
@@ -53,8 +54,6 @@ const HIT_TEST_RADIUS_PX = 5;
 type MapViewProps = {
   /** レイヤーIDごとの表示/非表示状態 */
   layerVisibility: LayerVisibility;
-  /** API呼び出し等でエラーが発生したときに呼ばれるコールバック */
-  onError: (error: AppErrorInfo) => void;
   /** 選択中のアクティビティID一覧 */
   selectedIds: string[];
   /** フォーカス中のアクティビティID。未フォーカスの場合はnull */
@@ -108,41 +107,6 @@ const addBicycleLogLayer = (map: maplibregl.Map) => {
   addLineLayer(BICYCLE_LOG_SOURCE_ID, BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_LINE_COLOR_DEFAULT);
   addLineLayer(BICYCLE_LOG_SELECTED_SOURCE_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_LINE_COLOR_SELECTED);
   addLineLayer(BICYCLE_LOG_FOCUSED_SOURCE_ID, BICYCLE_LOG_FOCUSED_LAYER_ID, BICYCLE_LOG_LINE_COLOR_FOCUSED);
-};
-
-/**
- * Strava上の新規アクティビティを同期し、取得したアクティビティ一覧をコールバックで通知する。
- * 地図への反映（フィルタ適用後のGeoJSON設定）はこの関数の呼び出し元が別途行う
- * @param onError API呼び出し失敗時に呼ばれるコールバック
- * @param onActivitiesLoaded 取得に成功したアクティビティ一覧を渡すコールバック
- */
-const syncAndLoadBicycleLog = async (
-  onError: (error: AppErrorInfo) => void,
-  onActivitiesLoaded: (activities: CyclingActivity[]) => void
-) => {
-  // 初期取り込み(バックフィル)実行中は更新用APIを呼ばず、その時点でDBに取得済みの分だけ表示する
-  const backfillStatus = await getBackfillStatus().catch(() => null);
-  if (!backfillStatus?.isRunning) {
-    let syncResult: SyncResult;
-    try {
-      syncResult = await syncCyclingActivities();
-    } catch (error) {
-      onError(toAppErrorInfo(error));
-      return;
-    }
-    // success:falseはバックエンド側の「バックフィル実行中ガード」を踏んだ場合のみ返る（レースコンディション）。
-    // エラーではないため、静かに（ダイアログ無しで）参照APIの呼び出しをスキップする
-    if (!syncResult.success) {
-      return;
-    }
-  }
-
-  try {
-    const activities = await fetchCyclingActivities();
-    onActivitiesLoaded(activities);
-  } catch (error) {
-    onError(toAppErrorInfo(error));
-  }
 };
 
 /**
@@ -299,13 +263,13 @@ const applyLayerVisibility = (
 /** MapLibreの地図本体を表示し、レイヤーの表示/非表示・自転車ログの同期・選択状態の描画を行うコンポーネント */
 export const MapView = ({
   layerVisibility,
-  onError,
   selectedIds,
   focusedId,
   onSelectActivities,
   onActivitiesLoaded,
   filter
 }: MapViewProps) => {
+  const addError = useSetAtom(addErrorAtom);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
@@ -319,6 +283,35 @@ export const MapView = ({
   onSelectActivitiesRef.current = onSelectActivities;
   const focusedIdRef = useRef(focusedId);
   focusedIdRef.current = focusedId;
+
+  // Strava上の新規アクティビティを同期し、取得したアクティビティ一覧をstate・親へ反映する。
+  // 地図への反映（フィルタ適用後のGeoJSON設定）は別のuseEffectがfilteredActivitiesの変化を検知して行う
+  const syncAndLoadBicycleLog = useCallback(async () => {
+    // 初期取り込み(バックフィル)実行中は更新用APIを呼ばず、その時点でDBに取得済みの分だけ表示する
+    const backfillStatus = await getBackfillStatus().catch(() => null);
+    if (!backfillStatus?.isRunning) {
+      let syncResult: SyncResult;
+      try {
+        syncResult = await syncCyclingActivities();
+      } catch (error) {
+        addError(toAppErrorInfo(error));
+        return;
+      }
+      // success:falseはバックエンド側の「バックフィル実行中ガード」を踏んだ場合のみ返る（レースコンディション）。
+      // エラーではないため、静かに（ダイアログ無しで）参照APIの呼び出しをスキップする
+      if (!syncResult.success) {
+        return;
+      }
+    }
+
+    try {
+      const loaded = await fetchCyclingActivities();
+      setActivities(loaded);
+      onActivitiesLoaded(loaded);
+    } catch (error) {
+      addError(toAppErrorInfo(error));
+    }
+  }, [addError, onActivitiesLoaded]);
 
   // マウント時に一度だけMapLibreの地図を生成し、スタイル読み込み完了後に航空写真・自転車ログレイヤーを追加する
   useEffect(() => {
@@ -404,12 +397,9 @@ export const MapView = ({
     wasBicycleLogVisibleRef.current = isBicycleLogVisible;
 
     if (!wasBicycleLogVisible && isBicycleLogVisible) {
-      void syncAndLoadBicycleLog(onError, (loaded) => {
-        setActivities(loaded);
-        onActivitiesLoaded(loaded);
-      });
+      void syncAndLoadBicycleLog();
     }
-  }, [layerVisibility, isStyleLoaded, onError, onActivitiesLoaded]);
+  }, [layerVisibility, isStyleLoaded, syncAndLoadBicycleLog]);
 
   return <Box ref={containerRef} flex="1" minWidth="0" height="100vh" data-testid="map-container" />;
 };

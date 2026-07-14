@@ -1,6 +1,7 @@
+import { useSetAtom } from 'jotai';
 import { useEffect, useState } from 'react';
 import { fetchPassedMunicipalities, type PassedMunicipality } from '../api/activitiesApi';
-import type { AppErrorInfo } from '../types/apiError';
+import { addErrorAtom } from '../atoms/errorsAtom';
 import { toAppErrorInfo } from '../utils/apiError';
 
 /** usePassedMunicipalitiesの戻り値 */
@@ -12,17 +13,15 @@ type UsePassedMunicipalitiesResult = {
 };
 
 /**
- * 指定したアクティビティが通過した自治体一覧を取得するフック。activityIdが変わるたびに再取得する
+ * 指定したアクティビティが通過した自治体一覧を取得するフック。activityIdが変わるたびに再取得する。
+ * エラーはグローバルなエラースタック（errorsAtom）へ報告する
  * @param activityId 対象のアクティビティID
- * @param onError API呼び出し失敗時に呼ばれるコールバック
  * @returns 通過した自治体一覧と取得中フラグ
  */
-export const usePassedMunicipalities = (
-  activityId: string,
-  onError?: (error: AppErrorInfo) => void
-): UsePassedMunicipalitiesResult => {
+export const usePassedMunicipalities = (activityId: string): UsePassedMunicipalitiesResult => {
   const [municipalities, setMunicipalities] = useState<PassedMunicipality[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const addError = useSetAtom(addErrorAtom);
 
   // activityIdが変わるたびに取得し直す。フォーカス先の切り替えが速い場合に古い結果で上書きしないよう、
   // アンマウント/依存値変化時にキャンセルフラグを立てる
@@ -39,7 +38,7 @@ export const usePassedMunicipalities = (
       })
       .catch((error: unknown) => {
         if (!isCancelled) {
-          onError?.(toAppErrorInfo(error));
+          addError(toAppErrorInfo(error));
         }
       })
       .finally(() => {
@@ -51,7 +50,7 @@ export const usePassedMunicipalities = (
     return () => {
       isCancelled = true;
     };
-  }, [activityId, onError]);
+  }, [activityId, addError]);
 
   return { municipalities, isLoading };
 };

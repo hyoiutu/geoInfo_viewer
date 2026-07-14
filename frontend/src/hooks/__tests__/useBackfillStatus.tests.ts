@@ -1,7 +1,15 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { Provider as JotaiProvider, useAtomValue } from 'jotai';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { getBackfillStatus, startBackfill, startForceRefetch } from '../../api/activitiesApi';
+import { errorsAtom } from '../../atoms/errorsAtom';
 import { useBackfillStatus } from '../useBackfillStatus';
+
+/** useBackfillStatusとerrorsAtomの現在値を合わせて返す、テスト用の合成フック */
+const useBackfillStatusWithErrors = () => ({
+  backfillStatus: useBackfillStatus(),
+  errors: useAtomValue(errorsAtom)
+});
 
 vi.mock('../../api/activitiesApi', () => ({
   getBackfillStatus: vi.fn(),
@@ -92,41 +100,38 @@ describe('useBackfillStatusに関するテスト', () => {
     expect(getBackfillStatus).not.toHaveBeenCalled();
   });
 
-  test('状態取得に失敗した場合、onErrorを呼び出す', async () => {
+  test('状態取得に失敗した場合、グローバルなエラースタックに追加する', async () => {
     vi.mocked(getBackfillStatus).mockRejectedValue(new Error('network error'));
-    const onError = vi.fn();
 
-    renderHook(() => useBackfillStatus(onError));
+    const { result } = renderHook(useBackfillStatusWithErrors, { wrapper: JotaiProvider });
 
     await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'network error' }));
+      expect(result.current.errors).toEqual([expect.objectContaining({ message: 'network error' })]);
     });
   });
 
-  test('startBackfillに失敗した場合、onErrorを呼び出す', async () => {
+  test('startBackfillに失敗した場合、グローバルなエラースタックに追加する', async () => {
     vi.mocked(startBackfill).mockRejectedValue(new Error('backfill start failed'));
-    const onError = vi.fn();
-    const { result } = renderHook(() => useBackfillStatus(onError));
+    const { result } = renderHook(useBackfillStatusWithErrors, { wrapper: JotaiProvider });
     await waitFor(() => {
-      expect(result.current.backfillStatus).toEqual(NOT_RUNNING_STATUS);
+      expect(result.current.backfillStatus.backfillStatus).toEqual(NOT_RUNNING_STATUS);
     });
 
     await act(async () => {
-      await result.current.start();
+      await result.current.backfillStatus.start();
     });
 
-    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'backfill start failed' }));
+    expect(result.current.errors).toEqual([expect.objectContaining({ message: 'backfill start failed' })]);
   });
 
-  test('取得結果にlastErrorが含まれる場合、onErrorを呼び出す', async () => {
+  test('取得結果にlastErrorが含まれる場合、グローバルなエラースタックに追加する', async () => {
     const lastError = { errorCode: 'STRAVA_API_ERROR' as const, message: 'Strava APIエラー', hint: null };
     vi.mocked(getBackfillStatus).mockResolvedValue({ ...NOT_RUNNING_STATUS, lastError });
-    const onError = vi.fn();
 
-    renderHook(() => useBackfillStatus(onError));
+    const { result } = renderHook(useBackfillStatusWithErrors, { wrapper: JotaiProvider });
 
     await waitFor(() => {
-      expect(onError).toHaveBeenCalledWith(lastError);
+      expect(result.current.errors).toEqual([lastError]);
     });
   });
 
@@ -145,29 +150,26 @@ describe('useBackfillStatusに関するテスト', () => {
     expect(result.current.backfillStatus).toEqual(RUNNING_STATUS);
   });
 
-  test('startForceRefetchに失敗した場合、onErrorを呼び出す', async () => {
+  test('startForceRefetchに失敗した場合、グローバルなエラースタックに追加する', async () => {
     vi.mocked(startForceRefetch).mockRejectedValue(new Error('force refetch start failed'));
-    const onError = vi.fn();
-    const { result } = renderHook(() => useBackfillStatus(onError));
+    const { result } = renderHook(useBackfillStatusWithErrors, { wrapper: JotaiProvider });
     await waitFor(() => {
-      expect(result.current.backfillStatus).toEqual(NOT_RUNNING_STATUS);
+      expect(result.current.backfillStatus.backfillStatus).toEqual(NOT_RUNNING_STATUS);
     });
 
     await act(async () => {
-      await result.current.startForceRefetch();
+      await result.current.backfillStatus.startForceRefetch();
     });
 
-    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'force refetch start failed' }));
+    expect(result.current.errors).toEqual([expect.objectContaining({ message: 'force refetch start failed' })]);
   });
 
-  test('取得結果のlastErrorがnullの場合、onErrorを呼び出さない', async () => {
-    const onError = vi.fn();
-
-    renderHook(() => useBackfillStatus(onError));
+  test('取得結果のlastErrorがnullの場合、エラースタックに追加しない', async () => {
+    const { result } = renderHook(useBackfillStatusWithErrors, { wrapper: JotaiProvider });
 
     await waitFor(() => {
       expect(getBackfillStatus).toHaveBeenCalled();
     });
-    expect(onError).not.toHaveBeenCalled();
+    expect(result.current.errors).toEqual([]);
   });
 });
