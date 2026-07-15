@@ -136,6 +136,9 @@ classDiagram
     class ErrorDialog {
         <<component>>
     }
+    class AppDialog {
+        <<component>>
+    }
     class useLayerVisibility {
         <<hook>>
     }
@@ -181,10 +184,15 @@ classDiagram
     useBackfillStatus --> useErrorReporter
     useErrorReporter --> errorsAtom
     ErrorDialog --> errorsAtom
+    LayerDialog --> AppDialog
+    SettingsDialog --> AppDialog
+    FilterDialog --> AppDialog
+    ErrorDialog --> AppDialog
 ```
 
 - Issue #28（PR #40）でエラー状態を`errorsAtom`によるグローバルステートへ切り出したことで、`MapView`・`ActivityDetailSidebar`・`useBackfillStatus`・`usePassedMunicipalities`は`useErrorReporter`を直接呼び出すのみになり、`onError`のprops経由の受け渡しが無くなった。
 - Issue #32で左サイドバー（`LayerSidebar`）を廃止し、地図右下に浮かぶ`MapControls`のアイコンから`LayerDialog`・`FilterDialog`・`SettingsDialog`を開く構成へ変更した。初期取り込み・強制再取得の進捗表示は、設定ダイアログが即座に閉じる仕様になったことに伴い、地図下部の`BackfillProgressFooter`（表示状態を`useBackfillProgressFooter`で管理）へ移した。
+- PR #55のレビュー対応として、`LayerDialog`・`SettingsDialog`・`FilterDialog`・`ErrorDialog`が共通して持っていたChakra UIの`Dialog.Root`/`Backdrop`/`Positioner`/`Content`等のラッパー構造を`AppDialog`（新規）へ切り出した。各ダイアログはJSXのネスト深さが1階層に集約され、`check-file-size.mjs`（design_principles.md参照）が検出していた`LayerDialog`のネスト深さ超過も解消された。
 - `layerVisibility`・`selectedIds`/`focusedId`・`filter`は、現時点では`MapWorkspace`から直接の子コンポーネントへ渡されるのみで、深いバケツリレーは発生していない。
 
 ## 設計上の改善提案

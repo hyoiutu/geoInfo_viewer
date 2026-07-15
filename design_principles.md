@@ -1,8 +1,10 @@
 # Design Principles（設計原則）
 
-本ファイルは、rules.mdから分割した設計原則（DRY/KISS/YAGNI・SOLID原則等）をまとめたものです（Issue #47）。コードの構造・責務分割に関する原則であり、個々の構文レベルの規約（rules.md）よりも参照頻度は低いものの、モジュール分割・リファクタリングを判断する場面では必ず参照すること。Biomeでは機械的に検出できない領域です。
+本ファイルは、コード規約から分割した設計原則（DRY/KISS/YAGNI・SOLID原則等）をまとめたものです（Issue #47）。コードの構造・責務分割に関する原則であり、個々の構文レベルの規約（[typescript_rules.md](./typescript_rules.md)・[react_rules.md](./react_rules.md)・[comment_rules.md](./comment_rules.md)）よりも参照頻度は低いものの、モジュール分割・リファクタリングを判断する場面では必ず参照すること。Biomeでは機械的に検出できない領域です。
 
 `pnpm run check:file-size`（`scripts/check-file-size.mjs`）は、1ファイルの行数・JSXのネスト深さが一定の閾値を超えたファイルを検出する。責務が集まりすぎている兆候として、該当ファイルは本ファイルの原則（特にSRP）に照らして再確認すること。
+
+**JSXネスト深さの超過は、兄弟コンポーネントとの共通ラッパー抽出で解消できることがある**: 複数のコンポーネントが同じUIライブラリの決まったラッパー構造（例: Chakra UIの`Dialog.Root`/`Backdrop`/`Positioner`/`Content`）を個別に持っている場合、その構造自体を1つの共通コンポーネント（例: `AppDialog`）として切り出すと、各コンポーネント側のJSXネストが1階層に集約され、DRY違反の解消と`check:file-size`の閾値超過解消を同時に達成できる（PR #55レビュー対応、`LayerDialog`等4つのDialogコンポーネントを`AppDialog`へ集約した実例）。
 
 ---
 

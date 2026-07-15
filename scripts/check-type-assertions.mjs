@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// rules.md「anyやas（型キャスト）は原則使用しない」を機械的にチェックするスクリプト。
+// typescript_rules.md「anyやas（型キャスト）は原則使用しない」を機械的にチェックするスクリプト。
 // - `as unknown as T` は理由コメントの有無に関わらず常にエラーにする
 // - それ以外の型アサーション（`as T` / 旧構文の `<T>expr`）は、直前行または同一行末尾に
 //   `//` コメントが無ければエラーにする（`as const` は対象外）
@@ -78,7 +78,7 @@ const checkFile = (filePath) => {
         violations.push(`${filePath}:${line + 1}: 'as unknown as T' による強制キャストは禁止されています。 ${snippet}`);
       } else if (!hasNearbyExplanationComment(node, sourceFile, lines)) {
         violations.push(
-          `${filePath}:${line + 1}: 型キャスト(as)には回避できない理由を説明する//コメントが必要です(rules.md参照)。 ${snippet}`
+          `${filePath}:${line + 1}: 型キャスト(as)には回避できない理由を説明する//コメントが必要です(typescript_rules.md参照)。 ${snippet}`
         );
       }
     }
@@ -101,7 +101,7 @@ if (allViolations.length > 0) {
     console.error(violation);
   }
   console.error(
-    `\n型キャストのルール違反が${allViolations.length}件見つかりました。rules.mdの「anyやas（型キャスト）は原則使用しない」を確認してください。`
+    `\n型キャストのルール違反が${allViolations.length}件見つかりました。typescript_rules.mdの「anyやas（型キャスト）は原則使用しない」を確認してください。`
   );
   process.exit(1);
 }

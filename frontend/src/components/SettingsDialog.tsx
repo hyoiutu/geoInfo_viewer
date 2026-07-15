@@ -1,4 +1,5 @@
-import { Button, Dialog, Flex, Portal } from '@chakra-ui/react';
+import { Button, Flex } from '@chakra-ui/react';
+import { AppDialog } from './AppDialog';
 
 /** SettingsDialogのprops */
 type SettingsDialogProps = {
@@ -25,12 +26,6 @@ export const SettingsDialog = ({
   onStartForceRefetch,
   onClose
 }: SettingsDialogProps) => {
-  const handleOpenChange = (details: { open: boolean }) => {
-    if (!details.open) {
-      onClose();
-    }
-  };
-
   const handleStartBackfill = () => {
     onStartBackfill();
     onClose();
@@ -42,39 +37,15 @@ export const SettingsDialog = ({
   };
 
   return (
-    <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
-      <Portal>
-        <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content>
-            <Dialog.Header>
-              <Dialog.Title>設定</Dialog.Title>
-              <Button
-                onClick={onClose}
-                aria-label="閉じる"
-                variant="ghost"
-                size="sm"
-                position="absolute"
-                top="2"
-                right="2"
-              >
-                ×
-              </Button>
-            </Dialog.Header>
-            <Dialog.Body>
-              <Flex direction="column" gap="2">
-                <Button onClick={handleStartBackfill} disabled={isBackfillRunning} size="sm" width="100%">
-                  自転車ログ初期取り込み
-                </Button>
-                <Button onClick={handleStartForceRefetch} disabled={isBackfillRunning} size="sm" width="100%">
-                  自転車ログ強制再取得
-                </Button>
-              </Flex>
-            </Dialog.Body>
-            <Dialog.CloseTrigger />
-          </Dialog.Content>
-        </Dialog.Positioner>
-      </Portal>
-    </Dialog.Root>
+    <AppDialog isOpen={isOpen} onClose={onClose} title="設定">
+      <Flex direction="column" gap="2">
+        <Button onClick={handleStartBackfill} disabled={isBackfillRunning} size="sm" width="100%">
+          自転車ログ初期取り込み
+        </Button>
+        <Button onClick={handleStartForceRefetch} disabled={isBackfillRunning} size="sm" width="100%">
+          自転車ログ強制再取得
+        </Button>
+      </Flex>
+    </AppDialog>
   );
 };

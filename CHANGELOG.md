@@ -14,6 +14,34 @@
 
 ## 変更履歴
 
+### [2026-07-16] PR #56のレビュー対応としてcatch節のAppExceptionナローイングをassertsアサーション関数に置き換えた
+* **修正の動機・概要**:
+  - PR #56（Issue #48対応）で`error as AppException`のキャストを避けるために追加した`if (!(error instanceof AppException)) { throw error; }`というナローイングについて、「直前の`expect(error).toBeInstanceOf(AppException)`自体が失敗時に例外を投げるため、このif/throwは実質到達しない冗長なコードではないか」という指摘を受けた。
+  - 指摘の通りだったため、TypeScriptの`asserts`型ガード関数（`function assertIsAppException(error: unknown): asserts error is AppException`）を`backend/src/test-utils/assert-is-app-exception.ts`（新規）に切り出した。内部で`expect(error).toBeInstanceOf(AppException)`を呼ぶだけの薄い関数だが、これによりアサーションと型の絞り込みを1行で両立でき、呼び出し側の冗長なif/throwが不要になった。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/test-utils/assert-is-app-exception.ts`（新規）。
+    - `backend/src/strava/__tests__/strava-activities.service.tests.ts`・`strava-auth.service.tests.ts`: 4箇所を`assertIsAppException`経由に置き換え。
+    - 単体テスト（バックエンド99件）・lint・typecheck・`check:type-assertions`（0件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（テストコードのみの改善のため）。
+  * **その他**: `rules.md`（このブランチ時点でのファイル名）に、`asserts`型ガード関数によるアサーション+型絞り込みの一本化パターンを追記。
+
+### [2026-07-16] PR #55のレビュー対応としてDialog系コンポーネントの共通ラッパーAppDialogを切り出した
+* **修正の動機・概要**:
+  - PR #55（Issue #47対応）で追加した`check-file-size.mjs`のレビューで、「主にDialog系ファイルでJSXネスト深さの閾値超過が発生しているが、共通コンポーネントとして切り出せばネストを浅くできないか」という指摘を受けた。
+  - `LayerDialog`・`SettingsDialog`・`FilterDialog`・`ErrorDialog`の4コンポーネントを確認したところ、いずれもChakra UIの`Dialog.Root`/`Dialog.Backdrop`/`Dialog.Positioner`/`Dialog.Content`/`Dialog.Header`（タイトル+閉じるボタン）/`Dialog.Body`/`Dialog.Footer`/`Dialog.CloseTrigger`という同一のラッパー構造を持っていることを確認し、`AppDialog`（新規）として共通化した。
+  - `ErrorDialog`は他の3つと異なり、閉じる(×)ボタンが無くrole="alertdialog"・タイトルが動的（件数表示）という点で差異があったため、`AppDialog`に`showCloseButton`（省略時true）・`role`（省略時'dialog'）・`title`をReactNodeとして受け取れるオプションを設け、いずれのケースにも対応できるようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/components/AppDialog.tsx`（新規）・`frontend/src/components/__tests__/AppDialog.tests.tsx`（新規）。
+    - `frontend/src/components/LayerDialog.tsx`・`SettingsDialog.tsx`・`FilterDialog.tsx`・`ErrorDialog.tsx`: `AppDialog`を使うようリファクタリング（振る舞いの変更は無い、既存テストは無修正のまま全てGreen）。
+    - `check:file-size`で検出していた`LayerDialog.tsx`のJSXネスト深さ超過（9、閾値8）を解消したことを確認済み。
+    - 単体テスト（フロントエンド202件）・lint・typecheckは全てGreen。E2Eテスト4件も実行し（1回目は既知のタイル読み込み・タイミングのフレーキーさで2件失敗したが、再実行で全て成功）、実装変更による回帰でないことを確認した。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（UIの見た目・挙動に変更は無く内部実装の共通化のため）。
+  * **設計書**: `designs/class_diagram.md`のフロントエンドのクラス図に`AppDialog`と4ダイアログからの依存関係を追加。
+
 ### [2026-07-15] GitHub Issue #48としてコード上の型キャストを解消しcheck:type-assertionsをコミット時に実行するようにした
 * **修正の動機・概要**:
   - `check:type-assertions`スクリプトで検出される型キャストが26件（着手時点では31件に増加していた）残っており、これを解消しコミット時に自動実行されるようにしたいという依頼（Issue #48）。自律モードで対応した。
