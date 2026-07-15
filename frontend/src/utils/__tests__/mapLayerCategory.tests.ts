@@ -62,8 +62,43 @@ describe('categorizeStyleLayerに関するテスト', () => {
     expect(category).toBe('osm-road');
   });
 
-  test('source-layerがplaceのとき、osm-place-nameを返す', () => {
-    const layer = createLayer('label_city', 'symbol', 'place');
+  test('idがboundary_3(source-layerはboundary)のとき、admin-boundaryを返す', () => {
+    const layer = createLayer('boundary_3', 'line', 'boundary');
+
+    const category = categorizeStyleLayer(layer);
+
+    expect(category).toBe('admin-boundary');
+  });
+
+  test('source-layerがboundaryでもidがboundary_3以外(国境等)のとき、nullを返す（常時表示のベースレイヤー扱い）', () => {
+    const layer = createLayer('boundary_2', 'line', 'boundary');
+
+    const category = categorizeStyleLayer(layer);
+
+    expect(category).toBeNull();
+  });
+
+  test.each([
+    'label_state',
+    'label_city',
+    'label_city_capital',
+    'label_town',
+    'label_village'
+  ])('idが%sの(都道府県・市町村名)のとき、admin-boundaryを返す', (id) => {
+    const layer = createLayer(id, 'symbol', 'place');
+
+    const category = categorizeStyleLayer(layer);
+
+    expect(category).toBe('admin-boundary');
+  });
+
+  test.each([
+    'label_country_1',
+    'label_country_2',
+    'label_country_3',
+    'label_other'
+  ])('idが%sの(都道府県・市町村名以外の地名)のとき、osm-place-nameを返す', (id) => {
+    const layer = createLayer(id, 'symbol', 'place');
 
     const category = categorizeStyleLayer(layer);
 
@@ -120,6 +155,8 @@ describe('groupLayerIdsByCategoryに関するテスト', () => {
       createLayer('road_minor', 'line', 'transportation'),
       createLayer('building', 'fill', 'building'),
       createLayer('poi_r1', 'symbol', 'poi'),
+      createLayer('label_country_1', 'symbol', 'place'),
+      createLayer('boundary_3', 'line', 'boundary'),
       createLayer('label_city', 'symbol', 'place')
     ];
 
@@ -129,7 +166,8 @@ describe('groupLayerIdsByCategoryに関するテスト', () => {
       'osm-poi': ['poi_r1'],
       'osm-road': ['road_motorway', 'road_minor'],
       'osm-building': ['building'],
-      'osm-place-name': ['label_city'],
+      'osm-place-name': ['label_country_1'],
+      'admin-boundary': ['boundary_3', 'label_city'],
       'aerial-photo': [],
       'bicycle-log': []
     });
@@ -143,6 +181,7 @@ describe('groupLayerIdsByCategoryに関するテスト', () => {
       'osm-road': [],
       'osm-building': [],
       'osm-place-name': [],
+      'admin-boundary': [],
       'aerial-photo': [],
       'bicycle-log': []
     });

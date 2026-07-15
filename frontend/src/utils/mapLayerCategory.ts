@@ -2,12 +2,23 @@ import type { LayerSpecification } from 'maplibre-gl';
 import type { ToggleableLayerId } from '../types/layer';
 
 const OSM_ROAD_SOURCE_LAYERS = new Set(['transportation', 'transportation_name', 'aeroway']);
-const OSM_PLACE_NAME_SOURCE_LAYERS = new Set(['place', 'water_name']);
+const OSM_PLACE_NAME_SOURCE_LAYERS = new Set(['water_name']);
 const AIRPORT_LAYER_ID = 'airport';
 const SYMBOL_TYPE = 'symbol';
 const WATERWAY_SOURCE_LAYER = 'waterway';
 const BUILDING_SOURCE_LAYER = 'building';
 const POI_SOURCE_LAYER = 'poi';
+const BOUNDARY_SOURCE_LAYER = 'boundary';
+// boundary_2(国境)・boundary_disputed(係争地境界)は都道府県・市町村の行政区画ではないため対象外とする
+const ADMIN_BOUNDARY_STYLE_LAYER_IDS = new Set(['boundary_3']);
+// placeソースレイヤーのうち都道府県・市町村名のみ（国名・大陸名・その他の地名は含めない）
+const ADMIN_PLACE_LABEL_LAYER_IDS = new Set([
+  'label_state',
+  'label_city',
+  'label_city_capital',
+  'label_town',
+  'label_village'
+]);
 
 /**
  * MapLibreのスタイルレイヤーが、どのトグル可能なレイヤーカテゴリに属するかを判定する
@@ -25,6 +36,12 @@ export const categorizeStyleLayer = (layer: LayerSpecification): ToggleableLayer
   }
   if (sourceLayer !== undefined && OSM_ROAD_SOURCE_LAYERS.has(sourceLayer)) {
     return 'osm-road';
+  }
+  if (sourceLayer === BOUNDARY_SOURCE_LAYER) {
+    return ADMIN_BOUNDARY_STYLE_LAYER_IDS.has(layer.id) ? 'admin-boundary' : null;
+  }
+  if (sourceLayer === 'place') {
+    return ADMIN_PLACE_LABEL_LAYER_IDS.has(layer.id) ? 'admin-boundary' : 'osm-place-name';
   }
   if (sourceLayer !== undefined && OSM_PLACE_NAME_SOURCE_LAYERS.has(sourceLayer)) {
     return 'osm-place-name';
@@ -47,6 +64,7 @@ export const groupLayerIdsByCategory = (layers: LayerSpecification[]): Record<To
     'osm-road': [],
     'osm-building': [],
     'osm-place-name': [],
+    'admin-boundary': [],
     'aerial-photo': [],
     'bicycle-log': []
   };

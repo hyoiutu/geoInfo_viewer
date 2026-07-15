@@ -7,6 +7,7 @@ const DEFAULT_VISIBILITY = {
   'osm-road': true,
   'osm-building': true,
   'osm-place-name': true,
+  'admin-boundary': true,
   'aerial-photo': false,
   'bicycle-log': false
 };

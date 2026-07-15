@@ -12,6 +12,15 @@ import {
   syncCyclingActivities
 } from '../api/activitiesApi';
 import {
+  ADMIN_BOUNDARY_MUNICIPALITY_FILTER,
+  ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
+  ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR,
+  ADMIN_BOUNDARY_MUNICIPALITY_LINE_DASHARRAY,
+  ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM,
+  ADMIN_BOUNDARY_MUNICIPALITY_SOURCE_ID,
+  ADMIN_BOUNDARY_MUNICIPALITY_SOURCE_LAYER
+} from '../constants/adminBoundary';
+import {
   AERIAL_PHOTO_ATTRIBUTION,
   AERIAL_PHOTO_LAYER_ID,
   AERIAL_PHOTO_MAX_ZOOM,
@@ -92,6 +101,30 @@ const addAerialPhotoLayer = (map: maplibregl.Map, categorizedLayerIds: Categoriz
 
   const beforeId = categorizedLayerIds['osm-road'][0];
   map.addLayer({ id: AERIAL_PHOTO_LAYER_ID, type: 'raster', source: AERIAL_PHOTO_SOURCE_ID }, beforeId);
+};
+
+/**
+ * 市町村行政区画の境界線レイヤーを地図に追加する。都道府県境界(boundary_3)は既存のOSMベーススタイルに
+ * 含まれるため追加不要で、ここでは含まれていない市町村境界(admin_level 7〜8)のみを追加する。
+ * 都道府県境界と同じ見た目にするため、そのすぐ手前(=下)に追加する
+ * @param map 追加先のMapLibre地図インスタンス
+ */
+const addAdminBoundaryLayer = (map: maplibregl.Map) => {
+  map.addLayer(
+    {
+      id: ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
+      type: 'line',
+      source: ADMIN_BOUNDARY_MUNICIPALITY_SOURCE_ID,
+      'source-layer': ADMIN_BOUNDARY_MUNICIPALITY_SOURCE_LAYER,
+      filter: ADMIN_BOUNDARY_MUNICIPALITY_FILTER,
+      minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM,
+      paint: {
+        'line-color': ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR,
+        'line-dasharray': ADMIN_BOUNDARY_MUNICIPALITY_LINE_DASHARRAY
+      }
+    },
+    'boundary_3'
+  );
 };
 
 /**
@@ -311,6 +344,9 @@ const resolveStyleLayerIds = (layerId: ToggleableLayerId, categorizedLayerIds: C
       BICYCLE_LOG_FOCUSED_LAYER_ID
     ];
   }
+  if (layerId === 'admin-boundary') {
+    return [...categorizedLayerIds['admin-boundary'], ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID];
+  }
   return categorizedLayerIds[layerId];
 };
 
@@ -382,6 +418,7 @@ export const MapView = ({
       const categorizedLayerIds = groupLayerIdsByCategory(map.getStyle().layers ?? []);
       categorizedLayerIdsRef.current = categorizedLayerIds;
       addAerialPhotoLayer(map, categorizedLayerIds);
+      addAdminBoundaryLayer(map);
       addBicycleLogLayer(map);
       registerBicycleLogClickHandler(
         map,

@@ -4,6 +4,7 @@ export type ToggleableLayerId =
   | 'osm-road'
   | 'osm-building'
   | 'osm-place-name'
+  | 'admin-boundary'
   | 'aerial-photo'
   | 'bicycle-log';
 
