@@ -21,12 +21,17 @@ import {
 } from '../constants/aerialPhoto';
 import {
   BICYCLE_LOG_FOCUSED_LAYER_ID,
+  BICYCLE_LOG_FOCUSED_OUTLINE_COLOR,
+  BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+  BICYCLE_LOG_FOCUSED_OUTLINE_WIDTH,
   BICYCLE_LOG_FOCUSED_SOURCE_ID,
   BICYCLE_LOG_LAYER_ID,
   BICYCLE_LOG_LINE_COLOR_DEFAULT,
   BICYCLE_LOG_LINE_COLOR_FOCUSED,
   BICYCLE_LOG_LINE_COLOR_SELECTED,
-  BICYCLE_LOG_LINE_WIDTH,
+  BICYCLE_LOG_LINE_WIDTH_DEFAULT,
+  BICYCLE_LOG_LINE_WIDTH_FOCUSED,
+  BICYCLE_LOG_LINE_WIDTH_SELECTED,
   BICYCLE_LOG_SELECTED_LAYER_ID,
   BICYCLE_LOG_SELECTED_SOURCE_ID,
   BICYCLE_LOG_SOURCE_ID
@@ -48,7 +53,7 @@ const DEFAULT_CENTER: [number, number] = [139.1798829, 35.2756364];
 const VISIBLE_VALUE = 'visible';
 const HIDDEN_VALUE = 'none';
 const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] };
-// 自転車ログの線は太さ3pxと細く正確なクリックが難しいため、クリック地点を中心とした
+// 自転車ログの線は太さ2〜4pxと細く正確なクリックが難しいため、クリック地点を中心とした
 // 10px四方(片側5px)のバウンディングボックスでヒットテストする
 const HIT_TEST_RADIUS_PX = 5;
 
@@ -92,23 +97,50 @@ const addAerialPhotoLayer = (map: maplibregl.Map, categorizedLayerIds: Categoriz
  * 自転車ログ用の空のGeoJSONソース・ラインレイヤーを地図に追加する。
  * 通常状態(全アクティビティ)・選択状態・フォーカス状態をそれぞれ別のソース・レイヤーとして持つ。
  * 単一のline層には描画順を制御する仕組みが無いため、レイヤーを追加した順（=描画順、後から追加した方が手前）で
- * 「通常→選択→フォーカス」の手前関係を実現する
+ * 「通常→選択→フォーカス」の手前関係を実現する。
+ * フォーカス状態は他の線に埋もれず視認できるよう、フォーカス用ソースを参照する地図背景色のハロー(縁取り)レイヤーを
+ * 色付き本体レイヤーより先に(=下に)追加する
  * @param map 追加先のMapLibre地図インスタンス
  */
 const addBicycleLogLayer = (map: maplibregl.Map) => {
-  const addLineLayer = (sourceId: string, layerId: string, color: string) => {
-    map.addSource(sourceId, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+  const addLineLayer = (sourceId: string, layerId: string, color: string, width: number) => {
     map.addLayer({
       id: layerId,
       type: 'line',
       source: sourceId,
-      paint: { 'line-color': color, 'line-width': BICYCLE_LOG_LINE_WIDTH }
+      paint: { 'line-color': color, 'line-width': width }
     });
   };
 
-  addLineLayer(BICYCLE_LOG_SOURCE_ID, BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_LINE_COLOR_DEFAULT);
-  addLineLayer(BICYCLE_LOG_SELECTED_SOURCE_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_LINE_COLOR_SELECTED);
-  addLineLayer(BICYCLE_LOG_FOCUSED_SOURCE_ID, BICYCLE_LOG_FOCUSED_LAYER_ID, BICYCLE_LOG_LINE_COLOR_FOCUSED);
+  map.addSource(BICYCLE_LOG_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+  addLineLayer(
+    BICYCLE_LOG_SOURCE_ID,
+    BICYCLE_LOG_LAYER_ID,
+    BICYCLE_LOG_LINE_COLOR_DEFAULT,
+    BICYCLE_LOG_LINE_WIDTH_DEFAULT
+  );
+
+  map.addSource(BICYCLE_LOG_SELECTED_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+  addLineLayer(
+    BICYCLE_LOG_SELECTED_SOURCE_ID,
+    BICYCLE_LOG_SELECTED_LAYER_ID,
+    BICYCLE_LOG_LINE_COLOR_SELECTED,
+    BICYCLE_LOG_LINE_WIDTH_SELECTED
+  );
+
+  map.addSource(BICYCLE_LOG_FOCUSED_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+  addLineLayer(
+    BICYCLE_LOG_FOCUSED_SOURCE_ID,
+    BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+    BICYCLE_LOG_FOCUSED_OUTLINE_COLOR,
+    BICYCLE_LOG_FOCUSED_OUTLINE_WIDTH
+  );
+  addLineLayer(
+    BICYCLE_LOG_FOCUSED_SOURCE_ID,
+    BICYCLE_LOG_FOCUSED_LAYER_ID,
+    BICYCLE_LOG_LINE_COLOR_FOCUSED,
+    BICYCLE_LOG_LINE_WIDTH_FOCUSED
+  );
 };
 
 /**
@@ -271,7 +303,12 @@ const resolveStyleLayerIds = (layerId: ToggleableLayerId, categorizedLayerIds: C
     return [AERIAL_PHOTO_LAYER_ID];
   }
   if (layerId === 'bicycle-log') {
-    return [BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_FOCUSED_LAYER_ID];
+    return [
+      BICYCLE_LOG_LAYER_ID,
+      BICYCLE_LOG_SELECTED_LAYER_ID,
+      BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+      BICYCLE_LOG_FOCUSED_LAYER_ID
+    ];
   }
   return categorizedLayerIds[layerId];
 };
