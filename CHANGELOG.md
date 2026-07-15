@@ -14,6 +14,24 @@
 
 ## 変更履歴
 
+### [2026-07-15] GitHub Issue #48としてコード上の型キャストを解消しcheck:type-assertionsをコミット時に実行するようにした
+* **修正の動機・概要**:
+  - `check:type-assertions`スクリプトで検出される型キャストが26件（着手時点では31件に増加していた）残っており、これを解消しコミット時に自動実行されるようにしたいという依頼（Issue #48）。自律モードで対応した。
+  - 31件を1件ずつ精査し、rules.mdに記載された回避手順（コンテキスト型注釈・型ガード・ジェネリックオーバーロード等）で実際にキャストを排除できるものと、外部境界（外部API JSONレスポンス・DOM要素・NestJSアプリケーションインスタンス等のテストダブル）としてキャストが避けられないものを判別した。
+  - **キャストを排除できたもの**: `.includes()`→`.some()`への置き換え、`instanceof`によるcatch節のエラー型ナローイング、`if`文によるnull/discriminated unionのナローイング、変数・オブジェクトリテラルへの型注釈付与（`as`ではなく宣言時の型注釈でコンテキスト型を与える）等で対応した。
+  - **`Object.entries`/`Object.fromEntries`の型が常に`string`キーへ広がる問題**（TypeScript本体の既知の制約）は、2箇所（`useLayerVisibility.ts`・`MapView.tsx`）で同じパターンのキャストが必要だったため、DRY原則に従い`typedEntries`/`typedFromEntries`という共通ユーティリティ（`frontend/src/utils/typedObject.ts`、新規）に集約し、キャスト自体をユーティリティ内の1箇所に閉じ込めた（呼び出し側からはキャストが消えた）。
+  - **キャストが避けられなかったもの**（説明コメントを付与）: 外部topojson APIレスポンスの解析（`seed-municipalities.ts`）、Testing Libraryが返す`HTMLElement`をイベントハンドラの都合上ある型に固定する必要のあるテストダブル（`Response`・`INestApplication`・`LayerSpecification`等、実際に使うプロパティのみ実装した最小限のテストダブル）、TypeORM `Repository.create()`のモック（ライブラリ自体の型シグネチャがDeepPartial→Entityの変換を許容しているため）。
+  - **コミット時の自動実行**: `package.json`の`lint-staged`に`check:type-assertions`を追加し、huskyのpre-commitフックでステージ済みファイルに対して自動実行されるようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/typedObject.ts`（新規）・`frontend/src/utils/__tests__/typedObject.tests.ts`（新規）: `typedEntries`/`typedFromEntries`。
+    - `backend/src/strava/strava-activity.util.ts`・`backend/src/strava/__tests__/strava-activities.service.tests.ts`・`backend/src/strava/__tests__/strava-auth.service.tests.ts`・`backend/src/municipalities/seed-municipalities.ts`・`backend/src/database/__tests__/database.config.tests.ts`・`backend/src/activities/__tests__/activities.service.tests.ts`・`backend/src/activities/__tests__/cycling-activity-entity.util.tests.ts`・`backend/src/__tests__/swagger.config.tests.ts`・`frontend/src/utils/__tests__/apiError.tests.ts`・`frontend/src/utils/__tests__/mapLayerCategory.tests.ts`・`frontend/src/hooks/useLayerVisibility.ts`・`frontend/src/components/MapView.tsx`・`frontend/src/hooks/__tests__/useBackfillProgressFooter.tests.ts`・`frontend/src/components/__tests__/MapView.tests.tsx`・`frontend/src/components/__tests__/MapWorkspace.tests.tsx`: 型キャストを解消。
+    - `package.json`: `lint-staged`に`check:type-assertions`を追加。
+    - 単体テスト（フロントエンド198件・バックエンド99件）・lint・typecheck・`check:type-assertions`（0件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部的な型の書き方の改善であり、アプリケーションの機能仕様には影響しないため）。
+  * **その他**: `rules.md`・`commit_rules.md`の該当記述を「コミット時の自動実行には未組み込み」から「lint-staged経由で自動実行される」に更新。
+
 ### [2026-07-15] GitHub Issue #47としてrules.mdを分割し機械チェック可能なルールをスクリプトへ移行した
 * **修正の動機・概要**:
   - rules.mdが1000行を超えており、エージェントがこれを全て読み込んでも守りきれていないという依頼（Issue #47）。自律モードで対応した。issue-reviewの観点（大規模な再編・分割Issueは境界の判断基準を先に固める）に従い、以下の方針を決めた上で着手した。

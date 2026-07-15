@@ -22,9 +22,9 @@
     "prepare": "husky"
   },
   "lint-staged": {
-    "electron/**/*.ts": "biome lint",
-    "frontend/src/**/*.{ts,tsx}": "biome lint",
-    "backend/src/**/*.ts": "biome lint"
+    "electron/**/*.ts": ["biome lint", "node scripts/check-type-assertions.mjs"],
+    "frontend/src/**/*.{ts,tsx}": ["biome lint", "node scripts/check-type-assertions.mjs"],
+    "backend/src/**/*.ts": ["biome lint", "node scripts/check-type-assertions.mjs"]
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.2",

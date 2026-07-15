@@ -93,11 +93,12 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
 const toggleLayerViaDialog = async (getByRole: ReturnType<typeof renderWithChakra>['getByRole'], layerName: string) => {
   fireEvent.click(getByRole('button', { name: 'レイヤー切り替え' }));
   const checkbox = await waitFor(() => getByRole('checkbox', { name: layerName }));
-  const wasChecked = checkbox.getAttribute('aria-checked') === 'true' || (checkbox as HTMLInputElement).checked;
+  const wasChecked =
+    checkbox.getAttribute('aria-checked') === 'true' || (checkbox instanceof HTMLInputElement && checkbox.checked);
   fireEvent.click(checkbox);
   await waitFor(() => {
-    const updated = getByRole('checkbox', { name: layerName }) as HTMLInputElement;
-    expect(updated.checked).toBe(!wasChecked);
+    const updated = getByRole('checkbox', { name: layerName });
+    expect(updated instanceof HTMLInputElement && updated.checked).toBe(!wasChecked);
   });
   fireEvent.click(getByRole('button', { name: '実行' }));
 };

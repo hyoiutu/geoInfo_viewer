@@ -166,7 +166,9 @@ describe('toCyclingActivityEntityFromDetailに関するテスト', () => {
 
     const entity = toCyclingActivityEntityFromDetail(detail);
 
-    expect(entity.detailFetchedAt).not.toBeNull();
-    expect((entity.detailFetchedAt as Date).getTime()).toBeGreaterThanOrEqual(before.getTime());
+    if (entity.detailFetchedAt === null) {
+      throw new Error('detailFetchedAtがnullです');
+    }
+    expect(entity.detailFetchedAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
   });
 });

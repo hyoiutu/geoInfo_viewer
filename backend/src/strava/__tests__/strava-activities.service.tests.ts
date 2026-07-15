@@ -91,9 +91,10 @@ describe('StravaActivitiesServiceに関するテスト', () => {
       expect.unreachable('例外が投げられるはず');
     } catch (error) {
       expect(error).toBeInstanceOf(AppException);
-      expect((error as AppException).getResponse()).toEqual(
-        expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaApiError })
-      );
+      if (!(error instanceof AppException)) {
+        throw error;
+      }
+      expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaApiError }));
     }
   });
 
@@ -146,9 +147,10 @@ describe('StravaActivitiesServiceに関するテスト', () => {
         expect.unreachable('例外が投げられるはず');
       } catch (error) {
         expect(error).toBeInstanceOf(AppException);
-        expect((error as AppException).getResponse()).toEqual(
-          expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaRateLimited })
-        );
+        if (!(error instanceof AppException)) {
+          throw error;
+        }
+        expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaRateLimited }));
       }
     });
   });
@@ -186,9 +188,10 @@ describe('StravaActivitiesServiceに関するテスト', () => {
         expect.unreachable('例外が投げられるはず');
       } catch (error) {
         expect(error).toBeInstanceOf(AppException);
-        expect((error as AppException).getResponse()).toEqual(
-          expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaApiError })
-        );
+        if (!(error instanceof AppException)) {
+          throw error;
+        }
+        expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaApiError }));
       }
     });
   });

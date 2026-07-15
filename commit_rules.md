@@ -41,6 +41,7 @@
 
 - **テストコマンド**: `pnpm run test:unit`（`pnpm --filter frontend test:unit && pnpm --filter backend test:unit`のエイリアス。単体テスト作成・実行時は test_rules.md のルールに従うこと）
 - **リントコマンド**: `pnpm run lint`（Biome。対象は `electron/**`, `frontend/src/**`, `backend/src/**`。backend単体には専用のlintスクリプトはなく、ルートのBiome設定でカバーする）
+- **型キャストチェック**: `pnpm run check:type-assertions`（`scripts/check-type-assertions.mjs`、rules.md「anyやas（型キャスト）は原則使用しない」参照）。`package.json`の`lint-staged`にも組み込まれており、huskyのpre-commitフックでステージ済みファイルに対して自動実行される（Issue #48）ため、通常は本コマンドを手動実行する必要は無いが、コミット前に広い範囲を確認したい場合は引数無しで実行し全件チェックできる。
 - **型チェックコマンド**: `pnpm run typecheck`（`frontend/tsconfig.json`・`backend/tsconfig.json`・`tsconfig.electron.json`の3つを対象とする）
 - **E2Eテストコマンド**: `pnpm run test:e2e`（`pnpm run build`によるビルドを含んだ上でPlaywrightを実行する。`electron/**`, `frontend/src/**`配下の実装ファイル（テストコードのみの変更を除く）に修正がある場合は必ず実行すること。README.md・仕様書・スキル定義等のドキュメントのみの修正の場合は実行不要。backend/はElectronメインプロセスからまだ起動されないため、backend/src/**のみの修正では現時点では対象外）
 

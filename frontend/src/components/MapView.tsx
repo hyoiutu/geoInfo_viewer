@@ -46,6 +46,7 @@ import { filterActivities } from '../utils/filterActivities';
 import { findActivityById } from '../utils/findActivityById';
 import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
 import { createGoalMarkerElement, createStartMarkerElement } from '../utils/startGoalMarkerElement';
+import { typedEntries } from '../utils/typedObject';
 
 const OSM_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const DEFAULT_ZOOM = 12;
@@ -324,7 +325,7 @@ const applyLayerVisibility = (
   categorizedLayerIds: CategorizedLayerIds,
   layerVisibility: LayerVisibility
 ) => {
-  const entries = Object.entries(layerVisibility) as [ToggleableLayerId, boolean][];
+  const entries = typedEntries(layerVisibility);
 
   for (const [layerId, isVisible] of entries) {
     const visibility = isVisible ? VISIBLE_VALUE : HIDDEN_VALUE;

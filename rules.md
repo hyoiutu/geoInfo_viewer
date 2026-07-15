@@ -83,7 +83,7 @@ const user: User = { id: 1, name: "name" };
 
 上記の回避手順を試した上でなお`as T`によるキャストが避けられないと判断した場合は、**そのキャストの直前に、なぜ回避できないのか（どの回避手順を試して駄目だったか）を説明する`//`コメントを必ず添えること。** コメント無しの型キャストは、理由を検討せず安易に使った結果なのか、検討した上でやむを得ず使ったのかが後から判別できず、レビューのたびに同じ確認が発生してしまう。
 
-本ルールはBiomeの自動チェック対象外のため、`pnpm run check:type-assertions`（`scripts/check-type-assertions.mjs`）で機械的に検出できる。`as unknown as T`（括弧で挟んだ場合を含む）は無条件でエラーとし、それ以外の`as T`は直前行または同一行末尾に`//`コメントが無い場合にエラーとする（`as const`・`import { x as y }`の別名importは対象外）。現時点ではコミット時の自動実行には組み込んでおらず、手動実行のみ。
+本ルールはBiomeの自動チェック対象外のため、`pnpm run check:type-assertions`（`scripts/check-type-assertions.mjs`）で機械的に検出できる。`as unknown as T`（括弧で挟んだ場合を含む）は無条件でエラーとし、それ以外の`as T`は直前行または同一行末尾に`//`コメントが無い場合にエラーとする（`as const`・`import { x as y }`の別名importは対象外）。`package.json`の`lint-staged`（huskyのpre-commitフック経由）に組み込み済みで、コミット対象ファイルに対して自動実行される（Issue #48）。
 
 # ||ではなく??（Null合体演算子）を使用する
 

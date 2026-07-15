@@ -7,4 +7,4 @@ import type { StravaActivity } from './types/strava-activity.type';
  * @returns サイクリング系であればtrue
  */
 export const isCyclingActivity = (activity: StravaActivity): boolean =>
-  (CYCLING_ACTIVITY_TYPES as readonly string[]).includes(activity.type);
+  CYCLING_ACTIVITY_TYPES.some((type) => type === activity.type);

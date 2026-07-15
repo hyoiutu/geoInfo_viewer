@@ -17,6 +17,8 @@ vi.mock('@nestjs/swagger', async () => {
 
 describe('setupSwaggerに関するテスト', () => {
   test('Swaggerドキュメントを組み立て、SWAGGER_ROUTEにセットアップする', () => {
+    // SwaggerModuleはvi.mockで全メソッドをモック化済みのため、appは実際のINestApplicationとして
+    // 呼び出されることは無く、spyへ渡される参照としてのみ使う（実体を用意する必要が無い）
     const app = {} as INestApplication;
 
     setupSwagger(app);
@@ -26,6 +28,8 @@ describe('setupSwaggerに関するテスト', () => {
   });
 
   test('DocumentBuilderで組み立てた設定にタイトルが含まれる', () => {
+    // SwaggerModuleはvi.mockで全メソッドをモック化済みのため、appは実際のINestApplicationとして
+    // 呼び出されることは無く、spyへ渡される参照としてのみ使う（実体を用意する必要が無い）
     const app = {} as INestApplication;
     const setTitleSpy = vi.spyOn(DocumentBuilder.prototype, 'setTitle');
 
