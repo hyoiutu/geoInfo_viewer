@@ -79,7 +79,7 @@ function createFixtureActivity({ id, name, startDate, encodedRoute = ENCODED_ROU
   };
 }
 
-// バックフィル(初期取り込み)シナリオ用の初期フィクスチャ3件。
+// バックフィルシナリオ用の初期フィクスチャ3件。
 function createInitialFixtures() {
   return [
     createFixtureActivity({ id: 900000001, name: 'E2Eテストライド1', startDate: '2026-01-01T00:00:00Z' }),
@@ -91,9 +91,9 @@ function createInitialFixtures() {
 const NEW_UPLOAD_FUTURE_MARGIN_MS = 60_000;
 
 // sync()が新規アクティビティを検出できるかのシナリオ用の1件を作る。
-// sync()は「前回同期時刻(実時刻)より後のstart_date」を新規判定に使う（afterはepoch秒に丸められるため、
-// 単なる現在時刻だと前回同期時刻と同じ秒に丸められ「新規」と判定されないことがある）。
-// 固定の過去日時にすると、テスト実行時の前回同期時刻より前になり確実に新規と判定されなくなるため、
+// sync()は「前回の新規アクティビティ取得時刻(実時刻)より後のstart_date」を新規判定に使う（afterはepoch秒に丸められるため、
+// 単なる現在時刻だと前回の新規アクティビティ取得時刻と同じ秒に丸められ「新規」と判定されないことがある）。
+// 固定の過去日時にすると、テスト実行時の前回の新規アクティビティ取得時刻より前になり確実に新規と判定されなくなるため、
 // 呼び出し時点より十分先の未来時刻を使う。視覚的に初期フィクスチャと区別できるよう別ルートも使う。
 function createNewUploadFixture() {
   return createFixtureActivity({

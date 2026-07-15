@@ -1,7 +1,7 @@
 // biome-ignore-all lint/style/useNamingConvention: Strava APIレスポンス形式(snake_case)に合わせている
 // E2Eテスト用のStrava APIモックサーバー。
 // 実Strava APIの代わりにこのサーバーを使うことで、テスト用Stravaアカウントを用意せずに
-// バックエンドの自転車ログ機能（初期取り込み・sync）をE2Eで検証できるようにする。
+// バックエンドの自転車ログ機能（バックフィル・新規アクティビティ取得）をE2Eで検証できるようにする。
 // Node標準のhttpモジュールのみで実装し、新規の依存パッケージは追加していない。
 const http = require('node:http');
 const { URL } = require('node:url');

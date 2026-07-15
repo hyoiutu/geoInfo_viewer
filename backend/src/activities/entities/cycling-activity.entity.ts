@@ -1,4 +1,4 @@
-import type { LineString } from 'geojson';
+import type { MultiLineString } from 'geojson';
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 const CYCLING_ACTIVITIES_TABLE_NAME = 'cycling_activities';
@@ -31,10 +31,12 @@ export class CyclingActivityEntity {
   @Column({ name: 'start_date', type: 'timestamptz' })
   startDate!: Date;
 
-  @Column({ type: 'geometry', spatialFeatureType: 'LineString', srid: 4326, nullable: true })
-  path!: LineString | null;
+  // トンネル内・フェリー乗船中等の測定不能区間による位置飛び（隣接点間10km以上）を、
+  // 別々の線として区別して保持できるよう、単一のLineStringではなくMultiLineStringとして持つ（Issue #27）
+  @Column({ type: 'geometry', spatialFeatureType: 'MultiLineString', srid: 4326, nullable: true })
+  path!: MultiLineString | null;
 
-  // 詳細API(GET /activities/{id})での取得が完了した時刻。nullの間は初期取り込み未完了（プレースホルダー）を表す。
+  // 詳細API(GET /activities/{id})での取得が完了した時刻。nullの間はバックフィル未完了（プレースホルダー）を表す。
   // pathがnullでもこの値が入っていれば「GPSルートの無いアクティビティとして取得済み」と判別できる。
   @Column({ name: 'detail_fetched_at', type: 'timestamptz', nullable: true })
   detailFetchedAt!: Date | null;

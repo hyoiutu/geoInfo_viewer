@@ -31,13 +31,19 @@ describe('toCyclingActivityDtoに関するテスト', () => {
     expect(dto.startDate).toBe('2026-07-01T00:00:00.000Z');
   });
 
-  test('pathが設定されている場合、[lng, lat]順の座標配列に変換される', () => {
+  test('pathが設定されている場合、区間ごとの[lng, lat]順の座標配列の配列に変換される', () => {
     const entity = createEntity({
       path: {
-        type: 'LineString',
+        type: 'MultiLineString',
         coordinates: [
-          [-120.2, 38.5],
-          [-120.95, 40.7]
+          [
+            [-120.2, 38.5],
+            [-120.95, 40.7]
+          ],
+          [
+            [-126.453, 43.252],
+            [-126.6, 43.3]
+          ]
         ]
       }
     });
@@ -45,8 +51,14 @@ describe('toCyclingActivityDtoに関するテスト', () => {
     const dto = toCyclingActivityDto(entity);
 
     expect(dto.path).toEqual([
-      [-120.2, 38.5],
-      [-120.95, 40.7]
+      [
+        [-120.2, 38.5],
+        [-120.95, 40.7]
+      ],
+      [
+        [-126.453, 43.252],
+        [-126.6, 43.3]
+      ]
     ]);
   });
 

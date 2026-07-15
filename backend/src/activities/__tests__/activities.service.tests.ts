@@ -1,4 +1,5 @@
 // biome-ignore-all lint/style/useNamingConvention: Strava APIレスポンス形式(snake_case)に合わせたテストダブル
+import polyline from '@mapbox/polyline';
 import { Test } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -8,6 +9,12 @@ import { ActivitiesService } from '../activities.service';
 import { ActivitiesBackfillService } from '../activities-backfill.service';
 import { CyclingActivityEntity } from '../entities/cycling-activity.entity';
 import { SYNC_STATE_SINGLETON_ID, SyncStateEntity } from '../entities/sync-state.entity';
+
+// polyline.encodeは[緯度, 経度]の順で受け取る。位置飛び判定(10km以上)に抵触しない近接した2点
+const CLOSE_POINTS_POLYLINE = polyline.encode([
+  [35.681, 139.767],
+  [35.6812, 139.7672]
+]);
 
 const createActivity = (overrides: Partial<StravaActivity>): StravaActivity => ({
   id: 1,
@@ -104,7 +111,7 @@ describe('ActivitiesServiceに関するテスト', () => {
       expect(fetchCyclingActivityDetail).not.toHaveBeenCalled();
     });
 
-    test('前回同期状態が無い場合、after指定なしでStravaを呼び出す', async () => {
+    test('前回の新規アクティビティ取得状態が無い場合、after指定なしでStravaを呼び出す', async () => {
       syncStateRepository.findOneBy.mockResolvedValue(null);
       fetchCyclingActivities.mockResolvedValue([]);
       const service = await createService();
@@ -115,7 +122,7 @@ describe('ActivitiesServiceに関するテスト', () => {
       expect(result).toEqual({ success: true });
     });
 
-    test('前回同期状態がある場合、その日時をepoch秒に変換してStravaを呼び出す', async () => {
+    test('前回の新規アクティビティ取得状態がある場合、その日時をepoch秒に変換してStravaを呼び出す', async () => {
       const lastSyncedAt = new Date('2026-07-01T00:00:00Z');
       syncStateRepository.findOneBy.mockResolvedValue(
         Object.assign(new SyncStateEntity(), { id: SYNC_STATE_SINGLETON_ID, lastSyncedAt })
@@ -134,9 +141,7 @@ describe('ActivitiesServiceに関するテスト', () => {
       syncStateRepository.findOneBy.mockResolvedValue(null);
       fetchCyclingActivities.mockResolvedValue([createActivity({ id: 1 }), createActivity({ id: 2 })]);
       fetchCyclingActivityDetail.mockImplementation((id: number) =>
-        Promise.resolve(
-          createActivityDetail({ id, map: { summary_polyline: '', polyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' } })
-        )
+        Promise.resolve(createActivityDetail({ id, map: { summary_polyline: '', polyline: CLOSE_POINTS_POLYLINE } }))
       );
       const service = await createService();
 
@@ -145,8 +150,8 @@ describe('ActivitiesServiceに関するテスト', () => {
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(1);
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(2);
       expect(cyclingActivityRepository.save).toHaveBeenCalledWith([
-        expect.objectContaining({ id: '1', path: expect.objectContaining({ type: 'LineString' }) }),
-        expect.objectContaining({ id: '2', path: expect.objectContaining({ type: 'LineString' }) })
+        expect.objectContaining({ id: '1', path: expect.objectContaining({ type: 'MultiLineString' }) }),
+        expect.objectContaining({ id: '2', path: expect.objectContaining({ type: 'MultiLineString' }) })
       ]);
       expect(syncStateRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({ id: SYNC_STATE_SINGLETON_ID, lastSyncedAt: expect.any(Date) })
@@ -154,7 +159,7 @@ describe('ActivitiesServiceに関するテスト', () => {
       expect(result).toEqual({ success: true });
     });
 
-    test('新規アクティビティが無い場合、詳細APIを呼び出さずDBも更新しないが同期時刻は更新する', async () => {
+    test('新規アクティビティが無い場合、詳細APIを呼び出さずDBも更新しないが新規アクティビティ取得時刻は更新する', async () => {
       syncStateRepository.findOneBy.mockResolvedValue(null);
       fetchCyclingActivities.mockResolvedValue([]);
       const service = await createService();

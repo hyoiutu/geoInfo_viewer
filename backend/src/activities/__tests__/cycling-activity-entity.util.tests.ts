@@ -1,8 +1,15 @@
 // biome-ignore-all lint/style/useNamingConvention: Strava APIレスポンス形式(snake_case)に合わせたテストダブル
 
+import polyline from '@mapbox/polyline';
 import { describe, expect, test } from 'vitest';
 import type { StravaActivity, StravaActivityDetail } from '../../strava/types/strava-activity.type';
 import { toCyclingActivityEntityFromDetail, toPlaceholderCyclingActivityEntity } from '../cycling-activity-entity.util';
+
+// polyline.encodeは[緯度, 経度]の順で受け取る
+const CLOSE_POINTS_POLYLINE = polyline.encode([
+  [35.681, 139.767],
+  [35.6812, 139.7672]
+]);
 
 const createActivity = (overrides: Partial<StravaActivity>): StravaActivity => ({
   id: 42,
@@ -77,42 +84,76 @@ describe('toCyclingActivityEntityFromDetailに関するテスト', () => {
     expect(entity.startDate).toEqual(new Date('2026-07-01T00:00:00Z'));
   });
 
-  test('polylineが設定されている場合、polyline（高解像度）からGeoJSON LineStringにデコードされる', () => {
+  test('polylineが設定されている場合、polyline（高解像度）からGeoJSON MultiLineStringにデコードされる', () => {
     const detail = createActivityDetail({
-      map: { summary_polyline: 'should-not-be-used', polyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' }
+      map: { summary_polyline: 'should-not-be-used', polyline: CLOSE_POINTS_POLYLINE }
     });
 
     const entity = toCyclingActivityEntityFromDetail(detail);
 
     expect(entity.path).toEqual({
-      type: 'LineString',
+      type: 'MultiLineString',
       coordinates: [
-        [-120.2, 38.5],
-        [-120.95, 40.7],
-        [-126.453, 43.252]
+        [
+          [139.767, 35.681],
+          [139.7672, 35.6812]
+        ]
       ]
     });
   });
 
   test('polylineが空文字だがsummary_polylineがある場合、summary_polylineにフォールバックする', () => {
     const detail = createActivityDetail({
-      map: { summary_polyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@', polyline: '' }
+      map: { summary_polyline: CLOSE_POINTS_POLYLINE, polyline: '' }
     });
 
     const entity = toCyclingActivityEntityFromDetail(detail);
 
     expect(entity.path).toEqual({
-      type: 'LineString',
+      type: 'MultiLineString',
       coordinates: [
-        [-120.2, 38.5],
-        [-120.95, 40.7],
-        [-126.453, 43.252]
+        [
+          [139.767, 35.681],
+          [139.7672, 35.6812]
+        ]
       ]
     });
   });
 
   test('polyline・summary_polylineの両方が空文字の場合、pathはnullになる（GPSルートの無い手動記録等）', () => {
     const detail = createActivityDetail({ map: { summary_polyline: '', polyline: '' } });
+
+    const entity = toCyclingActivityEntityFromDetail(detail);
+
+    expect(entity.path).toBeNull();
+  });
+
+  test('隣接する2点間が10km以上離れている場合、位置飛びとして区間分割される（末尾の孤立した1点は除外される）', () => {
+    // 東京(35.681, 139.767)の近傍2点の後、大きく離れた1点(北海道近辺)へジャンプする軌跡
+    const encoded = polyline.encode([
+      [35.681, 139.767],
+      [35.6812, 139.7672],
+      [43.062, 141.354]
+    ]);
+    const detail = createActivityDetail({ map: { summary_polyline: '', polyline: encoded } });
+
+    const entity = toCyclingActivityEntityFromDetail(detail);
+
+    expect(entity.path).toEqual({
+      type: 'MultiLineString',
+      coordinates: [
+        [
+          [139.767, 35.681],
+          [139.7672, 35.6812]
+        ]
+      ]
+    });
+  });
+
+  test('分割後に区間が1つも残らない場合(全ての隣接点が位置飛び)、pathはnullになる', () => {
+    const detail = createActivityDetail({
+      map: { summary_polyline: '', polyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' }
+    });
 
     const entity = toCyclingActivityEntityFromDetail(detail);
 

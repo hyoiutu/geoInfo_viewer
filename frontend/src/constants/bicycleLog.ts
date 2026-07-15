@@ -11,10 +11,12 @@ export const BICYCLE_LOG_LINE_WIDTH = 3;
 
 // MapLibreのline-color paintプロパティはCSSカスタムプロパティを解釈できない（Canvas描画のため）ため、
 // Chakra UIのtheme.tsトークンは経由せず、rules.mdの色トークン規約の対象外としてここに直接定義する
-// （Chakra標準パレットのred.500/blue.500/purple.500相当の値を採用し、アプリ全体の配色トーンに合わせる）。
-/** 通常状態（未選択）のアクティビティの線の色 */
-export const BICYCLE_LOG_LINE_COLOR_DEFAULT = '#e53e3e';
-/** 選択状態のアクティビティの線の色 */
-export const BICYCLE_LOG_LINE_COLOR_SELECTED = '#3182ce';
-/** フォーカス状態のアクティビティの線の色 */
-export const BICYCLE_LOG_LINE_COLOR_FOCUSED = '#805ad5';
+// （Chakra標準パレットのpink.200/pink.400相当の値を採用し、アプリ全体の配色トーンに合わせる。
+// フォーカス状態の色は、原色による色分けが重なると見にくいという指摘(Issue #26)を受け、
+// 赤ベースで薄さのみで区別する配色に変更した際、以前デフォルト状態に使っていた赤(#e53e3e)をそのまま流用している）。
+/** 通常状態（未選択）のアクティビティの線の色（淡いピンク） */
+export const BICYCLE_LOG_LINE_COLOR_DEFAULT = '#fbb6ce';
+/** 選択状態のアクティビティの線の色（通常状態より濃いが薄いピンク） */
+export const BICYCLE_LOG_LINE_COLOR_SELECTED = '#ed64a6';
+/** フォーカス状態のアクティビティの線の色（赤） */
+export const BICYCLE_LOG_LINE_COLOR_FOCUSED = '#e53e3e';

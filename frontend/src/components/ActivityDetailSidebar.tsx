@@ -2,7 +2,6 @@ import { Box, Button, Flex, Text } from '@chakra-ui/react';
 import type { CyclingActivity, PassedMunicipality } from '../api/activitiesApi';
 import { usePassedMunicipalities } from '../hooks/usePassedMunicipalities';
 import { layout } from '../theme';
-import type { AppErrorInfo } from '../types/apiError';
 import { toActivityDetailView } from '../utils/activityDetailView';
 
 const NO_ACTIVITIES = 0;
@@ -24,8 +23,6 @@ type ActivityDetailSidebarProps = {
   onBackFromDetail: () => void;
   /** 一覧画面の戻るボタンが押されたときに呼ばれるコールバック */
   onBackFromList: () => void;
-  /** 通過自治体の取得に失敗したときに呼ばれるコールバック */
-  onError: (error: AppErrorInfo) => void;
 };
 
 /** ActivityListのprops */
@@ -86,14 +83,12 @@ type ActivityDetailProps = {
   activity: CyclingActivity;
   /** 詳細画面の戻るボタンが押されたときに呼ばれるコールバック */
   onBackFromDetail: () => void;
-  /** 通過自治体の取得に失敗したときに呼ばれるコールバック */
-  onError: (error: AppErrorInfo) => void;
 };
 
 /** フォーカス中のアクティビティの詳細（詳細画面）を表示する。フォーカス中のアクティビティが変わるたびに通過自治体を取得する */
-const ActivityDetail = ({ activity, onBackFromDetail, onError }: ActivityDetailProps) => {
+const ActivityDetail = ({ activity, onBackFromDetail }: ActivityDetailProps) => {
   const view = toActivityDetailView(activity);
-  const { municipalities, isLoading } = usePassedMunicipalities(activity.id, onError);
+  const { municipalities, isLoading } = usePassedMunicipalities(activity.id);
 
   return (
     <Flex direction="column" gap="2">
@@ -113,7 +108,7 @@ const ActivityDetail = ({ activity, onBackFromDetail, onError }: ActivityDetailP
 };
 
 /**
- * 選択・フォーカスされたアクティビティを表示する右サイドバー。
+ * 選択・フォーカスされたアクティビティを表示するアクティビティパネル。
  * 未フォーカスの場合は選択中アクティビティの走行開始日時一覧、フォーカス中の場合はその詳細を表示する。
  * 選択が1件も無い場合は何も表示しない
  */
@@ -122,8 +117,7 @@ export const ActivityDetailSidebar = ({
   focusedIndex,
   onFocus,
   onBackFromDetail,
-  onBackFromList,
-  onError
+  onBackFromList
 }: ActivityDetailSidebarProps) => {
   if (activities.length === NO_ACTIVITIES) {
     return null;
@@ -143,7 +137,7 @@ export const ActivityDetailSidebar = ({
       padding="4"
     >
       {focusedActivity ? (
-        <ActivityDetail activity={focusedActivity} onBackFromDetail={onBackFromDetail} onError={onError} />
+        <ActivityDetail activity={focusedActivity} onBackFromDetail={onBackFromDetail} />
       ) : (
         <ActivityList activities={activities} onFocus={onFocus} onBackFromList={onBackFromList} />
       )}
