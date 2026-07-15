@@ -105,6 +105,8 @@ const user: User = { id: 1, name: "name" };
 
 上記の回避手順を試した上でなお`as T`によるキャストが避けられないと判断した場合は、**そのキャストの直前に、なぜ回避できないのか（どの回避手順を試して駄目だったか）を説明する`//`コメントを必ず添えること。** コメント無しの型キャストは、理由を検討せず安易に使った結果なのか、検討した上でやむを得ず使ったのかが後から判別できず、レビューのたびに同じ確認が発生してしまう。
 
+本ルールはBiomeの自動チェック対象外（冒頭の「Biomeの自動チェックがカバーしない範囲について」参照）のため、`pnpm run check:type-assertions`（`scripts/check-type-assertions.mjs`）で機械的に検出できる。`as unknown as T`（括弧で挟んだ場合を含む）は無条件でエラーとし、それ以外の`as T`は直前行または同一行末尾に`//`コメントが無い場合にエラーとする（`as const`・`import { x as y }`の別名importは対象外）。現時点ではコミット時の自動実行には組み込んでおらず、手動実行のみ。
+
 # ||ではなく??（Null合体演算子）を使用する
 
 NG
@@ -1166,3 +1168,74 @@ const INSERT_BATCH_SIZE = 500;
 ```
 
 定数の値そのものだけでは、それが「なぜその値なのか」「省略するとどう壊れるのか」がコードから読み取れない場合（DBのバインドパラメータ上限・外部APIのレート制限・OSやライブラリの既知の制約など、実装対象のドメインロジックではなく外部システムの仕様に起因する制約）は、値の意図をコメントで明示すること。特に「なぜこの値を超えてはいけないか」という制約の出どころ（PostgreSQL・Strava API等、具体的な対象）を明記する。
+
+---
+
+# コンポーネントファイルには表示に関する関数・TSXのみを置く
+
+NG
+```typescript
+// MapView.tsx
+const findActivityById = (activities: CyclingActivity[], id: string | null): CyclingActivity | null => {
+  if (id === null) {
+    return null;
+  }
+  return activities.find((activity) => activity.id === id) ?? null;
+};
+
+export const MapView = (props: MapViewProps) => {
+  // findActivityByIdを使って描画する
+};
+```
+
+OK
+```typescript
+// utils/findActivityById.ts
+export const findActivityById = (activities: CyclingActivity[], id: string | null): CyclingActivity | null => {
+  if (id === null) {
+    return null;
+  }
+  return activities.find((activity) => activity.id === id) ?? null;
+};
+
+// MapView.tsx
+import { findActivityById } from '../utils/findActivityById';
+
+export const MapView = (props: MapViewProps) => {
+  // findActivityByIdを使って描画する
+};
+```
+
+コンポーネントファイル（`components/`配下）には、表示（JSX）や地図ライブラリ操作等の画面に直接関わる処理のみを置く。データの検索・変換等、画面表示に依存しない純粋関数はコンポーネントファイル内に定義せず`utils/`へ切り出すこと。切り出すことで、DOMや外部ライブラリのモック無しに単体テストできるようになり、コンポーネントファイル自体の見通しも良くなる（PR #36レビュー対応）。
+
+---
+
+# サードパーティライブラリがDOM要素を要求する場合、innerHTMLへの文字列注入ではなくReactのcreateRootで管理下に置く
+
+NG
+```typescript
+import { renderToStaticMarkup } from 'react-dom/server';
+
+const createMarkerElement = (icon: ReactElement): HTMLDivElement => {
+  const container = document.createElement('div');
+  container.innerHTML = renderToStaticMarkup(icon);
+  return container;
+};
+```
+
+OK
+```typescript
+import { flushSync } from 'react-dom';
+import { createRoot, type Root } from 'react-dom/client';
+
+const createMarkerElement = (icon: ReactElement): { element: HTMLDivElement; root: Root } => {
+  const container = document.createElement('div');
+  const root = createRoot(container);
+  flushSync(() => root.render(icon));
+  return { element: container, root };
+};
+
+// 呼び出し側: 破棄する際にroot.unmount()も呼ぶこと（メモリリーク防止）
+```
+
+MapLibreの`Marker`等、React管理外のライブラリが独自にDOM要素（`HTMLElement`）を要求するAPIでは、`document.createElement`によるコンテナ生成自体は避けられない。しかし、その中身を`renderToStaticMarkup`で文字列化し`innerHTML`へ代入する方法は、Reactの管理下から外れたDOM操作であり避けること。代わりに`react-dom/client`の`createRoot`でコンテナへレンダリングし、Reactの管理下に置く。`createRoot().render()`は非同期にコミットされうるため、呼び出し側（ライブラリ側API）へ渡す時点で描画済みであることを保証する必要がある場合は`flushSync`で同期化すること。また、作成したrootは要素を破棄するタイミングで必ず`root.unmount()`を呼ぶこと（呼ばないとメモリリークする）。

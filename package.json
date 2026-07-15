@@ -16,6 +16,7 @@
     "test:e2e": "cross-env VITE_BACKEND_BASE_URL=http://localhost:3100 pnpm run build && playwright test",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "check:type-assertions": "node scripts/check-type-assertions.mjs",
     "typecheck": "pnpm --filter frontend typecheck && pnpm --filter backend typecheck && tsc -p tsconfig.electron.json --noEmit",
     "prepare": "husky"
   },
