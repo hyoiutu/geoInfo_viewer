@@ -4,14 +4,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { StravaActivitiesService } from '../strava/strava-activities.service';
 import { ActivitiesBackfillService } from './activities-backfill.service';
+import { CyclingActivityRepository } from './cycling-activity.repository';
 import { toCyclingActivityDto } from './cycling-activity-dto.util';
 import { toCyclingActivityEntityFromDetail } from './cycling-activity-entity.util';
-import { CyclingActivityEntity } from './entities/cycling-activity.entity';
+import type { CyclingActivityEntity } from './entities/cycling-activity.entity';
 import { SYNC_STATE_SINGLETON_ID, SyncStateEntity } from './entities/sync-state.entity';
 import type { CyclingActivityDto } from './types/cycling-activity.dto';
 
 const MILLISECONDS_PER_SECOND = 1000;
-const NO_ACTIVITIES = 0;
 
 /** sync()の実行結果 */
 export class SyncResult {
@@ -29,15 +29,14 @@ export class ActivitiesService {
   constructor(
     private readonly stravaActivitiesService: StravaActivitiesService,
     private readonly activitiesBackfillService: ActivitiesBackfillService,
-    @InjectRepository(CyclingActivityEntity)
-    private readonly cyclingActivityRepository: Repository<CyclingActivityEntity>,
+    private readonly cyclingActivityRepository: CyclingActivityRepository,
     @InjectRepository(SyncStateEntity)
     private readonly syncStateRepository: Repository<SyncStateEntity>
   ) {}
 
   /** @returns DBに保存済みの全自転車ログ */
   async findAll(): Promise<CyclingActivityDto[]> {
-    const entities = await this.cyclingActivityRepository.find();
+    const entities = await this.cyclingActivityRepository.findAll();
     return entities.map((entity) => toCyclingActivityDto(entity));
   }
 
@@ -63,9 +62,7 @@ export class ActivitiesService {
       const detail = await this.stravaActivitiesService.fetchCyclingActivityDetail(activity.id);
       entities.push(toCyclingActivityEntityFromDetail(detail));
     }
-    if (entities.length > NO_ACTIVITIES) {
-      await this.cyclingActivityRepository.save(entities);
-    }
+    await this.cyclingActivityRepository.saveDetails(entities);
 
     syncState.lastSyncedAt = new Date();
     await this.syncStateRepository.save(syncState);

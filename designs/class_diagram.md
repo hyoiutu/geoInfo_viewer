@@ -41,6 +41,17 @@ classDiagram
     class MunicipalitiesService {
         +findPassedMunicipalities(activityId) PassedMunicipalityDto[]
     }
+    class CyclingActivityRepository {
+        +findAll() CyclingActivityEntity[]
+        +findPendingDetail() CyclingActivityEntity[]
+        +saveDetail(entity) void
+        +saveDetails(entities) void
+        +savePlaceholdersIfNotExists(activities) void
+        +resetAllDetailFetchedAt() void
+        +countAll() number
+        +countPendingDetail() number
+        +countCompletedDetail() number
+    }
     class CyclingActivityEntity {
         +id string
         +name string
@@ -72,11 +83,12 @@ classDiagram
     ActivitiesController --> MunicipalitiesService
     ActivitiesService --> StravaActivitiesService
     ActivitiesService --> ActivitiesBackfillService : 実行中判定を委譲
-    ActivitiesService --> CyclingActivityEntity : Repository
+    ActivitiesService --> CyclingActivityRepository
     ActivitiesService --> SyncStateEntity : Repository
     ActivitiesBackfillService --> StravaActivitiesService
     ActivitiesBackfillService --> StravaRateLimiterService
-    ActivitiesBackfillService --> CyclingActivityEntity : Repository
+    ActivitiesBackfillService --> CyclingActivityRepository
+    CyclingActivityRepository --> CyclingActivityEntity : Repository
     StravaActivitiesService --> StravaAuthService
     StravaActivitiesService --> StravaRateLimiterService
     MunicipalitiesService --> MunicipalityEntity : Repository
@@ -197,7 +209,7 @@ classDiagram
 
 ## 設計上の改善提案
 
-1. **`ActivitiesService`と`ActivitiesBackfillService`の責務の重なり**: 両者とも`StravaActivitiesService`と`CyclingActivityEntity`のRepositoryに直接依存しており、Strava詳細取得→Entity変換→DB保存という同じ手順を（`cycling-activity-entity.util.ts`の共通関数経由とはいえ）別々の場所で呼び出している。今後アクティビティの永続化ロジックが複雑化する場合、両サービスが共通で使う`CyclingActivityRepository`（TypeORMのRepositoryをラップする独自クラス）を切り出し、保存に関する共通処理（重複チェック等）を一本化することを検討する余地がある。現状の規模では過剰設計になる可能性もあり、必須の対応ではない。
+1. **（対応済み・Issue #50）`ActivitiesService`と`ActivitiesBackfillService`の責務の重なり**: 両者とも`StravaActivitiesService`と`CyclingActivityEntity`のRepositoryに直接依存しており、Strava詳細取得→Entity変換→DB保存という同じ手順を（`cycling-activity-entity.util.ts`の共通関数経由とはいえ）別々の場所で呼び出していた。両サービスが共通で使う`CyclingActivityRepository`（TypeORMのRepositoryをラップする独自クラス、`activities/cycling-activity.repository.ts`）を切り出し、DB未登録分のみプレースホルダー保存する重複チェック処理（`savePlaceholdersIfNotExists`）を含む全てのDBアクセスを一本化した。
 2. **`ActivitiesController`が3つのサービスに直接依存している**: `ActivitiesService`・`ActivitiesBackfillService`・`MunicipalitiesService`という異なる関心事（参照/新規アクティビティ取得・バックフィル・逆ジオコーディング）を1つのコントローラーが束ねている。現状はエンドポイント数が少なく許容範囲だが、今後エンドポイントが増える場合はコントローラーの分割（例: `MunicipalitiesController`を独立させる）を検討するとよい。
 3. **`StravaActivitiesService`/`StravaAuthService`が`HttpService`（axiosの薄いラッパー）に直接依存**: DIP（依存性逆転の原則）の観点では、Strava APIクライアントとしての抽象インターフェースを挟む余地があるが、既存の単体テストは`HttpService`のモックで十分に検証できており、抽象化による実利は現時点では小さいと判断する。将来Strava以外の外部サービス連携（例: Issue #23の写真閲覧機能でのGoogle Photos連携）が増える場合、共通の「外部APIクライアント」抽象を検討する契機になりうる。
 4. **フロントエンドの`MapWorkspace`が担う責務の広さ**: レイヤー表示状態・バックフィル進捗・アクティビティ選択・フィルタ条件と、複数のフックを束ねている。Issue #32（左サイドバー廃止・Map Controlsへの移行）で`LayerDialog`・`SettingsDialog`・`BackfillProgressFooter`という独立したコンポーネントに分割したが、各コンポーネントへの配線（フックの呼び出し・propsの受け渡し）自体は引き続き`MapWorkspace`が担っている。責務の広さそのものの解消（例: Contextやカスタムフックへの集約）は現状の規模では過剰設計になりうるため、追加のフックが増えるタイミングで改めて検討する。

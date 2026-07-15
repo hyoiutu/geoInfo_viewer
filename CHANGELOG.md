@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-07-16] Issue #50対応としてActivitiesServiceとActivitiesBackfillServiceの共通DBアクセスをCyclingActivityRepositoryへ一本化した
+* **修正の動機・概要**:
+  - `designs/class_diagram.md`（Issue #29対応）の設計上の改善提案1件目としてIssue化されていた「`ActivitiesService`と`ActivitiesBackfillService`がいずれも`StravaActivitiesService`と`CyclingActivityEntity`のRepositoryに直接依存しており、Strava詳細取得→Entity変換→DB保存という同じ手順を別々の場所で呼び出している」という重複を解消した。
+  - 両サービスが共通で使う`CyclingActivityRepository`（`backend/src/activities/cycling-activity.repository.ts`、新規）を切り出し、`findAll`/`findPendingDetail`/`saveDetail`/`saveDetails`/`savePlaceholdersIfNotExists`（重複チェック含む）/`resetAllDetailFetchedAt`/`countAll`/`countPendingDetail`/`countCompletedDetail`という高レベルメソッドに集約した。特に`ActivitiesBackfillService`の`fetchAndSavePlaceholders`にのみ存在していた「DB未登録分のみプレースホルダー保存する」重複チェックロジックを`savePlaceholdersIfNotExists`として一本化し、Issue本文が挙げていた「保存に関する共通処理（重複チェック等）の一本化」を実現した。
+  - 実装中、`backend/src/activities`ディレクトリ全体に対して`biome check --write`を実行したところ、NestJSのコンストラクタインジェクションで使うクラス（`StravaActivitiesService`・`ActivitiesBackfillService`・`CyclingActivityRepository`・`MunicipalitiesService`等）のimportが`import type`へ誤変換され、依存性注入が壊れる事故が発生した（`typescript_rules.md`に既知の罠として記載済みだったにもかかわらず再発）。単体テスト実行で即座に検知し、該当ファイル（`activities.service.ts`・`activities-backfill.service.ts`・`activities.controller.ts`）を手動で通常の`import`に戻して解消した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/activities/cycling-activity.repository.ts`（新規）・`__tests__/cycling-activity.repository.tests.ts`（新規、11件）。
+    - `backend/src/activities/activities.service.ts`・`activities-backfill.service.ts`: 生の`Repository<CyclingActivityEntity>`直接注入を`CyclingActivityRepository`経由に置き換え。振る舞いは変更していない（既存テストのモック先を`getRepositoryToken(CyclingActivityEntity)`から`CyclingActivityRepository`へ差し替え、TDDのRed→Greenで確認）。
+    - `backend/src/activities/activities.module.ts`: providersに`CyclingActivityRepository`を追加。
+    - 単体テスト（バックエンド110件）・lint・typecheck・`check:type-assertions`は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部実装のリファクタリングのみで、ユーザーから見た挙動に変化は無いため）。
+  * **設計書**: `designs/class_diagram.md`に`CyclingActivityRepository`クラスを追記し、改善提案1件目を「対応済み」に更新。
+
 ### [2026-07-16] Issue #34対応(フェーズ1)として都道府県・市町村の行政区画+地名を切り替え可能な「行政区画」レイヤーとして追加した
 * **修正の動機・概要**:
   - Issue #34「歴史的行政区画表示機能」は、現行データでの行政区画レイヤー化（フェーズ1）と、過去3時代（2000/1950/1920年）の行政区画データ導入（フェーズ2）の2段階の要望を含む大規模なIssueだった。Issue本文が「まずは」/「次に」と明示的にフェーズ分けしていたため、今回はフェーズ1（現行データでの行政区画レイヤー化）のみをスコープとし、フェーズ2（過去データの取り込み・年代選択UI・通過自治体の年代連動）は別途対応する前提で見送った。

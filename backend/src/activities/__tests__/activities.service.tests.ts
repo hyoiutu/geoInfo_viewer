@@ -7,6 +7,7 @@ import { StravaActivitiesService } from '../../strava/strava-activities.service'
 import type { StravaActivity, StravaActivityDetail } from '../../strava/types/strava-activity.type';
 import { ActivitiesService } from '../activities.service';
 import { ActivitiesBackfillService } from '../activities-backfill.service';
+import { CyclingActivityRepository } from '../cycling-activity.repository';
 import { CyclingActivityEntity } from '../entities/cycling-activity.entity';
 import { SYNC_STATE_SINGLETON_ID, SyncStateEntity } from '../entities/sync-state.entity';
 
@@ -46,7 +47,7 @@ describe('ActivitiesServiceに関するテスト', () => {
   let fetchCyclingActivities: ReturnType<typeof vi.fn>;
   let fetchCyclingActivityDetail: ReturnType<typeof vi.fn>;
   let isRunning: ReturnType<typeof vi.fn>;
-  let cyclingActivityRepository: { find: ReturnType<typeof vi.fn>; save: ReturnType<typeof vi.fn> };
+  let cyclingActivityRepository: { findAll: ReturnType<typeof vi.fn>; saveDetails: ReturnType<typeof vi.fn> };
   let syncStateRepository: {
     findOneBy: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
@@ -59,7 +60,7 @@ describe('ActivitiesServiceに関するテスト', () => {
         ActivitiesService,
         { provide: StravaActivitiesService, useValue: { fetchCyclingActivities, fetchCyclingActivityDetail } },
         { provide: ActivitiesBackfillService, useValue: { isRunning } },
-        { provide: getRepositoryToken(CyclingActivityEntity), useValue: cyclingActivityRepository },
+        { provide: CyclingActivityRepository, useValue: cyclingActivityRepository },
         { provide: getRepositoryToken(SyncStateEntity), useValue: syncStateRepository }
       ]
     }).compile();
@@ -71,7 +72,7 @@ describe('ActivitiesServiceに関するテスト', () => {
     fetchCyclingActivities = vi.fn();
     fetchCyclingActivityDetail = vi.fn();
     isRunning = vi.fn().mockReturnValue(false);
-    cyclingActivityRepository = { find: vi.fn(), save: vi.fn() };
+    cyclingActivityRepository = { findAll: vi.fn(), saveDetails: vi.fn() };
     syncStateRepository = {
       findOneBy: vi.fn(),
       // TypeORMのRepository.create()自体がDeepPartial<Entity>からEntityを返す型シグネチャのため、
@@ -92,7 +93,7 @@ describe('ActivitiesServiceに関するテスト', () => {
         path: null,
         detailFetchedAt: null
       });
-      cyclingActivityRepository.find.mockResolvedValue([entity1]);
+      cyclingActivityRepository.findAll.mockResolvedValue([entity1]);
       const service = await createService();
 
       const result = await service.findAll();
@@ -151,7 +152,7 @@ describe('ActivitiesServiceに関するテスト', () => {
 
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(1);
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(2);
-      expect(cyclingActivityRepository.save).toHaveBeenCalledWith([
+      expect(cyclingActivityRepository.saveDetails).toHaveBeenCalledWith([
         expect.objectContaining({ id: '1', path: expect.objectContaining({ type: 'MultiLineString' }) }),
         expect.objectContaining({ id: '2', path: expect.objectContaining({ type: 'MultiLineString' }) })
       ]);
@@ -161,7 +162,7 @@ describe('ActivitiesServiceに関するテスト', () => {
       expect(result).toEqual({ success: true });
     });
 
-    test('新規アクティビティが無い場合、詳細APIを呼び出さずDBも更新しないが新規アクティビティ取得時刻は更新する', async () => {
+    test('新規アクティビティが無い場合、詳細APIを呼び出さないが新規アクティビティ取得時刻は更新する（DBを更新しないこと自体はリポジトリ側の責務）', async () => {
       syncStateRepository.findOneBy.mockResolvedValue(null);
       fetchCyclingActivities.mockResolvedValue([]);
       const service = await createService();
@@ -169,7 +170,7 @@ describe('ActivitiesServiceに関するテスト', () => {
       await service.sync();
 
       expect(fetchCyclingActivityDetail).not.toHaveBeenCalled();
-      expect(cyclingActivityRepository.save).not.toHaveBeenCalled();
+      expect(cyclingActivityRepository.saveDetails).toHaveBeenCalledWith([]);
       expect(syncStateRepository.save).toHaveBeenCalled();
     });
 
@@ -179,7 +180,7 @@ describe('ActivitiesServiceに関するテスト', () => {
       const service = await createService();
 
       await expect(service.sync()).rejects.toThrow('Strava API error');
-      expect(cyclingActivityRepository.save).not.toHaveBeenCalled();
+      expect(cyclingActivityRepository.saveDetails).not.toHaveBeenCalled();
       expect(syncStateRepository.save).not.toHaveBeenCalled();
     });
 
@@ -190,7 +191,7 @@ describe('ActivitiesServiceに関するテスト', () => {
       const service = await createService();
 
       await expect(service.sync()).rejects.toThrow('Strava API error');
-      expect(cyclingActivityRepository.save).not.toHaveBeenCalled();
+      expect(cyclingActivityRepository.saveDetails).not.toHaveBeenCalled();
       expect(syncStateRepository.save).not.toHaveBeenCalled();
     });
 
@@ -198,7 +199,7 @@ describe('ActivitiesServiceに関するテスト', () => {
       syncStateRepository.findOneBy.mockResolvedValue(null);
       fetchCyclingActivities.mockResolvedValue([createActivity({ id: 1 })]);
       fetchCyclingActivityDetail.mockResolvedValue(createActivityDetail({ id: 1 }));
-      cyclingActivityRepository.save.mockRejectedValue(new Error('DB error'));
+      cyclingActivityRepository.saveDetails.mockRejectedValue(new Error('DB error'));
       const service = await createService();
 
       await expect(service.sync()).rejects.toThrow('DB error');
