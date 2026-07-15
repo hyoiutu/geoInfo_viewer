@@ -14,6 +14,17 @@
 
 ## 変更履歴
 
+### [2026-07-15] GitHub Issue #35として振り返りを行いissue-reviewスキルを新設した
+* **修正の動機・概要**:
+  - レビューやプロンプト入力の都度ルール追加を行っており、これまでのルール・CHANGELOG.md・PRのレビューを俯瞰して振り返る機会が無かった。またユーザーが実装後に仕様書に書いていないことを求めたり、自律モードで実装中に設計上の判断が毎回必要になったりする状況があった（Issue #35）。自律モードで対応した。
+  - **振り返り**: rules.md・test_rules.md・commit_rules.md・branch_rules.md・AGENTS.mdを通読し、相互に矛盾する記述が無いか確認した。矛盾は見つからなかったが、唯一の実質的なギャップ（finish-reviewスキルのPRマージ手順に、マージ対象PR自身のbaseがmainかどうかの事前チェックが無かった問題）は、本Issue着手の直前に別件（PR #41レビュー時の実装混入調査）で発見済みであり、PR #49として既に修正済みだった。
+  - **issue-reviewスキルの新設**: Issueの実装着手前にレビューを行うスキルを新設した。過去に実装中・実装後のレビューで初めて発覚した手戻りの原因（Issue #23の外部API認証情報不足、Issue #29・#30の分割基準の曖昧さ、Issue #26のUI/UX要望の裏取り不足、PR #42のbase不整合)を`issue_review_notes.md`（新規）に観点として蓄積し、issue-implementスキルの手順1（Issue詳細取得）の直後に必ず経由するよう組み込んだ。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: アプリケーションコードの変更は無い。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（AIエージェントの内部運用スキルであり、アプリケーションの機能仕様には影響しないため）。
+  * **その他**: `.agents/skills/issue-review/SKILL.md`（新規）・`issue_review_notes.md`（新規、リポジトリルート）を追加。`.agents/skills/issue-implement/SKILL.md`の手順1にissue-reviewスキルの呼び出しを追記。`AGENTS.md`にissue-reviewスキルの言及を追記。
+
 ### [2026-07-15] finish-reviewスキルのPRマージ手順にbase整合性チェックを追加した
 * **修正の動機・概要**:
   - PR #41（Issue #29、クラス図作成）をレビューした際、その内容（`designs/class_diagram.md`）が既に`main`へ存在していることが判明した。調査の結果、原因はPR #42（Issue #30）のマージにあった：PR #42は`base: docs/issue-29-class-diagram`（PR #41自身のブランチ）のままマージされており、本来`main`へ入るべき内容がPR #41のブランチへ積み増しされる形になっていた。この時点でPR #41（base元）はまだOPEN・未マージだった。
