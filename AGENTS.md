@@ -6,7 +6,7 @@
 - 実装, README.md, 仕様書, 設計書いずれかの修正に応じてそれぞれ連動して乖離を埋めるために修正を行った場合、どんな修正があり、それによって実装, README.md, 仕様書, 設計書がそれぞれどのように修正されたか紐づけて履歴として残す
   - 履歴はCHANGELOG.mdに記載する
 - 実装を行うときはコード規約に従う
-  - コード規約はrules.mdに記載する
+  - コード規約はrules.mdに記載する。設計原則（DRY/KISS/YAGNI・SOLID等）はdesign_principles.md、Chakra UI/スタイリング規約はui_rules.mdに分割している（Issue #47。参照するタイミングに応じてファイルを分け、コンテキスト量を減らすため）
 - 開発はTDDで行う
   - 既存のコードを変更するときはRed-Green-Refactoringに則って行う
 - リファクタリングも同様にRed-Green-Refactoringに則って行う

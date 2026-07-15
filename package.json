@@ -17,6 +17,7 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "check:type-assertions": "node scripts/check-type-assertions.mjs",
+    "check:file-size": "node scripts/check-file-size.mjs",
     "typecheck": "pnpm --filter frontend typecheck && pnpm --filter backend typecheck && tsc -p tsconfig.electron.json --noEmit",
     "prepare": "husky"
   },

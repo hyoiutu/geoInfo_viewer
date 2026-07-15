@@ -1,100 +1,77 @@
+# コード規約
+
+本ファイルには、コードを書く際に常に参照する基礎的な規約（構文レベルのTypeScript/React規約、コメント・命名等）をまとめています。以下は関連するが参照頻度がより低い規約のため、別ファイルに分割しています（Issue #47。rules.mdが1000行を超え全てを都度参照するのは非効率という指摘を受け、参照するタイミングに応じてファイルを分けた）。
+
+- [design_principles.md](./design_principles.md): DRY/KISS/YAGNI・SOLID原則等の設計原則。モジュール分割やリファクタリングを判断する場面で参照する。
+- [ui_rules.md](./ui_rules.md): Chakra UI・色/余白トークン等のスタイリング規約。フロントエンドのUIコンポーネントを実装・変更する場合のみ参照する。
+
+機械的にチェックできる規約は、Biome（`pnpm run lint`）または専用スクリプト（`pnpm run check:type-assertions`・`pnpm run check:file-size`）に移行済みで、該当する規約は本ファイルでは詳細な例を省き参照先のみを示す。
+
 # Biomeの自動チェックがカバーしない範囲について
 
 本プロジェクトのBiome設定（`biome.json`）は、以下のルールの一部しか自動検出できない。
 
 - **マジックナンバー**: Biomeの`noMagicNumbers`は比較・算術式に使われる数値リテラル（例: `if (count > 3)`）は検出するが、オブジェクトリテラルのプロパティ値（例: `{ width: 1200 }`）のような設定値としての数値リテラルは検出しない。
-- **KISS（if-elseの簡略化等）**: 自動検出の対象外。単純な`if/else`を三項演算子にできる、ネストを減らせる等はBiomeの指摘に出ないため、コードレビュー時に人間・AIエージェントが個別に見直す必要がある。
+- **KISS（if-elseの簡略化等）**: 自動検出の対象外。単純な`if/else`を三項演算子にできる、ネストを減らせる等はBiomeの指摘に出ないため、コードレビュー時に人間・AIエージェントが個別に見直す必要がある（[design_principles.md](./design_principles.md)参照）。
 
-**Biomeが指摘しないからといって、規約に準拠しているとは限らない。** 新規コード作成時・既存コードの見直し時は、Biomeのlint結果だけに頼らず、本ファイルの各ルールと照らし合わせて確認すること。
+**Biomeが指摘しないからといって、規約に準拠しているとは限らない。** 新規コード作成時・既存コードの見直し時は、Biomeのlint結果だけに頼らず、本ファイル・[design_principles.md](./design_principles.md)・[ui_rules.md](./ui_rules.md)の各ルールと照らし合わせて確認すること。
 
 逆に、**Biomeの指摘が誤りである場合もある**。例えばNestJSのコンストラクタインジェクションで使うクラス（例: `constructor(private readonly appService: AppService) {}`）は、Biomeの`lint/style/useImportType`からは「型としてしか使われていない」ように見え`import type`への変換を提案されるが、実際には`emitDecoratorMetadata`が実行時にこのクラスの参照（値）を必要とするため、`import type`に変換すると依存性注入が壊れる。この種の警告（`Found N warning(s)`、exit code 0）は自動修正を鵜呑みにせず、フレームワークの実行時要件を優先すること。
 
 ---
 
-# 使用しない引数は_(アンダースコア)にする
+# 未使用の引数・変数は残さない
 
-NG
-```typescript
-const func = (event, args) => {
-  console.log(args);
-}
-```
+Biomeの`noUnusedFunctionParameters`・`noUnusedVariables`が自動検出する。未使用の関数引数は`_`（アンダースコア）へのリネームが提案される。
 
-OK
 ```typescript
+// OK
 const func = (_, args) => {
   console.log(args);
-}
+};
 ```
 
-# テストケースは日本語で書く
+# テスト以外はTypeScriptファイルを使用する
 
-NG
-```typescript
-describe('API test', () => {
-  test('if the API is called, status code is 200.', () => {
-    ...
-  })
-})
-```
-
-OK
-```typescript
-describe('APIに関するテスト', () => {
-  test('APIが呼ばれたとき、ステータスコードは200を返す', () => {
-    ...
-  })
-})
-```
-
-# TypeScriptの使用
-
-NG
-JavaScriptファイル(.js, .jsx)を使用する。
-
-OK
-TypeScriptファイル(.ts, .tsx)を使用し、適切な型定義を行う。
+JavaScriptファイル（`.js`/`.jsx`）は使用せず、TypeScriptファイル（`.ts`/`.tsx`）を使用し、適切な型定義を行う。
 
 # React Hooksの依存配列を無視しない
 
+Biomeの`useExhaustiveDependencies`が自動検出する。依存配列を意図的に省略する場合は、次項の「biome-ignoreを使用する場合は理由を明記する」に従うこと。
+
+# biome-ignoreを使用する場合は理由を明記する
+
 NG
 ```typescript
+// biome-ignore lint/correctness/useExhaustiveDependencies: state更新時の再実行を防ぐため理由の記載が必要
 useEffect(() => {
   // ...
-  // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
 ```
 
 OK
 ```typescript
+// biome-ignore lint/correctness/useExhaustiveDependencies: state更新時の再実行を防ぐため
 useEffect(() => {
   // ...
-}, [state]);
+}, []);
 ```
 
-# eslint-disableを使用する場合は理由を明記する
-
-NG
-```typescript
-// eslint-disable-next-line react-hooks/exhaustive-deps
-```
-
-OK
-```typescript
-// eslint-disable-next-line react-hooks/exhaustive-deps -- state更新時の再実行を防ぐため
-```
+`// biome-ignore lint/<ルール名>: <理由>`の形式で、コロンの後に必ず理由を明記すること。理由の無い抑制は、割れ窓の法則（[design_principles.md](./design_principles.md)参照）に反し、後から見直す際に「なぜ抑制したか」が分からなくなる。
 
 # anyやas（型キャスト）は原則使用しない
 
+`any`の使用はBiomeの`noExplicitAny`が自動検出する。
+
+`as`による型キャストはBiomeの自動チェック対象外のため、以下のルールに従うこと。
+
 NG
 ```typescript
-const data: any = fetchedData;
 const user = {} as User;
 ```
 
 OK
 ```typescript
-const data: User = fetchedData;
 const user: User = { id: 1, name: "name" };
 ```
 
@@ -106,7 +83,7 @@ const user: User = { id: 1, name: "name" };
 
 上記の回避手順を試した上でなお`as T`によるキャストが避けられないと判断した場合は、**そのキャストの直前に、なぜ回避できないのか（どの回避手順を試して駄目だったか）を説明する`//`コメントを必ず添えること。** コメント無しの型キャストは、理由を検討せず安易に使った結果なのか、検討した上でやむを得ず使ったのかが後から判別できず、レビューのたびに同じ確認が発生してしまう。
 
-本ルールはBiomeの自動チェック対象外（冒頭の「Biomeの自動チェックがカバーしない範囲について」参照）のため、`pnpm run check:type-assertions`（`scripts/check-type-assertions.mjs`）で機械的に検出できる。`as unknown as T`（括弧で挟んだ場合を含む）は無条件でエラーとし、それ以外の`as T`は直前行または同一行末尾に`//`コメントが無い場合にエラーとする（`as const`・`import { x as y }`の別名importは対象外）。現時点ではコミット時の自動実行には組み込んでおらず、手動実行のみ。
+本ルールはBiomeの自動チェック対象外のため、`pnpm run check:type-assertions`（`scripts/check-type-assertions.mjs`）で機械的に検出できる。`as unknown as T`（括弧で挟んだ場合を含む）は無条件でエラーとし、それ以外の`as T`は直前行または同一行末尾に`//`コメントが無い場合にエラーとする（`as const`・`import { x as y }`の別名importは対象外）。現時点ではコミット時の自動実行には組み込んでおらず、手動実行のみ。
 
 # ||ではなく??（Null合体演算子）を使用する
 
@@ -122,23 +99,9 @@ const result = value1 ?? value2;
 
 # 型定義には原則typeを使用する
 
-NG
-```typescript
-interface User {
-  id: number;
-  name: string;
-}
-```
+型定義に`type`を使用することはBiomeの`useConsistentTypeDefinitions`が自動検出する。
 
-OK
-```typescript
-type User = {
-  id: number;
-  name: string;
-};
-```
-
-**例外: バックエンドのHTTPレスポンスとして返す型は`class`とし`@ApiProperty()`を付与する。**
+**例外1: バックエンドのHTTPレスポンスとして返す型は`class`とし`@ApiProperty()`を付与する。**
 
 NG
 ```typescript
@@ -166,38 +129,15 @@ NestJSのコントローラーメソッドが返す型（DTO）は、`@nestjs/sw
 
 他ブランチの変更（他Issue対応・レビュー対応等）をマージ・rebaseで取り込んだ際は、新たに追加・変更されたレスポンス型に`@ApiProperty()`の付与漏れが無いか確認すること。マージ作業を終えたら、`nest build`後にバックエンドを実際に起動し`/api-json`のレスポンスで該当スキーマ（`components.schemas`）の中身が空になっていないか確認するのが確実。
 
-**例外: 既存の`interface`へ宣言をマージ(declaration merging)する必要がある場合は`interface`を使う。** `type`エイリアスは宣言のマージができないため、代替できない（例: `frontend/src/vite-env.d.ts`の`ImportMetaEnv`は、Viteが`vite/client`の型定義で宣言した`interface ImportMetaEnv`に独自の環境変数プロパティをマージするために`interface`を使う必要がある）。biomeの`useConsistentTypeDefinitions`警告が出るため、該当箇所には理由を示す`biome-ignore`コメントを付けること。
+**例外2: 既存の`interface`へ宣言をマージ(declaration merging)する必要がある場合は`interface`を使う。** `type`エイリアスは宣言のマージができないため、代替できない（例: `frontend/src/vite-env.d.ts`の`ImportMetaEnv`は、Viteが`vite/client`の型定義で宣言した`interface ImportMetaEnv`に独自の環境変数プロパティをマージするために`interface`を使う必要がある）。Biomeの`useConsistentTypeDefinitions`警告が出るため、該当箇所には理由を示す`biome-ignore`コメントを付けること。
 
 # 三項演算子はネストしない
 
-NG
-```typescript
-const result = x > 0 ? (x % 2 === 0 ? "Even" : "Odd") : "Negative";
-```
-
-OK
-```typescript
-let result;
-if (x > 0) {
-  result = x % 2 === 0 ? "Even" : "Odd";
-} else {
-  result = "Negative";
-}
-```
+Biomeの`noNestedTernary`が自動検出する。
 
 # 命名規則の遵守
 
-NG
-```typescript
-const SomeVar = 10;
-const cntList = [1, 2, 3];
-```
-
-OK
-```typescript
-const someVar = 10;
-const counts = [1, 2, 3];
-```
+Biomeの`useNamingConvention`が自動検出する。
 
 # boolean型の属性値は省略する
 
@@ -213,80 +153,41 @@ OK
 
 # 型推論が効く場合は型注釈を省略する
 
-NG
-```typescript
-const name: string = "foo";
-const [count, setCount] = useState<number>(0);
-```
+Biomeの`noInferrableTypes`が自動検出する。
 
-OK
-```typescript
-const name = "foo";
-const [count, setCount] = useState(0);
-```
-
-# マジックナンバーを使用しない
+# マジックナンバー・マジックストリングを使用しない
 
 NG
-
 ```typescript
 if (retryCount > 3) {
   // ...
 }
-```
 
-OK
-
-```typescript
-const MAX_RETRY_COUNT = 3;
-
-if (retryCount > MAX_RETRY_COUNT) {
+if (file.dateSource === 'metadata') {
   // ...
 }
 ```
 
----
-
-# importは自動ソートする
-
-NG
-
-```typescript
-import z from './z';
-import a from './a';
-import React from 'react';
-```
-
 OK
-
 ```typescript
-import React from 'react';
+const MAX_RETRY_COUNT = 3;
+if (retryCount > MAX_RETRY_COUNT) {
+  // ...
+}
 
-import a from './a';
-import z from './z';
-```
-
----
-
-# exportはdefault exportではなくnamed exportを使用する
-
-NG
-
-```typescript
-export default function Button() {
-  return <button>OK</button>;
+const DATE_SOURCE_METADATA = 'metadata';
+if (file.dateSource === DATE_SOURCE_METADATA) {
+  // ...
 }
 ```
 
-OK
+比較・算術式の数値リテラルはBiomeの`noMagicNumbers`が検出するが、オブジェクトリテラルのプロパティ値等の設定値としての数値リテラルは検出しないため、その場合も定数化すること（詳細は「Biomeの自動チェックがカバーしない範囲について」参照）。
 
-```typescript
-export const Button = () => {
-  return <button>OK</button>;
-};
-```
+文字列のマジックナンバー（マジックストリング）も同様に定数化する。ただしUnion型で表現され型チェッカーが誤り（typo）を検出できる値（例: `'video' | 'image'`のような限定されたリテラル型同士の比較）は対象外とする。
 
----
+# importは自動ソートする・named exportを使用する
+
+importの並び順はBiomeの`organizeImports`（`pnpm run lint:fix`で自動修正）が、`export default`の禁止はBiomeの`noDefaultExport`が、それぞれ自動検出・修正する。
 
 # objectのキー名と変数名が同じ場合は省略記法を使用する
 
@@ -308,23 +209,9 @@ const user = {
 };
 ```
 
----
-
 # Reactコンポーネントは自己閉じタグを使用する
 
-NG
-
-```tsx
-<Loading></Loading>
-```
-
-OK
-
-```tsx
-<Loading />
-```
-
----
+Biomeの`useSelfClosingElements`が自動検出する。
 
 # JSX内に複数行のロジックを書かない
 
@@ -368,629 +255,9 @@ return (
 );
 ```
 
----
-
 # アロー関数を使用する
 
-NG
-
-```typescript
-function add(a: number, b: number) {
-  return a + b;
-}
-```
-
-OK
-
-```typescript
-const add = (a: number, b: number) => {
-  return a + b;
-};
-```
-
----
-
-# 未使用の変数は残さない
-
-NG
-
-```typescript
-const result = fetchData();
-const unused = 0;
-
-return result;
-```
-
-OK
-
-```typescript
-const result = fetchData();
-
-return result;
-```
-
----
-
-# default exportは禁止する
-
-NG
-
-```typescript
-export default App;
-```
-
-OK
-
-```typescript
-export const App = () => {
-  // ...
-};
-```
-
----
-
-# import文はソートする
-
-NG
-
-```typescript
-import z from "./z";
-import React from "react";
-import a from "./a";
-```
-
-OK
-
-```typescript
-import React from "react";
-
-import a from "./a";
-import z from "./z";
-```
-
----
-
-# マジックナンバーは定数化する
-
-NG
-
-```typescript
-if (count > 10) {
-  // ...
-}
-```
-
-OK
-
-```typescript
-const MAX_COUNT = 10;
-
-if (count > MAX_COUNT) {
-  // ...
-}
-```
-
----
-
-# 文字列のマジックナンバー（マジックストリング）も定数化する
-
-比較や分岐に使う文字列リテラルも、数値のマジックナンバーと同様に定数化する。ただしUnion型で表現され型チェッカーが誤り（typo）を検出できる値（例: `'video' | 'image'`のような限定されたリテラル型同士の比較）は対象外とする。
-
-NG
-
-```typescript
-if (file.dateSource === 'metadata') {
-  // ...
-}
-```
-
-OK
-
-```typescript
-const DATE_SOURCE_METADATA = 'metadata';
-
-if (file.dateSource === DATE_SOURCE_METADATA) {
-  // ...
-}
-```
-
----
-
-# DRY（Don't Repeat Yourself）: 重複を避ける
-
-NG
-
-```typescript
-const user1Greeting = "Hello, Alice!";
-const user2Greeting = "Hello, Bob!";
-```
-
-OK
-
-```typescript
-const greetUser = (name: string) => `Hello, ${name}!`;
-const user1Greeting = greetUser("Alice");
-const user2Greeting = greetUser("Bob");
-```
-
-2箇所の実装が似ているものの、呼び出し元での用途（例: 表示用に文字列へ整形する／比較のため生の数値のまま使う）が異なる場合、「責務が違うから共通化しない」と判断したくなることがある。しかし**戻り値の型・後続の加工が分かれる手前まで、計算ロジック自体が完全に同一なら共通化の対象とする**こと。用途の違いは呼び出し元でその戻り値をどう加工するかの違いであり、計算ロジックが重複してよい理由にはならない（例: 「走行距離÷走行時間」という平均時速の算出式を、表示用フォーマット関数とフィルタ用関数の両方に独立して実装していたが、算出結果(number)を返すところまでが同一だったため、共通関数として切り出した）。
-
----
-
-# KISS（Keep It Simple, Stupid）: シンプルに保つ
-
-NG
-
-```typescript
-const calculateArea = (shape: 'rectangle' | 'circle', dimensions: number[]) => {
-  if (shape === 'rectangle') {
-    return dimensions[0] * dimensions[1];
-  } else if (shape === 'circle') {
-    return Math.PI * (dimensions[0] ** 2);
-  }
-};
-```
-
-OK
-
-```typescript
-const calculateRectangleArea = (width: number, height: number) => width * height;
-const calculateCircleArea = (radius: number) => Math.PI * (radius ** 2);
-```
-
----
-
-# YAGNI（You Aren't Gonna Need It）: 今必要なことだけやる
-
-NG
-
-```typescript
-type User = {
-  name: string;
-  role: 'admin' | 'user';
-  permissions: string[];
-};
-
-const createUser = (name: string, role: 'admin' | 'user'): User => {
-  // 将来使うかもしれないと見越して権限分岐をあらかじめ実装するが、実際には現状全員同じ権限
-  const permissions = role === 'admin' ? ['read', 'write', 'delete'] : ['read'];
-  return { name, role, permissions };
-};
-```
-
-OK
-
-```typescript
-type User = {
-  name: string;
-  permissions: string[];
-};
-
-const createUser = (name: string): User => {
-  return { name, permissions: ['read', 'write'] };
-};
-```
-
----
-
-# 車輪の再発明を避ける: 既存ライブラリやAPIを優先する
-
-NG
-
-```typescript
-// 自作のパス結合ユーティリティ
-const joinPaths = (dir: string, file: string) => {
-  return dir.endsWith('/') ? `${dir}${file}` : `${dir}/${file}`;
-};
-```
-
-OK
-
-```typescript
-import path from 'node:path';
-
-const filePath = path.join(dir, file);
-```
-
----
-
-# 割れ窓の法則を避ける: 小さな問題（エラーや警告）を放置しない
-
-NG
-
-```typescript
-// eslint-disable-next-line -- TODO: 後で any と警告を修正する
-const data: any = fetchedData;
-```
-
-OK
-
-```typescript
-const data: UserInfo = fetchedData;
-```
-
----
-
-# 名前重要: 意図の伝わる適切な命名を行う
-
-NG
-
-```typescript
-const c = 10;
-const calculateTotalAmountOfAllScannedFilesIncludingTaxes = (files: any[]) => {
-  // ...
-};
-```
-
-OK
-
-```typescript
-const fileCount = 10;
-const calculateTotalSize = (files: FileInfo[]) => {
-  // ...
-};
-```
-
----
-
-# SRP（単一責任の原則）: モジュールを変更する理由は1つにする
-
-NG
-
-```typescript
-const TodoList = () => {
-  const [todos, setTodos] = useState<Todo[]>([]);
-  const [isFetching, setIsFetching] = useState(true);
-
-  useEffect(() => {
-    fetch('/api/todos')
-      .then((res) => res.json())
-      .then(setTodos)
-      .finally(() => setIsFetching(false));
-  }, []);
-
-  return (
-    <ul>
-      {todos.map((todo) => (
-        <li key={todo.id}>{todo.title}</li>
-      ))}
-    </ul>
-  );
-};
-```
-
-OK
-
-```typescript
-const useFetchTodos = () => {
-  const [todos, setTodos] = useState<Todo[]>([]);
-  const [isFetching, setIsFetching] = useState(true);
-
-  useEffect(() => {
-    fetch('/api/todos')
-      .then((res) => res.json())
-      .then(setTodos)
-      .finally(() => setIsFetching(false));
-  }, []);
-
-  return { todos, isFetching };
-};
-
-const TodoList = () => {
-  const { todos } = useFetchTodos();
-
-  return (
-    <ul>
-      {todos.map((todo) => (
-        <li key={todo.id}>{todo.title}</li>
-      ))}
-    </ul>
-  );
-};
-```
-
-データ取得（フェッチ）と描画（表示）という2つの責任が1つのコンポーネントに混在すると、どちらかの都合で変更するたびにもう一方まで壊れるリスクが生まれる。カスタムhooksに分離することで、コンポーネントは「描画」だけに責任を持てる。
-
----
-
-# OCP（オープン・クローズドの原則）: 拡張に対して開き、修正に対して閉じる
-
-NG
-
-```typescript
-type TitleProps = {
-  title: string;
-  variant: 'default' | 'withLinkButton';
-  href?: string;
-};
-
-const Title = ({ title, variant, href }: TitleProps) => {
-  return (
-    <div>
-      <h1>{title}</h1>
-      {variant === 'withLinkButton' && <a href={href}>詳細</a>}
-    </div>
-  );
-};
-```
-
-OK
-
-```typescript
-const Title = ({ title, children }: { title: string; children?: ReactNode }) => {
-  return (
-    <div>
-      <h1>{title}</h1>
-      {children}
-    </div>
-  );
-};
-
-const TitleWithLink = ({ title, href }: { title: string; href: string }) => (
-  <Title title={title}>
-    <a href={href}>詳細</a>
-  </Title>
-);
-```
-
-NG例では新しいバリエーションを追加するたびに`Title`本体を修正し`variant`の分岐を増やす必要がある。OK例ではComposition（`children`によるコンポーネント合成）で拡張し、`Title`自体には変更を加えない。
-
----
-
-# LSP（リスコフの置換原則）: 期待される契約を満たす実装だけを渡す
-
-NG
-
-```typescript
-type FileStorage = {
-  save: (path: string, data: string) => void;
-};
-
-const createReadOnlyStorage = (): FileStorage => ({
-  save: () => {
-    throw new Error('read-only storageではsaveはサポートされません');
-  }
-});
-```
-
-OK
-
-```typescript
-type ReadableStorage = {
-  load: (path: string) => string;
-};
-
-type WritableStorage = ReadableStorage & {
-  save: (path: string, data: string) => void;
-};
-
-const createReadOnlyStorage = (): ReadableStorage => ({
-  load: (path) => fs.readFileSync(path, 'utf8')
-});
-```
-
-NG例は`FileStorage`型を満たすと期待して呼び出した側が`save()`を呼ぶと必ず例外になり、契約に違反する。OK例は「読み取り専用」と「書き込み可能」を型で分離し、`ReadableStorage`を期待する呼び出し側はどんな実装を渡されても契約通りに動作する。
-
----
-
-# ISP（インターフェース分離の原則）: 使わないプロパティへの依存を強制しない
-
-NG
-
-```typescript
-type Post = {
-  title: string;
-  author: { name: string; age: number };
-  createdAt: Date;
-};
-
-const PostTitle = ({ post }: { post: Post }) => <h1>{post.title}</h1>;
-const PostDate = ({ post }: { post: Post }) => <time>{post.createdAt.toISOString()}</time>;
-```
-
-OK
-
-```typescript
-const PostTitle = ({ title }: { title: string }) => <h1>{title}</h1>;
-const PostDate = ({ date }: { date: Date }) => <time>{date.toISOString()}</time>;
-```
-
-NG例は`title`しか使わないコンポーネントが`author`や`createdAt`を含む`Post`全体に依存しており、無関係な変更の影響を受けやすい。OK例は必要なプロパティのみを受け取ることで依存範囲を最小化する。
-
----
-
-# DIP（依存性逆転の原則）: 抽象に依存し、具象ライブラリに直接依存しない
-
-NG
-
-```typescript
-import useSWR from 'swr';
-
-const useTodos = () => {
-  const { data } = useSWR<Todo[]>('/api/todos', fetcher);
-  return data;
-};
-```
-
-OK
-
-```typescript
-type FetchResult<T> = {
-  data: T | undefined;
-  isLoading: boolean;
-};
-
-const useFetch = <T,>(key: string, fetcher: () => Promise<T>): FetchResult<T> => {
-  const { data, isValidating } = useSWR<T>(key, fetcher);
-  return { data, isLoading: isValidating };
-};
-
-const useTodos = () => useFetch<Todo[]>('/api/todos', fetchTodos);
-```
-
-NG例はコンポーネント側が`swr`という具体的なライブラリに直接依存しており、ライブラリを差し替えると呼び出し側すべてに影響する。OK例は`useFetch`という抽象インターフェースの裏に具象実装を隠すことで、将来ライブラリを差し替えてもコンポーネント側の変更が不要になる。
-
-参考: https://zenn.dev/koki_tech/articles/361bb8f2278764
-
----
-
-# UIはChakra UIコンポーネントを優先し、独自CSSクラスを新規作成しない
-
-NG
-```tsx
-// style.css側
-.drop-zone {
-  border: 2px dashed #333;
-  border-radius: 14px;
-  padding: 24px 16px;
-}
-
-// コンポーネント側
-<div className="drop-zone">...</div>
-```
-
-OK
-```tsx
-import { Box } from '@chakra-ui/react';
-
-<Box border="2px dashed" borderColor="borderDefault" borderRadius="14px" padding="24px 16px">
-  ...
-</Box>
-```
-
-独自CSSクラスと`style.css`のような全体共有スタイルシートは、スタイルの影響範囲がコンポーネント外に漏れ出し、命名衝突や「このクラスがどこで使われているか」の追跡を難しくする。Chakra UIの`Box`/`Flex`等のstyle propsを使い、スタイルの責務をコンポーネント自身に閉じ込める。モーダルやダイアログ等、アクセシビリティ（フォーカストラップ、Escapeキー対応等）を含む複雑な挙動はChakraが提供するコンポーネント（`Dialog`等）を使い、自前で実装しない（車輪の再発明を避ける）。
-
----
-
-# style propsが多くなりすぎる場合は専用コンポーネントかtheme recipeに切り出す
-
-NG
-```tsx
-// 同じ組み合わせのstyle propsをボタンを使う場所ごとに書き続ける
-<Button bg="linear-gradient(135deg, #8a2be2, #4a00e0)" color="#fff" boxShadow="0 4px 15px rgba(138, 43, 226, 0.3)" _hover={{ transform: 'translateY(-1px)' }}>
-  コピーを開始する
-</Button>
-```
-
-OK
-```tsx
-// CopyActions.tsx: このスタイルの組み合わせを使う専用コンポーネントに閉じ込める
-const PrimaryActionButton = (props: ButtonProps) => (
-  <Button bg={gradients.primary} color="#fff" boxShadow="0 4px 15px rgba(138, 43, 226, 0.3)" _hover={{ transform: 'translateY(-1px)' }} {...props} />
-);
-```
-
-同一の見た目が2箇所以上で使われる場合、または1要素に付与するstyle propsが5個を超える場合は、専用コンポーネント（同一ファイル内に閉じたprivateコンポーネントでもよい）かChakraのtheme recipeに切り出す。呼び出し側でstyle propsを毎回書き直すと、見た目を変更する際の修正漏れや、そもそも何のためのpropsか読み取りにくくなる問題が起きる。
-
----
-
-# 色は生のカラーコードではなく意味を持たせた名前のトークンとして管理する
-
-NG
-```tsx
-<Box bg="rgba(30, 30, 45, 0.6)" color="#f0f0f5">
-  ...
-</Box>
-```
-
-OK
-```tsx
-// src/theme.ts側でトークンとして定義する
-colors: {
-  bgSurface: { value: 'rgba(30, 30, 45, 0.6)' },
-  textMain: { value: '#f0f0f5' }
-}
-
-// コンポーネント側はトークン名を参照する
-<Box bg="bgSurface" color="textMain">
-  ...
-</Box>
-```
-
-生のカラーコード（`#8a2be2`や`rgba(...)`）をコンポーネントに直接書くと、同じ色のつもりで微妙に異なる値が紛れ込んだり、色を変更する際に修正漏れが起きる。`src/theme.ts`の`colors`トークンとして一元管理し、コンポーネントからは必ずトークン名で参照する。
-
-**新しい色を安易に増やさない**: 色を追加する前に、既存のトークンで役割を表現できないか必ず検討する。目安として以下のように「役割」ごとに色を用意し、同じ役割の色が複数の微妙に異なる値に分裂しないようにする。
-- メイン（ブランド・アクション）: `brandPrimary` / `brandPrimaryHover` / `brandPrimaryMuted`
-- サブ（補助的な強調）: 用途ごとに`*Accent`のようなトークンを用意する
-- エラー・キャンセル: `danger`
-- テキスト: `textMain` / `textMuted` / `textInverse`
-- 背景・ボーダー・オーバーレイ: `bg*` / `border*` / `overlay*` / `scrim*`（いずれも「弱・中・強」等の少数の段階に収める）
-
----
-
-# 余白・サイズはChakraのデザイントークンを最優先し、無い場合は4pxルールで定数化する
-
-NG
-```tsx
-<Box padding="17px" gap="10px" borderRadius="14px">
-  ...
-</Box>
-```
-
-OK
-```tsx
-// 1. 最優先: Chakraが提供する標準スケール（4の倍数を基本としたspacing/sizes/radii等のトークン）をそのまま使う
-<Box padding="4" gap="2.5" borderRadius="xl">
-  ...
-</Box>
-
-// 2. Chakraの標準スケールに一致する値が無い場合は、4pxの倍数に丸めた上でsrc/theme.tsに定数化する
-// src/theme.ts
-export const layout = {
-  sidebarWidth: '340px' // 4pxの倍数。Chakraのsizesトークンには一致する値が無いため定数化する
-};
-```
-
-余白・サイズにその場限りの数値（マジックナンバー）を使うと、値の一貫性が失われ「なぜその数値なのか」が分からなくなる。**最優先でChakraが提供するデザイントークン**（`padding="4"`のような数値スケール、`fontSize="sm"`、`borderRadius="xl"`等）を使うこと。Chakraのトークンに一致する値が存在しない場合に限り、4pxの倍数に丸めた値を`src/theme.ts`に定数化して使う。既存デザインの寸法が4の倍数でない場合、4の倍数に丸めることによる見た目の変化は許容する（`specs/system_specification.md`のUI/UXコンセプトから逸脱しない範囲であればよい）。
-
----
-
-# 複数コンポーネントで使う色・余白・サイズのパターンはグローバルなファイルにまとめる
-
-NG
-```tsx
-// FileCard.tsxとProgressPanel.tsxのそれぞれで同じ色を別々に書く
-// FileCard.tsx
-<Box bg="rgba(0, 0, 0, 0.2)">...</Box>
-// ProgressPanel.tsx
-<Box bg="rgba(0, 0, 0, 0.2)">...</Box>
-```
-
-OK
-```tsx
-// src/theme.ts: 一箇所にまとめて定義する
-colors: {
-  scrimMedium: { value: 'rgba(0, 0, 0, 0.2)' }
-}
-
-// 各コンポーネントはトークン名で参照するだけにする
-<Box bg="scrimMedium">...</Box>
-```
-
-色・フォントサイズ・余白サイズ等が複数のコンポーネントで共通して使われるようになってきたら、コンポーネントごとに同じ値を書き写すのではなく、`src/theme.ts`（Chakraのtheme tokens、または`gradients`/`shadows`/`layout`等のプレーンな定数export）に一元化し、各コンポーネントはそこから参照する。
-
----
-
-# コミットメッセージにはプレフィックスを付与する
-
-NG
-```git
-git commit -m "地図表示コンポーネントを追加"
-```
-
-OK
-```git
-git commit -m "feat: 地図表示コンポーネントを追加"
-```
-
-コミットする変更の性質に応じて、以下のプレフィックスを必ず付与すること：
-- `feat:` (新機能やスキルの追加)
-- `fix:` (バグ修正)
-- `docs:` (ドキュメントや規約、コメントのみの修正)
-- `style:` (コードの意味に影響しないフォーマットなどの修正)
-- `refactor:` (機能追加やバグ修正を含まないリファクタリング)
-- `test:` (テストの追加や修正)
-- `chore:` (ビルド構成や雑多な設定の修正)
+Biomeの`useArrowFunction`が自動検出する。
 
 ---
 
@@ -1169,45 +436,6 @@ const INSERT_BATCH_SIZE = 500;
 ```
 
 定数の値そのものだけでは、それが「なぜその値なのか」「省略するとどう壊れるのか」がコードから読み取れない場合（DBのバインドパラメータ上限・外部APIのレート制限・OSやライブラリの既知の制約など、実装対象のドメインロジックではなく外部システムの仕様に起因する制約）は、値の意図をコメントで明示すること。特に「なぜこの値を超えてはいけないか」という制約の出どころ（PostgreSQL・Strava API等、具体的な対象）を明記する。
-
----
-
-# コンポーネントファイルには表示に関する関数・TSXのみを置く
-
-NG
-```typescript
-// MapView.tsx
-const findActivityById = (activities: CyclingActivity[], id: string | null): CyclingActivity | null => {
-  if (id === null) {
-    return null;
-  }
-  return activities.find((activity) => activity.id === id) ?? null;
-};
-
-export const MapView = (props: MapViewProps) => {
-  // findActivityByIdを使って描画する
-};
-```
-
-OK
-```typescript
-// utils/findActivityById.ts
-export const findActivityById = (activities: CyclingActivity[], id: string | null): CyclingActivity | null => {
-  if (id === null) {
-    return null;
-  }
-  return activities.find((activity) => activity.id === id) ?? null;
-};
-
-// MapView.tsx
-import { findActivityById } from '../utils/findActivityById';
-
-export const MapView = (props: MapViewProps) => {
-  // findActivityByIdを使って描画する
-};
-```
-
-コンポーネントファイル（`components/`配下）には、表示（JSX）や地図ライブラリ操作等の画面に直接関わる処理のみを置く。データの検索・変換等、画面表示に依存しない純粋関数はコンポーネントファイル内に定義せず`utils/`へ切り出すこと。切り出すことで、DOMや外部ライブラリのモック無しに単体テストできるようになり、コンポーネントファイル自体の見通しも良くなる（PR #36レビュー対応）。
 
 ---
 
