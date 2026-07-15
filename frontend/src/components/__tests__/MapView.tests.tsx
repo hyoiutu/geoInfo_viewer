@@ -11,11 +11,17 @@ import {
 } from '../../constants/aerialPhoto';
 import {
   BICYCLE_LOG_FOCUSED_LAYER_ID,
+  BICYCLE_LOG_FOCUSED_OUTLINE_COLOR,
+  BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+  BICYCLE_LOG_FOCUSED_OUTLINE_WIDTH,
   BICYCLE_LOG_FOCUSED_SOURCE_ID,
   BICYCLE_LOG_LAYER_ID,
   BICYCLE_LOG_LINE_COLOR_DEFAULT,
   BICYCLE_LOG_LINE_COLOR_FOCUSED,
   BICYCLE_LOG_LINE_COLOR_SELECTED,
+  BICYCLE_LOG_LINE_WIDTH_DEFAULT,
+  BICYCLE_LOG_LINE_WIDTH_FOCUSED,
+  BICYCLE_LOG_LINE_WIDTH_SELECTED,
   BICYCLE_LOG_SELECTED_LAYER_ID,
   BICYCLE_LOG_SELECTED_SOURCE_ID,
   BICYCLE_LOG_SOURCE_ID
@@ -205,6 +211,11 @@ describe('MapViewに関するテスト', () => {
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(AERIAL_PHOTO_LAYER_ID, 'visibility', 'none');
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(BICYCLE_LOG_LAYER_ID, 'visibility', 'none');
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(BICYCLE_LOG_SELECTED_LAYER_ID, 'visibility', 'none');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(
+      BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+      'visibility',
+      'none'
+    );
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(BICYCLE_LOG_FOCUSED_LAYER_ID, 'visibility', 'none');
   });
 
@@ -238,7 +249,10 @@ describe('MapViewに関するテスト', () => {
         id: BICYCLE_LOG_LAYER_ID,
         type: 'line',
         source: BICYCLE_LOG_SOURCE_ID,
-        paint: expect.objectContaining({ 'line-color': BICYCLE_LOG_LINE_COLOR_DEFAULT })
+        paint: expect.objectContaining({
+          'line-color': BICYCLE_LOG_LINE_COLOR_DEFAULT,
+          'line-width': BICYCLE_LOG_LINE_WIDTH_DEFAULT
+        })
       })
     );
     expect(mapInstance.addLayer).toHaveBeenCalledWith(
@@ -246,7 +260,22 @@ describe('MapViewに関するテスト', () => {
         id: BICYCLE_LOG_SELECTED_LAYER_ID,
         type: 'line',
         source: BICYCLE_LOG_SELECTED_SOURCE_ID,
-        paint: expect.objectContaining({ 'line-color': BICYCLE_LOG_LINE_COLOR_SELECTED })
+        paint: expect.objectContaining({
+          'line-color': BICYCLE_LOG_LINE_COLOR_SELECTED,
+          'line-width': BICYCLE_LOG_LINE_WIDTH_SELECTED
+        })
+      })
+    );
+    // フォーカス中の線は、他の線に埋もれず視認できるよう地図背景色のハロー(縁取り)を本体の下に敷く
+    expect(mapInstance.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+        type: 'line',
+        source: BICYCLE_LOG_FOCUSED_SOURCE_ID,
+        paint: expect.objectContaining({
+          'line-color': BICYCLE_LOG_FOCUSED_OUTLINE_COLOR,
+          'line-width': BICYCLE_LOG_FOCUSED_OUTLINE_WIDTH
+        })
       })
     );
     expect(mapInstance.addLayer).toHaveBeenCalledWith(
@@ -254,15 +283,21 @@ describe('MapViewに関するテスト', () => {
         id: BICYCLE_LOG_FOCUSED_LAYER_ID,
         type: 'line',
         source: BICYCLE_LOG_FOCUSED_SOURCE_ID,
-        paint: expect.objectContaining({ 'line-color': BICYCLE_LOG_LINE_COLOR_FOCUSED })
+        paint: expect.objectContaining({
+          'line-color': BICYCLE_LOG_LINE_COLOR_FOCUSED,
+          'line-width': BICYCLE_LOG_LINE_WIDTH_FOCUSED
+        })
       })
     );
-    // レイヤーが追加された順（通常→選択→フォーカス）で手前に描画される
+    // レイヤーが追加された順（通常→選択→フォーカスのハロー→フォーカス本体）で手前に描画される
     const layerIdCallOrder = mapInstance.addLayer.mock.calls.map(([layer]: [{ id: string }]) => layer.id);
     expect(layerIdCallOrder.indexOf(BICYCLE_LOG_LAYER_ID)).toBeLessThan(
       layerIdCallOrder.indexOf(BICYCLE_LOG_SELECTED_LAYER_ID)
     );
     expect(layerIdCallOrder.indexOf(BICYCLE_LOG_SELECTED_LAYER_ID)).toBeLessThan(
+      layerIdCallOrder.indexOf(BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID)
+    );
+    expect(layerIdCallOrder.indexOf(BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID)).toBeLessThan(
       layerIdCallOrder.indexOf(BICYCLE_LOG_FOCUSED_LAYER_ID)
     );
   });
