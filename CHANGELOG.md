@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-07-16] PR #55のレビュー対応としてDialog系コンポーネントの共通ラッパーAppDialogを切り出した
+* **修正の動機・概要**:
+  - PR #55（Issue #47対応）で追加した`check-file-size.mjs`のレビューで、「主にDialog系ファイルでJSXネスト深さの閾値超過が発生しているが、共通コンポーネントとして切り出せばネストを浅くできないか」という指摘を受けた。
+  - `LayerDialog`・`SettingsDialog`・`FilterDialog`・`ErrorDialog`の4コンポーネントを確認したところ、いずれもChakra UIの`Dialog.Root`/`Dialog.Backdrop`/`Dialog.Positioner`/`Dialog.Content`/`Dialog.Header`（タイトル+閉じるボタン）/`Dialog.Body`/`Dialog.Footer`/`Dialog.CloseTrigger`という同一のラッパー構造を持っていることを確認し、`AppDialog`（新規）として共通化した。
+  - `ErrorDialog`は他の3つと異なり、閉じる(×)ボタンが無くrole="alertdialog"・タイトルが動的（件数表示）という点で差異があったため、`AppDialog`に`showCloseButton`（省略時true）・`role`（省略時'dialog'）・`title`をReactNodeとして受け取れるオプションを設け、いずれのケースにも対応できるようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/components/AppDialog.tsx`（新規）・`frontend/src/components/__tests__/AppDialog.tests.tsx`（新規）。
+    - `frontend/src/components/LayerDialog.tsx`・`SettingsDialog.tsx`・`FilterDialog.tsx`・`ErrorDialog.tsx`: `AppDialog`を使うようリファクタリング（振る舞いの変更は無い、既存テストは無修正のまま全てGreen）。
+    - `check:file-size`で検出していた`LayerDialog.tsx`のJSXネスト深さ超過（9、閾値8）を解消したことを確認済み。
+    - 単体テスト（フロントエンド202件）・lint・typecheckは全てGreen。E2Eテスト4件も実行し（1回目は既知のタイル読み込み・タイミングのフレーキーさで2件失敗したが、再実行で全て成功）、実装変更による回帰でないことを確認した。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（UIの見た目・挙動に変更は無く内部実装の共通化のため）。
+  * **設計書**: `designs/class_diagram.md`のフロントエンドのクラス図に`AppDialog`と4ダイアログからの依存関係を追加。
+
 ### [2026-07-15] GitHub Issue #47としてrules.mdを分割し機械チェック可能なルールをスクリプトへ移行した
 * **修正の動機・概要**:
   - rules.mdが1000行を超えており、エージェントがこれを全て読み込んでも守りきれていないという依頼（Issue #47）。自律モードで対応した。issue-reviewの観点（大規模な再編・分割Issueは境界の判断基準を先に固める）に従い、以下の方針を決めた上で着手した。
