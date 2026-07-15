@@ -56,7 +56,7 @@ export class StravaActivitiesService {
 
   /**
    * レート制限を守りながら、全ページを辿ってサイクリング系アクティビティを全件取得する。
-   * 初期取り込み(バックフィル)のプレースホルダー作成に使う
+   * バックフィルのプレースホルダー作成に使う
    * @returns サイクリング系アクティビティの全件一覧
    */
   async fetchAllCyclingActivities(): Promise<StravaActivity[]> {

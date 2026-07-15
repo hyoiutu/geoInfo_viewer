@@ -1,35 +1,42 @@
-import { Flex } from '@chakra-ui/react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Box, Flex } from '@chakra-ui/react';
+import { useEffect, useMemo, useState } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
 import { LAYER_DEFINITIONS } from '../constants/layerDefinitions';
 import { useActivityFilter } from '../hooks/useActivityFilter';
 import { useActivitySelection } from '../hooks/useActivitySelection';
+import { useBackfillProgressFooter } from '../hooks/useBackfillProgressFooter';
 import { useBackfillStatus } from '../hooks/useBackfillStatus';
 import { useLayerVisibility } from '../hooks/useLayerVisibility';
-import type { AppErrorInfo } from '../types/apiError';
 import { filterActivities } from '../utils/filterActivities';
 import { ActivityDetailSidebar } from './ActivityDetailSidebar';
+import { BackfillProgressFooter } from './BackfillProgressFooter';
 import { ErrorDialog } from './ErrorDialog';
 import { FilterDialog } from './FilterDialog';
-import { LayerSidebar } from './LayerSidebar';
+import { LayerDialog } from './LayerDialog';
+import { MapControls } from './MapControls';
 import { MapView } from './MapView';
+import { SettingsDialog } from './SettingsDialog';
 
 /**
- * サイドバー・地図・エラーダイアログを組み合わせたアプリのメイン画面。
- * レイヤーの表示状態・初期取り込み進捗・エラー状態・アクティビティの選択状態をここで一元管理し、各コンポーネントへpropsとして渡す
+ * 地図・Map Controls・各種ダイアログを組み合わせたアプリのメイン画面。
+ * レイヤーの表示状態・アクティビティの選択状態をここで一元管理し、各コンポーネントへpropsとして渡す。
+ * エラー状態はグローバルステート（errorsAtom）で管理するため、ここでは保持しない
  */
 export const MapWorkspace = () => {
-  const { visibility, toggleLayer } = useLayerVisibility();
-  const [errors, setErrors] = useState<AppErrorInfo[]>([]);
-  // 複数箇所（同期・初期取り込み等）で同時にエラーが発生してもどれも見失わないよう、
-  // 上書きせずスタック（配列末尾に追加）する。表示・切り替えはErrorDialog側が担う。
-  const addError = useCallback((error: AppErrorInfo) => {
-    setErrors((current) => [...current, error]);
-  }, []);
-  const dismissError = useCallback((index: number) => {
-    setErrors((current) => current.filter((_, currentIndex) => currentIndex !== index));
-  }, []);
-  const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus(addError);
+  const {
+    appliedVisibility,
+    draftVisibility,
+    isDialogOpen: isLayerDialogOpen,
+    openDialog: openLayerDialog,
+    closeDialog: closeLayerDialog,
+    toggleDraft: toggleLayerDraft,
+    resetDraft: resetLayerDraft,
+    applyDraft: applyLayerDraft
+  } = useLayerVisibility();
+  const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus();
+  const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =
+    useBackfillProgressFooter(backfillStatus);
+  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
   const { selectedIds, focusedIndex, selectActivities, focusActivity, clearFocus, clearSelection, pruneToVisible } =
     useActivitySelection();
@@ -60,39 +67,47 @@ export const MapWorkspace = () => {
   const layers = LAYER_DEFINITIONS.map((layerDefinition) => ({
     id: layerDefinition.id,
     name: layerDefinition.name,
-    checked: visibility[layerDefinition.id]
+    checked: draftVisibility[layerDefinition.id]
   }));
 
   return (
     <Flex height="100vh">
-      <LayerSidebar
-        layers={layers}
-        onToggleLayer={toggleLayer}
-        backfillStatus={backfillStatus}
-        onStartBackfill={() => {
-          void startBackfill();
-        }}
-        onStartForceRefetch={() => {
-          void startForceRefetch();
-        }}
-        onOpenFilterDialog={openFilterDialog}
-      />
-      <MapView
-        layerVisibility={visibility}
-        onError={addError}
-        selectedIds={selectedIds}
-        focusedId={focusedId}
-        onSelectActivities={selectActivities}
-        onActivitiesLoaded={setActivities}
-        filter={appliedFilter}
-      />
+      <Flex direction="column" flex="1" minWidth="0">
+        <Box position="relative" flex="1" minHeight="0">
+          <MapView
+            layerVisibility={appliedVisibility}
+            selectedIds={selectedIds}
+            focusedId={focusedId}
+            onSelectActivities={selectActivities}
+            onActivitiesLoaded={setActivities}
+            filter={appliedFilter}
+          />
+          <MapControls
+            onOpenLayerDialog={openLayerDialog}
+            onOpenFilterDialog={openFilterDialog}
+            onOpenSettingsDialog={() => setIsSettingsDialogOpen(true)}
+          />
+        </Box>
+        <BackfillProgressFooter
+          isVisible={isBackfillFooterVisible}
+          backfillStatus={backfillStatus}
+          onDismiss={dismissBackfillFooter}
+        />
+      </Flex>
       <ActivityDetailSidebar
         activities={selectedActivities}
         focusedIndex={focusedIndex}
         onFocus={focusActivity}
         onBackFromDetail={clearFocus}
         onBackFromList={clearSelection}
-        onError={addError}
+      />
+      <LayerDialog
+        isOpen={isLayerDialogOpen}
+        layers={layers}
+        onToggleDraft={toggleLayerDraft}
+        onReset={resetLayerDraft}
+        onApply={applyLayerDraft}
+        onClose={closeLayerDialog}
       />
       <FilterDialog
         isOpen={isFilterDialogOpen}
@@ -102,7 +117,18 @@ export const MapWorkspace = () => {
         onApply={applyFilterDraft}
         onClose={closeFilterDialog}
       />
-      <ErrorDialog errors={errors} onDismiss={dismissError} />
+      <SettingsDialog
+        isOpen={isSettingsDialogOpen}
+        isBackfillRunning={backfillStatus?.isRunning ?? false}
+        onStartBackfill={() => {
+          void startBackfill();
+        }}
+        onStartForceRefetch={() => {
+          void startForceRefetch();
+        }}
+        onClose={() => setIsSettingsDialogOpen(false)}
+      />
+      <ErrorDialog />
     </Flex>
   );
 };

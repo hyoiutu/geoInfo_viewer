@@ -26,13 +26,13 @@ export type CyclingActivity = {
 
 /** syncCyclingActivitiesの実行結果 */
 export type SyncResult = {
-  /** 同期処理が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げられる） */
+  /** 新規アクティビティ取得が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げられる） */
   success: boolean;
 };
 
 /** startBackfillの実行結果 */
 export type BackfillStartResult = {
-  /** 新たに初期取り込みを開始したか（既に実行中だった場合はfalse） */
+  /** 新たにバックフィルを開始したか（既に実行中だった場合はfalse） */
   started: boolean;
 };
 
@@ -44,7 +44,7 @@ export type PassedMunicipality = {
   municipalityName: string;
 };
 
-/** getBackfillStatusが返す初期取り込みの進捗状況 */
+/** getBackfillStatusが返すバックフィルの進捗状況 */
 export type BackfillStatus = {
   /** 現在実行中かどうか */
   isRunning: boolean;
@@ -104,7 +104,7 @@ export const fetchCyclingActivities = async (): Promise<CyclingActivity[]> => {
  * Strava上の新規アクティビティを取得しDBへ反映する。
  * バックエンド側のisRunningガード（自転車ログ表示中に既にバックフィルが動いている場合）はエラーではなく
  * success:falseで表現するため、それ以外の失敗（Strava APIエラー等）のみをApiErrorとして投げる。
- * @returns 同期結果
+ * @returns 新規アクティビティ取得結果
  */
 export const syncCyclingActivities = async (): Promise<SyncResult> => {
   const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_SYNC_PATH}`, { method: HTTP_METHOD_POST });
@@ -117,7 +117,7 @@ export const syncCyclingActivities = async (): Promise<SyncResult> => {
 };
 
 /**
- * 初期取り込み(バックフィル)を開始する
+ * バックフィルを開始する
  * @returns 開始結果
  */
 export const startBackfill = async (): Promise<BackfillStartResult> => {
@@ -132,7 +132,7 @@ export const startBackfill = async (): Promise<BackfillStartResult> => {
 
 /**
  * 既存全アクティビティの詳細を、detailFetchedAtの状態にかかわらず強制的に再取得する。
- * 初期取り込み(バックフィル)とisRunningガードを共有するため、どちらか一方が実行中はもう一方を開始できない。
+ * バックフィルとisRunningガードを共有するため、どちらか一方が実行中はもう一方を開始できない。
  * @returns 開始結果
  */
 export const startForceRefetch = async (): Promise<BackfillStartResult> => {
@@ -148,7 +148,7 @@ export const startForceRefetch = async (): Promise<BackfillStartResult> => {
 };
 
 /**
- * 初期取り込み(バックフィル)の進捗状況を取得する
+ * バックフィルの進捗状況を取得する
  * @returns 進捗状況
  */
 export const getBackfillStatus = async (): Promise<BackfillStatus> => {

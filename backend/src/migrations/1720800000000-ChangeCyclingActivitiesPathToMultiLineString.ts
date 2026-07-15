@@ -5,7 +5,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * トンネル内・フェリー乗船中等の測定不能区間による位置飛び（隣接点間10km以上）を、
  * 単一の線ではなく複数の区間に分けて保持できるようにするため（Issue #27）。
  * 既存行はST_Multi()で単一区間のMultiLineStringへそのまま変換する（位置飛びの再判定は行わない）。
- * 既存アクティビティに実際に位置飛びの分割を適用するには、「自転車ログ強制再取得」ボタンで再取得する
+ * 既存アクティビティに実際に位置飛びの分割を適用するには、「フォースリフェッチ」ボタンで再取得する
  */
 export class ChangeCyclingActivitiesPathToMultiLineString1720800000000 implements MigrationInterface {
   /**

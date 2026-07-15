@@ -39,7 +39,7 @@ const mapBaseFields = (
 };
 
 /**
- * 初期取り込み(バックフィル)でDBにIDだけ先に挿入しておくためのプレースホルダーEntityを作る。
+ * バックフィルでDBにIDだけ先に挿入しておくためのプレースホルダーEntityを作る。
  * 詳細取得(GET /activities/{id})が完了するまでは位置情報を持たせない方針のため、
  * summary_polylineが取得できていてもpathには反映しない。
  * @param activity 変換元の一覧APIレスポンス

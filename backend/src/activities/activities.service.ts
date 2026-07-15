@@ -15,15 +15,15 @@ const NO_ACTIVITIES = 0;
 
 /** sync()の実行結果 */
 export class SyncResult {
-  /** 同期処理が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げる） */
+  /** 新規アクティビティ取得が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げる） */
   @ApiProperty({
     description:
-      '同期処理が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げる）'
+      '新規アクティビティ取得が実行されたか（バックフィル実行中ガードでスキップした場合はfalse。実際のエラーは例外として投げる）'
   })
   success!: boolean;
 }
 
-/** 自転車ログ(サイクリングアクティビティ)の参照・Strava同期を行うサービス */
+/** 自転車ログ(サイクリングアクティビティ)の参照・Strava新規アクティビティ取得を行うサービス */
 @Injectable()
 export class ActivitiesService {
   constructor(
@@ -42,9 +42,9 @@ export class ActivitiesService {
   }
 
   /**
-   * 前回同期時刻以降にStravaへ追加されたアクティビティを取得し、DBへ反映する。
-   * 初期取り込み(バックフィル)実行中の場合は、二重取得を避けるため何もせず終了する
-   * @returns 同期結果
+   * 前回の新規アクティビティ取得時刻以降にStravaへ追加されたアクティビティを取得し、DBへ反映する。
+   * バックフィル実行中の場合は、二重取得を避けるため何もせず終了する
+   * @returns 新規アクティビティ取得結果
    */
   async sync(): Promise<SyncResult> {
     if (this.activitiesBackfillService.isRunning()) {
@@ -73,7 +73,7 @@ export class ActivitiesService {
     return { success: true };
   }
 
-  /** @returns 既存の同期状態。存在しない場合は初回同期を表す未保存のEntity */
+  /** @returns 既存の新規アクティビティ取得状態。存在しない場合は初回取得を表す未保存のEntity */
   private async getOrCreateSyncState(): Promise<SyncStateEntity> {
     const existing = await this.syncStateRepository.findOneBy({ id: SYNC_STATE_SINGLETON_ID });
     if (existing !== null) {

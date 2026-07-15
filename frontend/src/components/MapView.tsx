@@ -3,6 +3,7 @@ import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Root } from 'react-dom/client';
 import {
   type CyclingActivity,
   fetchCyclingActivities,
@@ -30,12 +31,14 @@ import {
   BICYCLE_LOG_SELECTED_SOURCE_ID,
   BICYCLE_LOG_SOURCE_ID
 } from '../constants/bicycleLog';
+import { useErrorReporter } from '../hooks/useErrorReporter';
 import type { ActivityFilter } from '../types/activityFilter';
 import type { AppErrorInfo } from '../types/apiError';
 import type { LayerVisibility, ToggleableLayerId } from '../types/layer';
 import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
 import { filterActivities } from '../utils/filterActivities';
+import { findActivityById } from '../utils/findActivityById';
 import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
 import { createGoalMarkerElement, createStartMarkerElement } from '../utils/startGoalMarkerElement';
 
@@ -53,8 +56,6 @@ const HIT_TEST_RADIUS_PX = 5;
 type MapViewProps = {
   /** レイヤーIDごとの表示/非表示状態 */
   layerVisibility: LayerVisibility;
-  /** API呼び出し等でエラーが発生したときに呼ばれるコールバック */
-  onError: (error: AppErrorInfo) => void;
   /** 選択中のアクティビティID一覧 */
   selectedIds: string[];
   /** フォーカス中のアクティビティID。未フォーカスの場合はnull */
@@ -111,7 +112,7 @@ const addBicycleLogLayer = (map: maplibregl.Map) => {
 };
 
 /**
- * Strava上の新規アクティビティを同期し、取得したアクティビティ一覧をコールバックで通知する。
+ * Strava上の新規アクティビティを取得し、取得したアクティビティ一覧をコールバックで通知する。
  * 地図への反映（フィルタ適用後のGeoJSON設定）はこの関数の呼び出し元が別途行う
  * @param onError API呼び出し失敗時に呼ばれるコールバック
  * @param onActivitiesLoaded 取得に成功したアクティビティ一覧を渡すコールバック
@@ -120,7 +121,7 @@ const syncAndLoadBicycleLog = async (
   onError: (error: AppErrorInfo) => void,
   onActivitiesLoaded: (activities: CyclingActivity[]) => void
 ) => {
-  // 初期取り込み(バックフィル)実行中は更新用APIを呼ばず、その時点でDBに取得済みの分だけ表示する
+  // バックフィル実行中は新規アクティビティ取得を呼ばず、その時点でDBに取得済みの分だけ表示する
   const backfillStatus = await getBackfillStatus().catch(() => null);
   if (!backfillStatus?.isRunning) {
     let syncResult: SyncResult;
@@ -179,19 +180,6 @@ const registerBicycleLogClickHandler = (
 };
 
 /**
- * アクティビティ一覧からIDで1件を探す
- * @param activities 検索対象のアクティビティ一覧
- * @param id 探すID。nullの場合は常にnullを返す
- * @returns 見つかったアクティビティ。無い場合はnull
- */
-const findActivityById = (activities: CyclingActivity[], id: string | null): CyclingActivity | null => {
-  if (id === null) {
-    return null;
-  }
-  return activities.find((activity) => activity.id === id) ?? null;
-};
-
-/**
  * 選択・フォーカス状態を、自転車ログの選択用・フォーカス用レイヤーのGeoJSONデータへ反映する。
  * selectedIdsの並び順（通し番号の昇順）をそのままfeatures配列の並びとして使う。MapLibreは
  * 単一ソース内で後の要素ほど手前に描画するため、これにより「通し番号が大きいものほど手前」というdraw順が実現される
@@ -223,6 +211,14 @@ const applySelectionLayers = (
   focusedSource.setData(cyclingActivityToGeoJson(focusedActivity ? [focusedActivity] : []));
 };
 
+/** スタート・ゴールマーカー1件分の、地図上のMarkerとそのアイコンを描画しているReact rootの組 */
+type StartGoalMarkerEntry = {
+  /** 地図上のMarkerインスタンス */
+  marker: maplibregl.Marker;
+  /** マーカーのアイコンをレンダリングしているReact root */
+  root: Root;
+};
+
 /**
  * フォーカス中のアクティビティの開始地点・終了地点に、スタート・ゴールを示すマーカーを表示する。
  * pathは位置飛び（測定不能区間）で区間分割された座標配列の配列のため、最初の区間の最初の点をスタート、
@@ -230,16 +226,17 @@ const applySelectionLayers = (
  * マーカーを全て取り除く。開始地点と終了地点が同じ座標の場合（周回ルート等）に手前へ描画されるよう、
  * スタートのマーカーを後から追加する
  * @param map 反映先のMapLibre地図インスタンス
- * @param markersRef 直前に表示していたマーカーを保持するref（今回分の反映前に取り除くために使う）
+ * @param markersRef 直前に表示していたマーカー・React rootの組を保持するref（今回分の反映前に取り除くために使う）
  * @param focusedActivity フォーカス中のアクティビティ。未フォーカスの場合はnull
  */
 const applyStartGoalMarkers = (
   map: maplibregl.Map,
-  markersRef: { current: maplibregl.Marker[] },
+  markersRef: { current: StartGoalMarkerEntry[] },
   focusedActivity: CyclingActivity | null
 ) => {
-  for (const marker of markersRef.current) {
+  for (const { marker, root } of markersRef.current) {
     marker.remove();
+    root.unmount();
   }
   markersRef.current = [];
 
@@ -252,10 +249,15 @@ const applyStartGoalMarkers = (
 
   const startPoint = firstSegment[0];
   const goalPoint = lastSegment[lastSegment.length - 1];
-  const goalMarker = new maplibregl.Marker({ element: createGoalMarkerElement() }).setLngLat(goalPoint).addTo(map);
-  const startMarker = new maplibregl.Marker({ element: createStartMarkerElement() }).setLngLat(startPoint).addTo(map);
+  const goal = createGoalMarkerElement();
+  const goalMarker = new maplibregl.Marker({ element: goal.element }).setLngLat(goalPoint).addTo(map);
+  const start = createStartMarkerElement();
+  const startMarker = new maplibregl.Marker({ element: start.element }).setLngLat(startPoint).addTo(map);
 
-  markersRef.current = [goalMarker, startMarker];
+  markersRef.current = [
+    { marker: goalMarker, root: goal.root },
+    { marker: startMarker, root: start.root }
+  ];
 };
 
 /**
@@ -296,21 +298,21 @@ const applyLayerVisibility = (
   }
 };
 
-/** MapLibreの地図本体を表示し、レイヤーの表示/非表示・自転車ログの同期・選択状態の描画を行うコンポーネント */
+/** MapLibreの地図本体を表示し、レイヤーの表示/非表示・自転車ログの新規アクティビティ取得・選択状態の描画を行うコンポーネント */
 export const MapView = ({
   layerVisibility,
-  onError,
   selectedIds,
   focusedId,
   onSelectActivities,
   onActivitiesLoaded,
   filter
 }: MapViewProps) => {
+  const addError = useErrorReporter();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
   const wasBicycleLogVisibleRef = useRef(false);
-  const startGoalMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const startGoalMarkersRef = useRef<StartGoalMarkerEntry[]>([]);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
   const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
@@ -330,8 +332,12 @@ export const MapView = ({
       container: containerRef.current,
       style: OSM_VECTOR_STYLE_URL,
       center: DEFAULT_CENTER,
-      zoom: DEFAULT_ZOOM
+      zoom: DEFAULT_ZOOM,
+      // マップコントロール（地図右下、Issue #32）とライセンス表記が重ならないよう、
+      // デフォルトの右下配置ではなく左下へ変更する
+      attributionControl: false
     });
+    map.addControl(new maplibregl.AttributionControl(), 'bottom-left');
     mapRef.current = map;
 
     map.once('load', () => {
@@ -389,7 +395,7 @@ export const MapView = ({
   }, [filteredActivities, focusedId, isStyleLoaded]);
 
   // layerVisibilityが変化するたびに各レイヤーの表示/非表示を反映し、
-  // 自転車ログレイヤーがOFF→ONに変化した場合はStrava同期・データ取得を行う
+  // 自転車ログレイヤーがOFF→ONに変化した場合はStrava新規アクティビティ取得・データ取得を行う
   useEffect(() => {
     const map = mapRef.current;
     const categorizedLayerIds = categorizedLayerIdsRef.current;
@@ -404,12 +410,12 @@ export const MapView = ({
     wasBicycleLogVisibleRef.current = isBicycleLogVisible;
 
     if (!wasBicycleLogVisible && isBicycleLogVisible) {
-      void syncAndLoadBicycleLog(onError, (loaded) => {
+      void syncAndLoadBicycleLog(addError, (loaded) => {
         setActivities(loaded);
         onActivitiesLoaded(loaded);
       });
     }
-  }, [layerVisibility, isStyleLoaded, onError, onActivitiesLoaded]);
+  }, [layerVisibility, isStyleLoaded, addError, onActivitiesLoaded]);
 
-  return <Box ref={containerRef} flex="1" minWidth="0" height="100vh" data-testid="map-container" />;
+  return <Box ref={containerRef} flex="1" minWidth="0" height="100%" data-testid="map-container" />;
 };

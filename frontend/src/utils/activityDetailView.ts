@@ -6,7 +6,7 @@ const MILLISECONDS_PER_SECOND = 1000;
 const DECIMAL_PLACES = 1;
 const LOCALE_JA = 'ja-JP';
 
-/** toActivityDetailViewの戻り値（右サイドバーの詳細表示にそのまま使える整形済み文字列） */
+/** toActivityDetailViewの戻り値（アクティビティパネルの詳細表示にそのまま使える整形済み文字列） */
 type ActivityDetailView = {
   /** アクティビティ名 */
   name: string;
@@ -23,7 +23,7 @@ type ActivityDetailView = {
 };
 
 /**
- * アクティビティを、右サイドバーの詳細表示にそのまま使える整形済み文字列へ変換する
+ * アクティビティを、アクティビティパネルの詳細表示にそのまま使える整形済み文字列へ変換する
  * @param activity 変換元のアクティビティ
  * @returns 整形済みの詳細表示用データ
  */
