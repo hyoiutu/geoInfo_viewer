@@ -3,6 +3,8 @@ import { ApiError, buildApiError, toAppErrorInfo } from '../apiError';
 
 describe('buildApiErrorに関するテスト', () => {
   test('レスポンスボディがAppErrorInfo形式の場合、その内容でApiErrorを組み立てる', async () => {
+    // buildApiErrorはresponse.status・response.json()のみ使用するため、Response全体を実装した
+    // テストダブルを用意する必要は無い（headers・ok等の未使用プロパティは省略する）
     const response = {
       status: 502,
       json: () =>
@@ -18,6 +20,7 @@ describe('buildApiErrorに関するテスト', () => {
   });
 
   test('レスポンスボディがAppErrorInfo形式でない場合、ステータスコードのみの汎用エラーにフォールバックする', async () => {
+    // 上記と同様、buildApiErrorが使うresponse.status・response.json()のみを持つテストダブル
     const response = { status: 500, json: () => Promise.reject(new Error('invalid json')) } as Response;
 
     const error = await buildApiError(response);

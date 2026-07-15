@@ -11,6 +11,9 @@ const NOT_RUNNING_STATUS: BackfillStatus = {
   estimatedRemainingSeconds: null,
   lastError: null
 };
+// renderHookのinitialPropsはこの変数の型からhookの引数型を推論するため、NOT_RUNNING_STATUSをそのまま渡すと
+// BackfillStatus型に固定され、後続のrerenderでnullを渡すテストが型エラーになる。あらかじめ|null込みの型で持つ
+const NOT_RUNNING_STATUS_OR_NULL: BackfillStatus | null = NOT_RUNNING_STATUS;
 
 const RUNNING_STATUS: BackfillStatus = {
   isRunning: true,
@@ -36,7 +39,7 @@ describe('useBackfillProgressFooterに関するテスト', () => {
 
   test('実行中(isRunning:true)になると、フッターが表示される', () => {
     const { result, rerender } = renderHook(({ status }) => useBackfillProgressFooter(status), {
-      initialProps: { status: NOT_RUNNING_STATUS as BackfillStatus | null }
+      initialProps: { status: NOT_RUNNING_STATUS_OR_NULL }
     });
 
     rerender({ status: RUNNING_STATUS });
@@ -46,7 +49,7 @@ describe('useBackfillProgressFooterに関するテスト', () => {
 
   test('実行完了後(isRunning:falseに戻った後)も、dismissを呼ぶまでフッターは表示され続ける', () => {
     const { result, rerender } = renderHook(({ status }) => useBackfillProgressFooter(status), {
-      initialProps: { status: NOT_RUNNING_STATUS as BackfillStatus | null }
+      initialProps: { status: NOT_RUNNING_STATUS_OR_NULL }
     });
     rerender({ status: RUNNING_STATUS });
 
@@ -57,7 +60,7 @@ describe('useBackfillProgressFooterに関するテスト', () => {
 
   test('dismissを呼ぶと、フッターが非表示になる', () => {
     const { result, rerender } = renderHook(({ status }) => useBackfillProgressFooter(status), {
-      initialProps: { status: NOT_RUNNING_STATUS as BackfillStatus | null }
+      initialProps: { status: NOT_RUNNING_STATUS_OR_NULL }
     });
     rerender({ status: RUNNING_STATUS });
     rerender({ status: NOT_RUNNING_STATUS });
@@ -71,7 +74,7 @@ describe('useBackfillProgressFooterに関するテスト', () => {
 
   test('dismiss後に再度実行されると、フッターが再表示される', () => {
     const { result, rerender } = renderHook(({ status }) => useBackfillProgressFooter(status), {
-      initialProps: { status: NOT_RUNNING_STATUS as BackfillStatus | null }
+      initialProps: { status: NOT_RUNNING_STATUS_OR_NULL }
     });
     rerender({ status: RUNNING_STATUS });
     rerender({ status: NOT_RUNNING_STATUS });

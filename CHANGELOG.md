@@ -14,6 +14,19 @@
 
 ## 変更履歴
 
+### [2026-07-16] PR #56のレビュー対応としてcatch節のAppExceptionナローイングをassertsアサーション関数に置き換えた
+* **修正の動機・概要**:
+  - PR #56（Issue #48対応）で`error as AppException`のキャストを避けるために追加した`if (!(error instanceof AppException)) { throw error; }`というナローイングについて、「直前の`expect(error).toBeInstanceOf(AppException)`自体が失敗時に例外を投げるため、このif/throwは実質到達しない冗長なコードではないか」という指摘を受けた。
+  - 指摘の通りだったため、TypeScriptの`asserts`型ガード関数（`function assertIsAppException(error: unknown): asserts error is AppException`）を`backend/src/test-utils/assert-is-app-exception.ts`（新規）に切り出した。内部で`expect(error).toBeInstanceOf(AppException)`を呼ぶだけの薄い関数だが、これによりアサーションと型の絞り込みを1行で両立でき、呼び出し側の冗長なif/throwが不要になった。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/test-utils/assert-is-app-exception.ts`（新規）。
+    - `backend/src/strava/__tests__/strava-activities.service.tests.ts`・`strava-auth.service.tests.ts`: 4箇所を`assertIsAppException`経由に置き換え。
+    - 単体テスト（バックエンド99件）・lint・typecheck・`check:type-assertions`（0件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（テストコードのみの改善のため）。
+  * **その他**: `rules.md`（このブランチ時点でのファイル名）に、`asserts`型ガード関数によるアサーション+型絞り込みの一本化パターンを追記。
+
 ### [2026-07-16] PR #55のレビュー対応としてDialog系コンポーネントの共通ラッパーAppDialogを切り出した
 * **修正の動機・概要**:
   - PR #55（Issue #47対応）で追加した`check-file-size.mjs`のレビューで、「主にDialog系ファイルでJSXネスト深さの閾値超過が発生しているが、共通コンポーネントとして切り出せばネストを浅くできないか」という指摘を受けた。
@@ -28,6 +41,24 @@
   * **README.md**: 変更なし。
   * **仕様書**: 変更なし（UIの見た目・挙動に変更は無く内部実装の共通化のため）。
   * **設計書**: `designs/class_diagram.md`のフロントエンドのクラス図に`AppDialog`と4ダイアログからの依存関係を追加。
+
+### [2026-07-15] GitHub Issue #48としてコード上の型キャストを解消しcheck:type-assertionsをコミット時に実行するようにした
+* **修正の動機・概要**:
+  - `check:type-assertions`スクリプトで検出される型キャストが26件（着手時点では31件に増加していた）残っており、これを解消しコミット時に自動実行されるようにしたいという依頼（Issue #48）。自律モードで対応した。
+  - 31件を1件ずつ精査し、rules.mdに記載された回避手順（コンテキスト型注釈・型ガード・ジェネリックオーバーロード等）で実際にキャストを排除できるものと、外部境界（外部API JSONレスポンス・DOM要素・NestJSアプリケーションインスタンス等のテストダブル）としてキャストが避けられないものを判別した。
+  - **キャストを排除できたもの**: `.includes()`→`.some()`への置き換え、`instanceof`によるcatch節のエラー型ナローイング、`if`文によるnull/discriminated unionのナローイング、変数・オブジェクトリテラルへの型注釈付与（`as`ではなく宣言時の型注釈でコンテキスト型を与える）等で対応した。
+  - **`Object.entries`/`Object.fromEntries`の型が常に`string`キーへ広がる問題**（TypeScript本体の既知の制約）は、2箇所（`useLayerVisibility.ts`・`MapView.tsx`）で同じパターンのキャストが必要だったため、DRY原則に従い`typedEntries`/`typedFromEntries`という共通ユーティリティ（`frontend/src/utils/typedObject.ts`、新規）に集約し、キャスト自体をユーティリティ内の1箇所に閉じ込めた（呼び出し側からはキャストが消えた）。
+  - **キャストが避けられなかったもの**（説明コメントを付与）: 外部topojson APIレスポンスの解析（`seed-municipalities.ts`）、Testing Libraryが返す`HTMLElement`をイベントハンドラの都合上ある型に固定する必要のあるテストダブル（`Response`・`INestApplication`・`LayerSpecification`等、実際に使うプロパティのみ実装した最小限のテストダブル）、TypeORM `Repository.create()`のモック（ライブラリ自体の型シグネチャがDeepPartial→Entityの変換を許容しているため）。
+  - **コミット時の自動実行**: `package.json`の`lint-staged`に`check:type-assertions`を追加し、huskyのpre-commitフックでステージ済みファイルに対して自動実行されるようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/typedObject.ts`（新規）・`frontend/src/utils/__tests__/typedObject.tests.ts`（新規）: `typedEntries`/`typedFromEntries`。
+    - `backend/src/strava/strava-activity.util.ts`・`backend/src/strava/__tests__/strava-activities.service.tests.ts`・`backend/src/strava/__tests__/strava-auth.service.tests.ts`・`backend/src/municipalities/seed-municipalities.ts`・`backend/src/database/__tests__/database.config.tests.ts`・`backend/src/activities/__tests__/activities.service.tests.ts`・`backend/src/activities/__tests__/cycling-activity-entity.util.tests.ts`・`backend/src/__tests__/swagger.config.tests.ts`・`frontend/src/utils/__tests__/apiError.tests.ts`・`frontend/src/utils/__tests__/mapLayerCategory.tests.ts`・`frontend/src/hooks/useLayerVisibility.ts`・`frontend/src/components/MapView.tsx`・`frontend/src/hooks/__tests__/useBackfillProgressFooter.tests.ts`・`frontend/src/components/__tests__/MapView.tests.tsx`・`frontend/src/components/__tests__/MapWorkspace.tests.tsx`: 型キャストを解消。
+    - `package.json`: `lint-staged`に`check:type-assertions`を追加。
+    - 単体テスト（フロントエンド198件・バックエンド99件）・lint・typecheck・`check:type-assertions`（0件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部的な型の書き方の改善であり、アプリケーションの機能仕様には影響しないため）。
+  * **その他**: `rules.md`・`commit_rules.md`の該当記述を「コミット時の自動実行には未組み込み」から「lint-staged経由で自動実行される」に更新。
 
 ### [2026-07-15] GitHub Issue #47としてrules.mdを分割し機械チェック可能なルールをスクリプトへ移行した
 * **修正の動機・概要**:

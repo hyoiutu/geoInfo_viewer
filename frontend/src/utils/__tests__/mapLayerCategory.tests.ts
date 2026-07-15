@@ -2,13 +2,16 @@ import type { LayerSpecification } from 'maplibre-gl';
 import { describe, expect, test } from 'vitest';
 import { categorizeStyleLayer, groupLayerIdsByCategory } from '../mapLayerCategory';
 
-const createLayer = (id: string, type: LayerSpecification['type'], sourceLayer?: string): LayerSpecification =>
-  ({
+const createLayer = (id: string, type: LayerSpecification['type'], sourceLayer?: string): LayerSpecification => {
+  // categorizeStyleLayerはid・type・source-layerのみ参照するため、LayerSpecification（type別の
+  // discriminated unionでpaint/layout等も要求されうる）を全て満たすテストダブルは用意せず必要最小限にする
+  return {
     id,
     type,
     source: 'openmaptiles',
     ...(sourceLayer === undefined ? {} : { 'source-layer': sourceLayer })
-  }) as LayerSpecification;
+  } as LayerSpecification;
+};
 
 describe('categorizeStyleLayerに関するテスト', () => {
   test('source-layerがbuildingのとき、osm-buildingを返す', () => {

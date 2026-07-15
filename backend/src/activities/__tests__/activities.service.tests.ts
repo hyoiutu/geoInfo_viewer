@@ -74,6 +74,8 @@ describe('ActivitiesServiceに関するテスト', () => {
     cyclingActivityRepository = { find: vi.fn(), save: vi.fn() };
     syncStateRepository = {
       findOneBy: vi.fn(),
+      // TypeORMのRepository.create()自体がDeepPartial<Entity>からEntityを返す型シグネチャのため、
+      // モックでも同じ型の不整合が生じる。テストでは一部フィールドのみ検証するため、このキャストは実用上安全
       create: vi.fn((entity: Partial<SyncStateEntity>) => entity as SyncStateEntity),
       save: vi.fn()
     };

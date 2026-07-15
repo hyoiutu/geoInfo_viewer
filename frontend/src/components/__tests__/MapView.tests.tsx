@@ -1,7 +1,12 @@
 import { screen, waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fetchCyclingActivities, getBackfillStatus, syncCyclingActivities } from '../../api/activitiesApi';
+import {
+  type CyclingActivity,
+  fetchCyclingActivities,
+  getBackfillStatus,
+  syncCyclingActivities
+} from '../../api/activitiesApi';
 import {
   AERIAL_PHOTO_ATTRIBUTION,
   AERIAL_PHOTO_LAYER_ID,
@@ -67,9 +72,12 @@ const ALL_ON_VISIBILITY: LayerVisibility = {
   'bicycle-log': false
 };
 
+const DEFAULT_SELECTED_IDS: string[] = [];
+const DEFAULT_FOCUSED_ID: string | null = null;
+
 const DEFAULT_SELECTION_PROPS = {
-  selectedIds: [] as string[],
-  focusedId: null as string | null,
+  selectedIds: DEFAULT_SELECTED_IDS,
+  focusedId: DEFAULT_FOCUSED_ID,
   onSelectActivities: vi.fn(),
   onActivitiesLoaded: vi.fn(),
   filter: DEFAULT_ACTIVITY_FILTER
@@ -77,6 +85,20 @@ const DEFAULT_SELECTION_PROPS = {
 
 // ソースIDごとに独立したsetDataスパイを返す（BICYCLE_LOG_SOURCE_ID等、複数ソースを区別して検証するため）
 const setDataMocksBySourceId: Record<string, ReturnType<typeof vi.fn>> = {};
+
+/** maplibregl.Markerモックのインスタンス形状 */
+type MarkerMockInstance = {
+  /** Markerに渡されたDOM要素 */
+  element: HTMLElement;
+  /** setLngLatで設定された座標 */
+  lngLat: [number, number] | null;
+  /** 座標を設定するモックメソッド */
+  setLngLat: (lngLat: [number, number]) => MarkerMockInstance;
+  /** 地図へ追加するモックメソッド */
+  addTo: () => MarkerMockInstance;
+  /** Markerを取り除くモックメソッド */
+  remove: ReturnType<typeof vi.fn>;
+};
 
 vi.mock('maplibre-gl', () => {
   const remove = vi.fn();
@@ -113,9 +135,9 @@ vi.mock('maplibre-gl', () => {
     };
   });
   const MarkerMock = vi.fn().mockImplementation(function MockMarker(options: { element: HTMLElement }) {
-    const instance = {
+    const instance: MarkerMockInstance = {
       element: options.element,
-      lngLat: null as [number, number] | null,
+      lngLat: null,
       setLngLat(lngLat: [number, number]) {
         instance.lngLat = lngLat;
         return instance;
@@ -716,7 +738,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   describe('スタート・ゴールマーカーに関するテスト', () => {
-    const activityWithPath = {
+    const activityWithPath: CyclingActivity = {
       id: '1',
       name: 'ライド1',
       distanceMeters: 1000,
@@ -730,7 +752,7 @@ describe('MapViewに関するテスト', () => {
           [139.75, 35.65],
           [139.8, 35.7]
         ]
-      ] as [number, number][][]
+      ]
     };
 
     test('何もフォーカスされていない場合、マーカーは表示されない', async () => {
@@ -825,7 +847,7 @@ describe('MapViewに関するテスト', () => {
     });
 
     test('開始地点と終了地点が同じ座標の場合、スタートのマーカーが後に追加され手前に描画される', async () => {
-      const roundTripActivity = {
+      const roundTripActivity: CyclingActivity = {
         ...activityWithPath,
         path: [
           [
@@ -833,7 +855,7 @@ describe('MapViewに関するテスト', () => {
             [139.75, 35.65],
             [139.7, 35.6]
           ]
-        ] as [number, number][][]
+        ]
       };
       vi.mocked(fetchCyclingActivities).mockResolvedValue([roundTripActivity]);
       const { rerender } = renderWithChakra(

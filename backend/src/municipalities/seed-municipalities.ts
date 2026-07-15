@@ -1,6 +1,6 @@
 // biome-ignore-all lint/style/useNamingConvention: 国土数値情報(N03)のプロパティ名にそのまま合わせるため
 import 'dotenv/config';
-import type { MultiPolygon, Polygon } from 'geojson';
+import type { GeometryObject, MultiPolygon, Polygon } from 'geojson';
 import { feature } from 'topojson-client';
 import type { GeometryCollection, Topology } from 'topojson-specification';
 import { DataSource } from 'typeorm';
@@ -45,6 +45,14 @@ const toMultiPolygon = (geometry: Polygon | MultiPolygon): MultiPolygon =>
   geometry.type === 'Polygon' ? { type: 'MultiPolygon', coordinates: [geometry.coordinates] } : geometry;
 
 /**
+ * topojson-clientが返すジオメトリが、市区町村境界データとして期待するPolygon・MultiPolygonかどうかを判定する
+ * @param geometry 判定対象のジオメトリ
+ * @returns Polygon・MultiPolygonであればtrue（型ガードとしてもtrue時にPolygon | MultiPolygonへ絞り込む）
+ */
+const isPolygonOrMultiPolygon = (geometry: GeometryObject): geometry is Polygon | MultiPolygon =>
+  geometry.type === 'Polygon' || geometry.type === 'MultiPolygon';
+
+/**
  * 指定した都道府県コードのtopojsonデータを取得し、市区町村ごとのMunicipalityEntityへ変換する
  * @param prefectureCode 2桁ゼロ埋めの都道府県コード（例: '13'）
  * @returns 変換済みのMunicipalityEntity一覧
@@ -56,20 +64,24 @@ const fetchMunicipalitiesForPrefecture = async (prefectureCode: string): Promise
     throw new Error(`都道府県コード${prefectureCode}のtopojson取得に失敗しました（HTTP ${response.status}）: ${url}`);
   }
 
-  const topology = (await response.json()) as Topology;
+  // 外部から取得したtopojsonデータの構造はランタイムでは検証できない境界のため、
+  // 型注釈（asによるキャストではなく変数宣言時の型注釈）でN03形式であることを信頼する
+  const topology: Topology<{ [key: string]: GeometryCollection<CityProperties> }> = await response.json();
   const objectName = Object.keys(topology.objects)[0];
-  const geometryCollection = topology.objects[objectName] as GeometryCollection<CityProperties>;
+  const geometryCollection = topology.objects[objectName];
   const featureCollection = feature(topology, geometryCollection);
 
-  return featureCollection.features.map((cityFeature) => {
-    const properties = cityFeature.properties as CityProperties;
-    const geometry = cityFeature.geometry as Polygon | MultiPolygon;
+  return featureCollection.features.flatMap((cityFeature) => {
+    if (!isPolygonOrMultiPolygon(cityFeature.geometry)) {
+      return [];
+    }
+    const properties = cityFeature.properties;
 
     const entity = new MunicipalityEntity();
     entity.prefectureName = properties.N03_001;
     entity.municipalityName = buildMunicipalityName(properties);
-    entity.geom = toMultiPolygon(geometry);
-    return entity;
+    entity.geom = toMultiPolygon(cityFeature.geometry);
+    return [entity];
   });
 };
 

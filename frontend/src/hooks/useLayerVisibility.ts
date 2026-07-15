@@ -1,12 +1,11 @@
 import { useCallback, useState } from 'react';
 import { LAYER_DEFINITIONS } from '../constants/layerDefinitions';
 import type { LayerVisibility, ToggleableLayerId } from '../types/layer';
+import { typedFromEntries } from '../utils/typedObject';
 
 /** @returns LAYER_DEFINITIONSのdefaultCheckedを反映したデフォルトの表示状態 */
 const createDefaultVisibility = (): LayerVisibility =>
-  Object.fromEntries(
-    LAYER_DEFINITIONS.map((layerDefinition) => [layerDefinition.id, layerDefinition.defaultChecked])
-  ) as LayerVisibility;
+  typedFromEntries(LAYER_DEFINITIONS.map((layerDefinition) => [layerDefinition.id, layerDefinition.defaultChecked]));
 
 /** useLayerVisibilityの戻り値 */
 type UseLayerVisibilityResult = {
