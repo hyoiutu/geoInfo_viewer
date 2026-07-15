@@ -12,7 +12,7 @@ const LAYERS = [
 const renderDialog = (overrides: Partial<Parameters<typeof LayerDialog>[0]> = {}) =>
   renderWithChakra(
     <LayerDialog
-      isOpen={true}
+      isOpen
       layers={LAYERS}
       onToggleDraft={vi.fn()}
       onReset={vi.fn()}

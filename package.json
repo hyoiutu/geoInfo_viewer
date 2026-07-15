@@ -18,6 +18,10 @@
     "lint:fix": "biome check --write .",
     "check:type-assertions": "node scripts/check-type-assertions.mjs",
     "check:file-size": "node scripts/check-file-size.mjs",
+    "check:absolute-paths": "node scripts/check-absolute-paths.mjs",
+    "check:useeffect-comments": "node scripts/check-useeffect-comments.mjs",
+    "check:boolean-jsx-props": "node scripts/check-boolean-jsx-props.mjs",
+    "check:tsdoc": "node scripts/check-tsdoc.mjs",
     "typecheck": "pnpm --filter frontend typecheck && pnpm --filter backend typecheck && tsc -p tsconfig.electron.json --noEmit",
     "prepare": "husky"
   },
