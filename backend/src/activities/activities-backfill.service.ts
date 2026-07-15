@@ -14,12 +14,12 @@ const NO_ACTIVITIES = 0;
 
 /** start()の実行結果 */
 export class BackfillStartResult {
-  /** 新たに初期取り込みを開始したか（既に実行中だった場合はfalse） */
-  @ApiProperty({ description: '新たに初期取り込みを開始したか（既に実行中だった場合はfalse）' })
+  /** 新たにバックフィルを開始したか（既に実行中だった場合はfalse） */
+  @ApiProperty({ description: '新たにバックフィルを開始したか（既に実行中だった場合はfalse）' })
   started!: boolean;
 }
 
-/** getStatus()が返す初期取り込みの進捗状況 */
+/** getStatus()が返すバックフィルの進捗状況 */
 export class BackfillStatus {
   /** 現在実行中かどうか */
   @ApiProperty({ description: '現在実行中かどうか' })
@@ -50,7 +50,7 @@ export class BackfillStatus {
   lastError!: AppErrorInfo | null;
 }
 
-/** 自転車ログの初期取り込み(バックフィル)を行うサービス */
+/** 自転車ログのバックフィルを行うサービス */
 @Injectable()
 export class ActivitiesBackfillService {
   private running = false;
@@ -63,13 +63,13 @@ export class ActivitiesBackfillService {
     private readonly cyclingActivityRepository: Repository<CyclingActivityEntity>
   ) {}
 
-  /** @returns 初期取り込みが実行中かどうか */
+  /** @returns バックフィルが実行中かどうか */
   isRunning(): boolean {
     return this.running;
   }
 
   /**
-   * 初期取り込みを開始する。既に実行中の場合は何もしない（二重起動防止）。
+   * バックフィルを開始する。既に実行中の場合は何もしない（二重起動防止）。
    * 処理自体はfire-and-forget（このメソッドは開始できたかどうかのみを返し、完了を待たない）
    * @returns 開始結果
    */
@@ -79,7 +79,7 @@ export class ActivitiesBackfillService {
 
   /**
    * 既存全アクティビティのdetailFetchedAtをリセットした上で、詳細を強制的に再取得する。
-   * 初期取り込みとisRunningガード（二重起動防止）を共有するため、どちらか一方が実行中はもう一方を開始できない。
+   * バックフィルとisRunningガード（二重起動防止）を共有するため、どちらか一方が実行中はもう一方を開始できない。
    * @returns 開始結果
    */
   async startForceRefetch(): Promise<BackfillStartResult> {
@@ -110,7 +110,7 @@ export class ActivitiesBackfillService {
     return { started: true };
   }
 
-  /** @returns 現在の初期取り込み進捗状況 */
+  /** @returns 現在のバックフィル進捗状況 */
   async getStatus(): Promise<BackfillStatus> {
     const totalCount = await this.cyclingActivityRepository.count();
     const completedCount = await this.cyclingActivityRepository.count({

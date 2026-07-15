@@ -11,11 +11,17 @@ import {
 } from '../../constants/aerialPhoto';
 import {
   BICYCLE_LOG_FOCUSED_LAYER_ID,
+  BICYCLE_LOG_FOCUSED_OUTLINE_COLOR,
+  BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+  BICYCLE_LOG_FOCUSED_OUTLINE_WIDTH,
   BICYCLE_LOG_FOCUSED_SOURCE_ID,
   BICYCLE_LOG_LAYER_ID,
   BICYCLE_LOG_LINE_COLOR_DEFAULT,
   BICYCLE_LOG_LINE_COLOR_FOCUSED,
   BICYCLE_LOG_LINE_COLOR_SELECTED,
+  BICYCLE_LOG_LINE_WIDTH_DEFAULT,
+  BICYCLE_LOG_LINE_WIDTH_FOCUSED,
+  BICYCLE_LOG_LINE_WIDTH_SELECTED,
   BICYCLE_LOG_SELECTED_LAYER_ID,
   BICYCLE_LOG_SELECTED_SOURCE_ID,
   BICYCLE_LOG_SOURCE_ID
@@ -91,8 +97,20 @@ vi.mock('maplibre-gl', () => {
   });
   const on = vi.fn();
   const queryRenderedFeatures = vi.fn(() => []);
+  const addControl = vi.fn();
   const MapMock = vi.fn().mockImplementation(function MockMap() {
-    return { remove, once, getStyle, addSource, addLayer, setLayoutProperty, getSource, on, queryRenderedFeatures };
+    return {
+      remove,
+      once,
+      getStyle,
+      addSource,
+      addLayer,
+      setLayoutProperty,
+      getSource,
+      on,
+      queryRenderedFeatures,
+      addControl
+    };
   });
   const MarkerMock = vi.fn().mockImplementation(function MockMarker(options: { element: HTMLElement }) {
     const instance = {
@@ -109,8 +127,9 @@ vi.mock('maplibre-gl', () => {
     };
     return instance;
   });
-  // biome-ignore lint/style/useNamingConvention: maplibre-glの実APIに合わせクラス名(Map/Marker)をPascalCaseのまま公開する
-  return { default: { Map: MapMock, Marker: MarkerMock } };
+  const AttributionControlMock = vi.fn();
+  // biome-ignore lint/style/useNamingConvention: maplibre-glの実APIに合わせクラス名(Map/Marker/AttributionControl)をPascalCaseのまま公開する
+  return { default: { Map: MapMock, Marker: MarkerMock, AttributionControl: AttributionControlMock } };
 });
 
 const getMapInstance = () => vi.mocked(maplibregl.Map).mock.results[0].value;
@@ -192,6 +211,11 @@ describe('MapViewに関するテスト', () => {
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(AERIAL_PHOTO_LAYER_ID, 'visibility', 'none');
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(BICYCLE_LOG_LAYER_ID, 'visibility', 'none');
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(BICYCLE_LOG_SELECTED_LAYER_ID, 'visibility', 'none');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(
+      BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+      'visibility',
+      'none'
+    );
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(BICYCLE_LOG_FOCUSED_LAYER_ID, 'visibility', 'none');
   });
 
@@ -225,7 +249,10 @@ describe('MapViewに関するテスト', () => {
         id: BICYCLE_LOG_LAYER_ID,
         type: 'line',
         source: BICYCLE_LOG_SOURCE_ID,
-        paint: expect.objectContaining({ 'line-color': BICYCLE_LOG_LINE_COLOR_DEFAULT })
+        paint: expect.objectContaining({
+          'line-color': BICYCLE_LOG_LINE_COLOR_DEFAULT,
+          'line-width': BICYCLE_LOG_LINE_WIDTH_DEFAULT
+        })
       })
     );
     expect(mapInstance.addLayer).toHaveBeenCalledWith(
@@ -233,7 +260,22 @@ describe('MapViewに関するテスト', () => {
         id: BICYCLE_LOG_SELECTED_LAYER_ID,
         type: 'line',
         source: BICYCLE_LOG_SELECTED_SOURCE_ID,
-        paint: expect.objectContaining({ 'line-color': BICYCLE_LOG_LINE_COLOR_SELECTED })
+        paint: expect.objectContaining({
+          'line-color': BICYCLE_LOG_LINE_COLOR_SELECTED,
+          'line-width': BICYCLE_LOG_LINE_WIDTH_SELECTED
+        })
+      })
+    );
+    // フォーカス中の線は、他の線に埋もれず視認できるよう地図背景色のハロー(縁取り)を本体の下に敷く
+    expect(mapInstance.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+        type: 'line',
+        source: BICYCLE_LOG_FOCUSED_SOURCE_ID,
+        paint: expect.objectContaining({
+          'line-color': BICYCLE_LOG_FOCUSED_OUTLINE_COLOR,
+          'line-width': BICYCLE_LOG_FOCUSED_OUTLINE_WIDTH
+        })
       })
     );
     expect(mapInstance.addLayer).toHaveBeenCalledWith(
@@ -241,15 +283,21 @@ describe('MapViewに関するテスト', () => {
         id: BICYCLE_LOG_FOCUSED_LAYER_ID,
         type: 'line',
         source: BICYCLE_LOG_FOCUSED_SOURCE_ID,
-        paint: expect.objectContaining({ 'line-color': BICYCLE_LOG_LINE_COLOR_FOCUSED })
+        paint: expect.objectContaining({
+          'line-color': BICYCLE_LOG_LINE_COLOR_FOCUSED,
+          'line-width': BICYCLE_LOG_LINE_WIDTH_FOCUSED
+        })
       })
     );
-    // レイヤーが追加された順（通常→選択→フォーカス）で手前に描画される
+    // レイヤーが追加された順（通常→選択→フォーカスのハロー→フォーカス本体）で手前に描画される
     const layerIdCallOrder = mapInstance.addLayer.mock.calls.map(([layer]: [{ id: string }]) => layer.id);
     expect(layerIdCallOrder.indexOf(BICYCLE_LOG_LAYER_ID)).toBeLessThan(
       layerIdCallOrder.indexOf(BICYCLE_LOG_SELECTED_LAYER_ID)
     );
     expect(layerIdCallOrder.indexOf(BICYCLE_LOG_SELECTED_LAYER_ID)).toBeLessThan(
+      layerIdCallOrder.indexOf(BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID)
+    );
+    expect(layerIdCallOrder.indexOf(BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID)).toBeLessThan(
       layerIdCallOrder.indexOf(BICYCLE_LOG_FOCUSED_LAYER_ID)
     );
   });
@@ -747,6 +795,8 @@ describe('MapViewに関するテスト', () => {
       await waitFor(() => {
         for (const marker of previousMarkers) {
           expect(marker.remove).toHaveBeenCalled();
+          // Reactのroot.unmount()も呼ばれ、DOM要素の中身が空になっていることを確認する
+          expect(marker.element.querySelector('svg')).toBeNull();
         }
       });
     });
@@ -806,7 +856,7 @@ describe('MapViewに関するテスト', () => {
       await waitFor(() => expect(getMarkerInstances()).toHaveLength(2));
       // 後から地図に追加された方（配列の末尾）がスタートのマーカーであり、DOM上で手前に描画される
       const lastMarker = getMarkerInstances()[getMarkerInstances().length - 1];
-      expect(lastMarker.element.innerHTML).toEqual(createStartMarkerElement().innerHTML);
+      expect(lastMarker.element.innerHTML).toEqual(createStartMarkerElement().element.innerHTML);
     });
   });
 });

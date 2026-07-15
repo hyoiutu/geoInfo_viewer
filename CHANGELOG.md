@@ -14,6 +14,95 @@
 
 ## 変更履歴
 
+### [2026-07-15] GitHub Issue #26のフォローアップとして自転車ログの線の状態配色をデザイン原則に基づき見直した
+* **修正の動機・概要**:
+  - PR #38（Issue #26対応、赤ベースの濃淡3段階）を実際にレビューしたところ、線が多く重なる箇所では濃淡の違いだけでは依然として識別しづらいという指摘を受けた。
+  - 未選択/選択中/フォーカス中の3状態は「識別（どのアクティビティか）」ではなく「状態」を表すエンコーディングであり、同一色相の濃淡だけに頼るより色相自体を変える方が、重なった際の識別性・色覚多様性（CVD）耐性の両面で優れることを確認した上で設計を見直した。
+  - 新配色（グレー/青/赤）は`node scripts/validate_palette.js`（社内のデータビジュアライゼーション設計ガイドに付属する検証スクリプト）でCVD分離・コントラストを確認済み（青・赤のペアはCVD ΔE 69.7で目標値12を大きく上回る。未選択のグレーは意図的な低彩度の背景色のため、識別色向けの彩度下限チェックは対象外とした）。
+  - 色相変更に加え、線が重なる場面での識別性を高めるため二次エンコーディング（線幅の段階化: 通常2px/選択中3px/フォーカス中4px、およびフォーカス中の線の下に敷く白色のハロー(縁取り)）を追加した。描画順（通常→選択中→フォーカス中の順に手前へ）は既存のまま変更していない。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/constants/bicycleLog.ts`: `BICYCLE_LOG_LINE_COLOR_DEFAULT`（`#fbb6ce`→`#718096`グレー）・`BICYCLE_LOG_LINE_COLOR_SELECTED`（`#ed64a6`→`#3182ce`青）を変更（`BICYCLE_LOG_LINE_COLOR_FOCUSED`は`#e53e3e`のまま維持）。線幅を状態ごとに分ける`BICYCLE_LOG_LINE_WIDTH_DEFAULT`/`_SELECTED`/`_FOCUSED`（新規、単一だった`BICYCLE_LOG_LINE_WIDTH`を置き換え）と、ハロー用の`BICYCLE_LOG_FOCUSED_OUTLINE_COLOR`/`_WIDTH`/`_LAYER_ID`（新規）を追加。
+    - `frontend/src/components/MapView.tsx`: `addBicycleLogLayer`が状態ごとに異なる線幅を使うよう変更し、フォーカス用ソースを参照するハローレイヤーを本体レイヤーより先に(=下に)追加。`resolveStyleLayerIds`の`bicycle-log`にハローレイヤーIDを追加し、レイヤー表示/非表示トグルの対象に含めた。
+    - 単体テスト（フロントエンド196件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の線の色に関する記載を新配色・線幅・ハローの説明に更新。
+
+### [2026-07-14] PR #43のレビュー対応として用語集の表記統一をコード上のコメントにも適用した
+* **修正の動機・概要**:
+  - PR #43のレビューで「用語集で定義した用語（同期→新規アクティビティ取得、初期取り込み→バックフィル、自転車ログ強制再取得→フォースリフェッチ、左右サイドバー→操作パネル/アクティビティパネル）はコード中のコメントにも適用されているか。少なくともMapView.tsxは依然として『同期』という用語が使われている」との指摘を受けた。
+  - 実際に確認したところ、直前のコミットでは`specs/`・`designs/`配下のドキュメントのみを更新しており、AGENTS.mdが規定する「コード上のコメント」への適用が漏れていた。バックエンド・フロントエンド・electron/tests配下のコメントを再度全件確認し、22ファイルにわたる旧用語を新用語へ統一した。
+  - UI上に実際に表示されるボタンラベル文字列（「自転車ログ初期取り込み」「自転車ログ強制再取得」）と、それに対応するテストのセレクタ文字列（`getByRole('button', { name: '...' })`等）は、コメントではなく実装のUI仕様そのものであるため、今回は変更対象外とした（変更する場合はUI表示文言自体の変更という別の設計判断になるため）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: 以下のファイルのコメント（TSDoc・`//`コメント・テスト名）を新用語へ統一。
+    - バックエンド: `activities.controller.ts`・`activities.service.ts`・`activities-backfill.service.ts`・`cycling-activity-entity.util.ts`・`strava-activities.service.ts`・`entities/cycling-activity.entity.ts`・migrations 2件・`__tests__/activities.service.tests.ts`・`__tests__/activities-backfill.service.tests.ts`
+    - フロントエンド: `MapView.tsx`・`LayerSidebar.tsx`・`ActivityDetailSidebar.tsx`・`errorsAtom.ts`・`activityDetailView.ts`・`useBackfillStatus.ts`・`activitiesApi.ts`
+    - electron/tests: `fixtures/activities.js`・`support/mock-strava-server.js`・`bicycle-log.spec.ts`
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（前回のPR #43対応で既に更新済みのため）。
+
+### [2026-07-14] 型キャストのルール違反を機械的に検出するチェックスクリプトを追加した
+* **修正の動機・概要**:
+  - PR #39のレビューで、rules.mdが以前から禁止している「コメント無しの型キャスト」がIssue #27の実装時に見過ごされていた事例を発見した。ユーザーから「なぜAIエージェントがルールを守れなかったのか」と問われ調査した結果、rules.mdのルールはBiomeの自動チェック対象外であり、実装時にエージェントが逐一プローズのルールと照合しない限り検出されない、という構造的な弱点が判明した。
+  - ユーザーとの相談の結果、Biomeのカスタムルール機構は成熟しておらずESLint導入は大きな決断になるため、まずは軽量な独立スクリプトで運用する方針で合意した。
+  - TypeScript Compiler APIを使い、`as unknown as T`（括弧で挟んだ場合を含む）を無条件エラー、それ以外の`as T`を直前行/同一行末尾に`//`コメントが無い場合にエラーとする`scripts/check-type-assertions.mjs`を作成した。`import { x as y }`の別名importはAST上別のノード種別（AsExpressionではない）のため誤検出しない。`as const`も対象外とした。
+  - 実際にリポジトリ全体に対して実行したところ、既存コードに26件の未検出の違反（バックエンドのJSON/topojsonパースキャスト、テストファイルのモック用キャスト等）が見つかった。これらの既存debtの解消・コミット時の自動実行への組み込みは別途判断が必要なため、本対応では見送り、スクリプトの追加のみを行った。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `scripts/check-type-assertions.mjs`（新規）: 型キャストの検出スクリプト。
+    - `package.json`: `check:type-assertions`スクリプトを追加。
+    - `biome.json`: `files.includes`に`scripts/**`を追加。
+    - `rules.md`: 「anyやas（型キャスト）は原則使用しない」節に、本スクリプトの案内を追記。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（AIエージェントの内部運用ツールであり、アプリケーションの機能仕様には影響しないため）。
+
+### [2026-07-14] finish-reviewスキルにPRマージ後のIssueクローズ手順を追加した
+* **修正の動機・概要**:
+  - Issue #32対応の自律ループ中、既にPR #21・#22でmainへマージ済みのIssue #18・#19がGitHub上でOPENのまま残っており、`issue-implement`スキルの自律モードが次の対象Issueとして誤って選定しかける事態になった。原因は、既存の運用ではPRマージ後にGitHub Issueをクローズする手順が無く、人間・エージェントいずれも都度手動でクローズしていたため、漏れが発生していたこと。
+  - ユーザーの指示を受け、`finish-review`スキルの手順2（PRマージ）にIssueクローズを組み込んだ。マージ成功後、PRのタイトル・ブランチ名からIssue番号を特定し、マージ済みPRへの参照を添えたコメントとともにクローズする。
+  - 発見時点で既にOPENのまま残っていたIssue #18・#19は、本対応の一環としてユーザーの許可を得た上で手動でクローズ済み。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `.agents/skills/finish-review/SKILL.md`の手順2に、マージ成功後のIssueクローズ手順を追記。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（AIエージェントの内部運用スキルであり、アプリケーションの機能仕様には影響しないため）。
+
+### [2026-07-14] GitHub Issue #32として左サイドバーを廃止しMap Controlsへ移行した
+* **修正の動機・概要**:
+  - 左サイドバーがレイヤー一覧・フィルタボタン・初期取り込み/強制再取得ボタンを縦に積んでおり、地図表示領域を常に圧迫しているという依頼（Issue #32）。自律モードで対応した。
+  - 左サイドバー（`LayerSidebar`）を廃止し、代わりに地図右下に浮かぶ3つのアイコンボタン（レイヤー・フィルタ・設定）「マップコントロール」から各ダイアログを開く構成に変更した。レイヤー切り替えは新設の`LayerDialog`（`FilterDialog`と同じdraft/applied方式、リセット/実行ボタン付き）に、初期取り込み・強制再取得は新設の`SettingsDialog`（ボタン押下と同時に処理実行・ダイアログを閉じる）に移した。
+  - 設定ダイアログが即座に閉じる仕様変更に伴い、初期取り込み/強制再取得の実行中・完了状態を表示する場所が無くなるため、地図下部に新設の`BackfillProgressFooter`（実行中は進捗%・件数・残り時間、完了後は閉じるボタンを押すまで完了メッセージを表示）を追加した。表示/非表示は新設フック`useBackfillProgressFooter`で管理する（実行開始を検知すると自動表示、閉じるボタンで非表示）。
+  - `useLayerVisibility`を、`useActivityFilter`と同じdraft(入力中)/applied(適用中)状態を持つ方式に書き換えた（従来は即時反映だったが、`LayerDialog`の「実行」ボタンで確定する方式に合わせるため）。
+  - 実装中に、Chakra UI v3の`Checkbox`（`Switch`と同じくArk UI/`@zag-js`ベース）で2つの非自明な問題を発見した。(1) 単体テスト（jsdom）で`onCheckedChange`がマイクロタスクで非同期に発火するため`fireEvent.click`直後の同期アサーションでは検知できない、(2) 実ブラウザ（Electron/Playwright）E2Eで、視覚的に隠されたinput要素の実座標がダイアログ本体等の他要素と重なりクリックがインターセプトされることがある。いずれも既存の`Switch`向けの同種の記載（test_rules.md）が既にあったため、新規ルールを追加するのではなくCheckbox向けに拡張する形で追記した。
+  - E2Eの`bicycle-log.spec.ts`で、初期取り込みボタン押下直後に進捗フッターの「取得中」表示を待つアサーションが、E2E環境（レート制限間隔を極小化・フィクスチャ3件のみ）では処理が一瞬で完了しPlaywrightのポーリングが実行中状態を捕捉できず失敗する事例を確認した。実行中表示の待機を削除し、最終的な完了表示のみを待つよう修正した。
+  - 左サイドバー廃止により地図表示領域の幅が変わったため、E2Eスクリーンショットのベースライン（`aerial-photo.png`・`bicycle-log-backfill.png`・`bicycle-log-sync.png`）を再生成し、目視で新しいマップコントロールのアイコンが正しく表示されていることを確認した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/components/MapControls.tsx`（新規）: レイヤー・フィルタ・設定の3アイコンボタン群。
+    - `frontend/src/components/LayerDialog.tsx`（新規）・`frontend/src/components/SettingsDialog.tsx`（新規）・`frontend/src/components/BackfillProgressFooter.tsx`（新規）。
+    - `frontend/src/hooks/useLayerVisibility.ts`: draft/applied方式へ書き換え。
+    - `frontend/src/hooks/useBackfillProgressFooter.ts`（新規）。
+    - `frontend/src/components/MapWorkspace.tsx`: 上記コンポーネント・フックを配線する構成に全面的に書き換え。
+    - `frontend/src/components/MapView.tsx`: 地図領域の高さを`height="100vh"`→`height="100%"`に変更（フッターと縦に並ぶflexレイアウトに対応）。
+    - `frontend/src/components/LayerSidebar.tsx`（削除）。
+    - `frontend/src/theme.ts`: 不要になった`sidebarCollapsedWidth`を削除。
+    - `electron/tests/support/layer-controls.ts`（新規）: レイヤー切り替えダイアログを開き、ラベルテキストのクリックでチェック状態を切り替えて実行する`toggleLayer`ヘルパー。
+    - `electron/tests/bicycle-log.spec.ts`・`electron/tests/aerial-photo.spec.ts`: 新UIに合わせてレイヤー切り替え手順・初期取り込み完了確認手順を修正。
+    - `test_rules.md`: `Checkbox`の非同期`onCheckedChange`（単体テスト）・実ブラウザでのクリックインターセプト（E2E）について、既存の`Switch`向け記載を拡張。
+    - 単体テスト（フロントエンド）・lint・typecheck・E2Eテスト4件は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「レイヤ一覧表示機能」「自転車ログフィルタリング機能」「自転車ログ初期取り込み機能」から左サイドバーに関する記載を除去し、マップコントロール・各ダイアログ・進捗フッターを用いる新しい操作方法に更新。`specs/glossary.md`から「左サイドバー」を削除し、「マップコントロール」「レイヤーダイアログ」「設定ダイアログ」「進捗フッター」を追加。
+  * **設計書**: `designs/class_diagram.md`のフロントエンドのクラス図を新しいコンポーネント構成に更新し、「`MapWorkspace`の責務の広さ」改善提案の該当箇所にIssue #32対応済みである旨を追記。
+
+### [2026-07-14] GitHub Issue #31として用語集を作成した
+* **修正の動機・概要**:
+  - 指示・レビュー・仕様書記載の際に一般的な用語（左サイドバー、ダイアログ等）を用いており、表記揺れや説明の冗長化が懸念されるという依頼（Issue #31）。自律モードで対応した。
+  - `specs/system_specification.md`・`designs/technical_design.md`・コード上のコメントを調査し、一意に定めておくべき用語（自転車ログ、アクティビティ、同期、初期取り込み、選択/フォーカス、左右サイドバー等）をリストアップし、`specs/glossary.md`（新規）にまとめた。
+  - 調査の過程で、実際に表記揺れを発見し修正した: 「同期」処理が仕様書・設計書内で「更新系API」、コード上のコメント（`MapView.tsx`）で「更新用API」と別々に表現されていたため、全て「同期」に統一した。また「アクティビティログ」という表現も「アクティビティ」に統一した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `frontend/src/components/MapView.tsx`のコメント内の表記を「更新用API」→「同期」に修正（動作に影響する変更ではない）。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/glossary.md`（新規）を作成。`specs/system_specification.md`・`designs/technical_design.md`の表記揺れ（「更新系API」/「アクティビティログ」）を修正し、両ファイルの冒頭に`glossary.md`へのリンクを追加。`AGENTS.md`に、用語を使う際はglossary.mdの定義に従う旨を追記。
+
 ### [2026-07-14] GitHub Issue #30として仕様書を仕様書と設計書に分割した
 * **修正の動機・概要**:
   - `specs/system_specification.md`に、ユーザーから見た仕様レベルの記述だけでなく、アルゴリズム・データモデル・クラス名・PostGISの関数名等の設計レベルの記述も混在しており、レビューしづらいという依頼（Issue #30）。自律モードで対応した。
@@ -93,8 +182,6 @@
   - `issue-implement`スキルの自律モード（手順2-B）における対象Issue選定条件に、「`WIP`ラベルが付いていないこと」を追加した。対話モードでは引き続き`WIP`ラベル付きのIssueも選択肢に表示する（ユーザーが対話で内容を詰めながら着手できるようにするため）。
 * **各ファイルへの影響と変更内容**:
   * **実装**: `.agents/skills/issue-implement/SKILL.md`の手順1（Issue一覧取得時にラベル情報も含める旨を明記）・手順2-A（対話モードでは`WIP`ラベル付きも選択肢に含める旨を明記）・手順2-B（自律モードの対象Issue選定条件に`WIP`ラベル除外を追加）を更新。
-  * **README.md**: 変更なし。
-  * **仕様書**: 変更なし（AIエージェントの内部運用スキルであり、アプリケーションの機能仕様には影響しないため）。
 
 ### [2026-07-14] GitHub Issue #24としてフォーカス中のアクティビティにスタート・ゴールマーカーを表示する機能を実装した
 * **修正の動機・概要**:
