@@ -1,6 +1,6 @@
 # Design Principles（設計原則）
 
-本ファイルは、rules.mdから分割した設計原則（DRY/KISS/YAGNI・SOLID原則等）をまとめたものです（Issue #47）。コードの構造・責務分割に関する原則であり、個々の構文レベルの規約（rules.md）よりも参照頻度は低いものの、モジュール分割・リファクタリングを判断する場面では必ず参照すること。Biomeでは機械的に検出できない領域です。
+本ファイルは、コード規約から分割した設計原則（DRY/KISS/YAGNI・SOLID原則等）をまとめたものです（Issue #47）。コードの構造・責務分割に関する原則であり、個々の構文レベルの規約（[typescript_rules.md](./typescript_rules.md)・[react_rules.md](./react_rules.md)・[comment_rules.md](./comment_rules.md)）よりも参照頻度は低いものの、モジュール分割・リファクタリングを判断する場面では必ず参照すること。Biomeでは機械的に検出できない領域です。
 
 `pnpm run check:file-size`（`scripts/check-file-size.mjs`）は、1ファイルの行数・JSXのネスト深さが一定の閾値を超えたファイルを検出する。責務が集まりすぎている兆候として、該当ファイルは本ファイルの原則（特にSRP）に照らして再確認すること。
 

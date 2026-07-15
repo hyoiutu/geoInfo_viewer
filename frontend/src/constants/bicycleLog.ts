@@ -22,7 +22,7 @@ export const BICYCLE_LOG_LINE_WIDTH_FOCUSED = 4;
 export const BICYCLE_LOG_FOCUSED_OUTLINE_WIDTH = BICYCLE_LOG_LINE_WIDTH_FOCUSED + 3;
 
 // MapLibreのline-color paintプロパティはCSSカスタムプロパティを解釈できない（Canvas描画のため）ため、
-// Chakra UIのtheme.tsトークンは経由せず、rules.mdの色トークン規約の対象外としてここに直接定義する
+// Chakra UIのtheme.tsトークンは経由せず、ui_rules.mdの色トークン規約の対象外としてここに直接定義する
 // （未選択・選択中・フォーカス中は「識別(どのアクティビティか)」ではなく「状態」を表すため、
 // 同一色相の濃淡ではなく色相自体を変える配色にした(Issue #26フォローアップ)。
 // 未選択はChakra gray.500相当（地図背景に対して低彩度で後退して見える）、

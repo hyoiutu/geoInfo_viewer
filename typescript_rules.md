@@ -1,7 +1,10 @@
-# コード規約
+# TypeScript Rules（TypeScript構文規約）
 
-本ファイルには、コードを書く際に常に参照する基礎的な規約（構文レベルのTypeScript/React規約、コメント・命名等）をまとめています。以下は関連するが参照頻度がより低い規約のため、別ファイルに分割しています（Issue #47。rules.mdが1000行を超え全てを都度参照するのは非効率という指摘を受け、参照するタイミングに応じてファイルを分けた）。
+本ファイルは、rules.mdを分割した中でTypeScript言語レベルの構文規約をまとめたものです（Issue #47のレビュー対応。「rules.md」という抽象的な名前は、他の規約ファイルが具体的な名前を持つ中で不適切という指摘を受け、`typescript_rules.md`・[react_rules.md](./react_rules.md)・[comment_rules.md](./comment_rules.md)の3ファイルへ分割した）。実装時に常に参照する基礎的な規約です。
 
+関連する他の規約ファイル:
+- [react_rules.md](./react_rules.md): React/JSXコンポーネント固有の規約。
+- [comment_rules.md](./comment_rules.md): TSDoc・コメントに関する規約。
 - [design_principles.md](./design_principles.md): DRY/KISS/YAGNI・SOLID原則等の設計原則。モジュール分割やリファクタリングを判断する場面で参照する。
 - [ui_rules.md](./ui_rules.md): Chakra UI・色/余白トークン等のスタイリング規約。フロントエンドのUIコンポーネントを実装・変更する場合のみ参照する。
 
@@ -14,7 +17,7 @@
 - **マジックナンバー**: Biomeの`noMagicNumbers`は比較・算術式に使われる数値リテラル（例: `if (count > 3)`）は検出するが、オブジェクトリテラルのプロパティ値（例: `{ width: 1200 }`）のような設定値としての数値リテラルは検出しない。
 - **KISS（if-elseの簡略化等）**: 自動検出の対象外。単純な`if/else`を三項演算子にできる、ネストを減らせる等はBiomeの指摘に出ないため、コードレビュー時に人間・AIエージェントが個別に見直す必要がある（[design_principles.md](./design_principles.md)参照）。
 
-**Biomeが指摘しないからといって、規約に準拠しているとは限らない。** 新規コード作成時・既存コードの見直し時は、Biomeのlint結果だけに頼らず、本ファイル・[design_principles.md](./design_principles.md)・[ui_rules.md](./ui_rules.md)の各ルールと照らし合わせて確認すること。
+**Biomeが指摘しないからといって、規約に準拠しているとは限らない。** 新規コード作成時・既存コードの見直し時は、Biomeのlint結果だけに頼らず、本ファイル・[react_rules.md](./react_rules.md)・[comment_rules.md](./comment_rules.md)・[design_principles.md](./design_principles.md)・[ui_rules.md](./ui_rules.md)の各ルールと照らし合わせて確認すること。
 
 逆に、**Biomeの指摘が誤りである場合もある**。例えばNestJSのコンストラクタインジェクションで使うクラス（例: `constructor(private readonly appService: AppService) {}`）は、Biomeの`lint/style/useImportType`からは「型としてしか使われていない」ように見え`import type`への変換を提案されるが、実際には`emitDecoratorMetadata`が実行時にこのクラスの参照（値）を必要とするため、`import type`に変換すると依存性注入が壊れる。この種の警告（`Found N warning(s)`、exit code 0）は自動修正を鵜呑みにせず、フレームワークの実行時要件を優先すること。
 
@@ -34,30 +37,6 @@ const func = (_, args) => {
 # テスト以外はTypeScriptファイルを使用する
 
 JavaScriptファイル（`.js`/`.jsx`）は使用せず、TypeScriptファイル（`.ts`/`.tsx`）を使用し、適切な型定義を行う。
-
-# React Hooksの依存配列を無視しない
-
-Biomeの`useExhaustiveDependencies`が自動検出する。依存配列を意図的に省略する場合は、次項の「biome-ignoreを使用する場合は理由を明記する」に従うこと。
-
-# biome-ignoreを使用する場合は理由を明記する
-
-NG
-```typescript
-// biome-ignore lint/correctness/useExhaustiveDependencies: state更新時の再実行を防ぐため理由の記載が必要
-useEffect(() => {
-  // ...
-}, []);
-```
-
-OK
-```typescript
-// biome-ignore lint/correctness/useExhaustiveDependencies: state更新時の再実行を防ぐため
-useEffect(() => {
-  // ...
-}, []);
-```
-
-`// biome-ignore lint/<ルール名>: <理由>`の形式で、コロンの後に必ず理由を明記すること。理由の無い抑制は、割れ窓の法則（[design_principles.md](./design_principles.md)参照）に反し、後から見直す際に「なぜ抑制したか」が分からなくなる。
 
 # anyやas（型キャスト）は原則使用しない
 
@@ -83,7 +62,7 @@ const user: User = { id: 1, name: "name" };
 
 上記の回避手順を試した上でなお`as T`によるキャストが避けられないと判断した場合は、**そのキャストの直前に、なぜ回避できないのか（どの回避手順を試して駄目だったか）を説明する`//`コメントを必ず添えること。** コメント無しの型キャストは、理由を検討せず安易に使った結果なのか、検討した上でやむを得ず使ったのかが後から判別できず、レビューのたびに同じ確認が発生してしまう。
 
-本ルールはBiomeの自動チェック対象外のため、`pnpm run check:type-assertions`（`scripts/check-type-assertions.mjs`）で機械的に検出できる。`as unknown as T`（括弧で挟んだ場合を含む）は無条件でエラーとし、それ以外の`as T`は直前行または同一行末尾に`//`コメントが無い場合にエラーとする（`as const`・`import { x as y }`の別名importは対象外）。現時点ではコミット時の自動実行には組み込んでおらず、手動実行のみ。
+本ルールはBiomeの自動チェック対象外のため、`pnpm run check:type-assertions`（`scripts/check-type-assertions.mjs`）で機械的に検出できる。`as unknown as T`（括弧で挟んだ場合を含む）は無条件でエラーとし、それ以外の`as T`は直前行または同一行末尾に`//`コメントが無い場合にエラーとする（`as const`・`import { x as y }`の別名importは対象外）。`package.json`の`lint-staged`（huskyのpre-commitフック経由）に組み込み済みで、コミット対象ファイルに対して自動実行される（Issue #48）。
 
 # ||ではなく??（Null合体演算子）を使用する
 
@@ -138,18 +117,6 @@ Biomeの`noNestedTernary`が自動検出する。
 # 命名規則の遵守
 
 Biomeの`useNamingConvention`が自動検出する。
-
-# boolean型の属性値は省略する
-
-NG
-```typescript
-<Component personal={true} />
-```
-
-OK
-```typescript
-<Component personal />
-```
 
 # 型推論が効く場合は型注釈を省略する
 
@@ -209,71 +176,9 @@ const user = {
 };
 ```
 
-# Reactコンポーネントは自己閉じタグを使用する
-
-Biomeの`useSelfClosingElements`が自動検出する。
-
-# JSX内に複数行のロジックを書かない
-
-JSX（return文の中）に書いてよいのは関数呼び出しと1行程度の式（単純な三項演算子やテンプレートリテラル等）のみとする。複数行にわたる条件分岐やイベントハンドラの本体はコンポーネント本体側の関数として外に出す。
-
-NG
-
-```tsx
-return (
-  <div>
-    {items.length === 0 ? (
-      <p>Emptyです</p>
-    ) : (
-      items.map((item) => <Item key={item.id} item={item} />)
-    )}
-    <button
-      onClick={() => {
-        setCount((current) => current + 1);
-        logEvent('increment');
-      }}
-    >
-      +1
-    </button>
-  </div>
-);
-```
-
-OK
-
-```tsx
-const handleIncrement = () => {
-  setCount((current) => current + 1);
-  logEvent('increment');
-};
-
-return (
-  <div>
-    <ItemList items={items} />
-    <button onClick={handleIncrement}>+1</button>
-  </div>
-);
-```
-
 # アロー関数を使用する
 
 Biomeの`useArrowFunction`が自動検出する。
-
----
-
-# ドキュメント・設定ファイルに特定PCのフルパス（絶対パス）を書かない
-
-NG
-```md
-単体テストのルールは [test_rules.md](file:///Users/alice/repos/my-project/test_rules.md) を参照してください。
-```
-
-OK
-```md
-単体テストのルールは [test_rules.md](./test_rules.md) を参照してください。
-```
-
-`README.md`・`specs/`配下の仕様書・`.agents/skills/`のスキル定義等に、`/Users/<ユーザー名>/...`のような特定のPC・ユーザー環境に依存したフルパスを書き込まないこと。このリポジトリは複数人・複数PC（異なるOS・異なるユーザー名・異なる配置場所）で扱われる可能性があるため、フルパスを書くとリンク切れや誤解を招く。プロジェクト内のファイルを参照する場合は、常に参照元からの相対パス（例: `./test_rules.md`、`../../../commit_rules.md`）を使うこと。ディレクトリ構成図等で「プロジェクトルート」を示したい場合も、絶対パスではなく`./`や「プロジェクトルート」といった環境非依存の表現を使う。
 
 ---
 
@@ -339,132 +244,3 @@ try {
 バックエンドは、意図的に発生しうるエラー（外部API呼び出し失敗等）を`AppException`（`backend/src/common/errors/`参照）として投げ、グローバル例外フィルタ（`AllExceptionsFilter`）が全エンドポイント共通の`{errorCode, message, hint}`形式にレスポンスを統一する。個別のtry/catchで`{success: false}`のような真偽値に握りつぶし、エラーの種別・原因を消してしまわないこと（ただし「バックフィル実行中だから同期をスキップした」のような、エラーではない正常系のガードは真偽値の戻り値のままでよい）。
 
 フロントエンドは、APIレスポンスが異常な場合`ApiError`（`frontend/src/utils/apiError.ts`参照）としてthrowし、呼び出し元でconsole.error等に記録するだけで終わらせず、エラーダイアログ等でユーザーに`message`（内容）と`hint`（対処法）を提示すること。詳細は[system_specification.md](./specs/system_specification.md)の「エラーハンドリング機構」節を参照。
-
----
-
-# テスト以外の全ての関数にTSDocを書く
-
-NG
-```typescript
-/**
- * アクティビティ詳細を取得する
- * @param activityId 対象のアクティビティID
- * @param options 取得オプション（includeSegments: セグメント情報を含めるか, unit: 距離の単位）
- * @return 取得結果（activity: 取得したアクティビティ, cached: キャッシュから返したか）
- */
-const fetchActivityDetail = (
-  activityId: number,
-  options: { includeSegments: boolean; unit: 'km' | 'mile' }
-): { activity: Activity; cached: boolean } => {...};
-```
-
-OK
-```typescript
-/** fetchActivityDetailの取得オプション */
-type FetchActivityDetailOptions = {
-  /** セグメント情報を含めるか */
-  includeSegments: boolean;
-  /** 距離の単位 */
-  unit: 'km' | 'mile';
-};
-
-/** fetchActivityDetailの戻り値 */
-type FetchActivityDetailResult = {
-  /** 取得したアクティビティ */
-  activity: Activity;
-  /** キャッシュから返したか */
-  cached: boolean;
-};
-
-/** アクティビティ詳細を取得する */
-const fetchActivityDetail = (activityId: number, options: FetchActivityDetailOptions): FetchActivityDetailResult => {...};
-```
-
-テストコード（`__tests__/`配下・`*.tests.ts(x)`・E2Eテストの`*.spec.ts(x)`）を除く、全ての関数（`export`の有無・アロー関数/`function`宣言/クラスメソッドを問わない）に、その役割を説明するTSDocコメント（`/** ... */`）を書くこと。テストコードそのもの（アサーションを書くテストケース・spec）は対象外だが、`test-utils/`・`electron/tests/support/`・`electron/tests/global-setup.ts`のようなテストを支えるヘルパー・セットアップ処理は「テストコード」ではなく通常の関数として扱い、TSDocの対象に含める。
-
-- 引数・戻り値が**オブジェクト型でない**場合は、通常通り`@param`・`@returns`を使ってよい。
-- 引数・戻り値が**オブジェクト型の場合**は、インライン（`{ a: number; b: string }`のような直書き）のままにせず、名前付きの`type`として抽出し、各プロパティに対して個別にTSDocを書くこと。関数本体側は`@param`/`@returns`でプロパティ単位の説明を書き並べない（NG例のように「かっこ書きで列挙」しない）。
-- 抽出した型の命名は、関数名を接頭辞にした`<関数名>Params`/`<関数名>Result`のような、他の型と衝突しない具体的な名前にする。
-- Reactコンポーネント（`export const Foo = (props: FooProps) => {...}`）も関数の一種として扱い、コンポーネント自体の役割を1行のTSDocで説明する（個々のJSX要素にはTSDocを書かない）。
-- **1つのファイルに複数のコンポーネントを定義する場合、ファイル外へexportしないローカルな子コンポーネントも例外なく本ルールの対象とする。** 子コンポーネントのpropsを`Pick<親のProps, '...'>`のように親のProps型から直接切り出して関数シグネチャにインラインで書いたり、リテラルのオブジェクト型をそのまま書いたりせず、子コンポーネント自身の名前を冠した独立した`type`（例: `ActivityListProps`）として抽出し、各プロパティにTSDocを書くこと。親のProps型のフィールドと説明文が重複しても構わない（両者は将来別々に変化しうる独立した型のため）。
-
----
-
-# useEffectの直前に1行程度の説明コメントを書く
-
-NG
-```typescript
-useEffect(() => {
-  if (!backfillStatus?.isRunning) {
-    return;
-  }
-  const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
-  return () => clearInterval(timer);
-}, [backfillStatus?.isRunning, refresh]);
-```
-
-OK
-```typescript
-// 実行中の間だけ、一定間隔で進捗状況をポーリングして再取得する
-useEffect(() => {
-  if (!backfillStatus?.isRunning) {
-    return;
-  }
-  const timer = setInterval(() => void refresh(), POLL_INTERVAL_MS);
-  return () => clearInterval(timer);
-}, [backfillStatus?.isRunning, refresh]);
-```
-
-`useEffect`は「いつ・何をきっかけに実行されるか」が依存配列や外側の条件分岐から読み取りにくいことが多い。全ての`useEffect`呼び出しの直前に、`//`によるコメントで「何をするeffectか」を1行程度で説明すること（TSDocの`/** */`ではなく、通常の`//`コメントでよい）。
-
-なお、Reactコンポーネント自体の役割説明は、直前の項目（テスト以外の全ての関数にTSDocを書く）で追加するコンポーネント直上のTSDocコメントがこれを兼ねる。コンポーネントの説明を別途重複して書く必要は無い。
-
----
-
-# 外部システムの仕様に起因する非自明な定数値には理由をコメントで残す
-
-NG
-```typescript
-const INSERT_BATCH_SIZE = 500;
-```
-
-OK
-```typescript
-// 1都道府県分を1回のsave()にまとめて投入すると、TypeORMが発行するINSERT文のバインドパラメータ数が
-// PostgreSQLの上限(65535個)に抵触しうる（市区町村数が多い都道府県で発生しうる）ため、この件数ごとに分割して投入する
-const INSERT_BATCH_SIZE = 500;
-```
-
-定数の値そのものだけでは、それが「なぜその値なのか」「省略するとどう壊れるのか」がコードから読み取れない場合（DBのバインドパラメータ上限・外部APIのレート制限・OSやライブラリの既知の制約など、実装対象のドメインロジックではなく外部システムの仕様に起因する制約）は、値の意図をコメントで明示すること。特に「なぜこの値を超えてはいけないか」という制約の出どころ（PostgreSQL・Strava API等、具体的な対象）を明記する。
-
----
-
-# サードパーティライブラリがDOM要素を要求する場合、innerHTMLへの文字列注入ではなくReactのcreateRootで管理下に置く
-
-NG
-```typescript
-import { renderToStaticMarkup } from 'react-dom/server';
-
-const createMarkerElement = (icon: ReactElement): HTMLDivElement => {
-  const container = document.createElement('div');
-  container.innerHTML = renderToStaticMarkup(icon);
-  return container;
-};
-```
-
-OK
-```typescript
-import { flushSync } from 'react-dom';
-import { createRoot, type Root } from 'react-dom/client';
-
-const createMarkerElement = (icon: ReactElement): { element: HTMLDivElement; root: Root } => {
-  const container = document.createElement('div');
-  const root = createRoot(container);
-  flushSync(() => root.render(icon));
-  return { element: container, root };
-};
-
-// 呼び出し側: 破棄する際にroot.unmount()も呼ぶこと（メモリリーク防止）
-```
-
-MapLibreの`Marker`等、React管理外のライブラリが独自にDOM要素（`HTMLElement`）を要求するAPIでは、`document.createElement`によるコンテナ生成自体は避けられない。しかし、その中身を`renderToStaticMarkup`で文字列化し`innerHTML`へ代入する方法は、Reactの管理下から外れたDOM操作であり避けること。代わりに`react-dom/client`の`createRoot`でコンテナへレンダリングし、Reactの管理下に置く。`createRoot().render()`は非同期にコミットされうるため、呼び出し側（ライブラリ側API）へ渡す時点で描画済みであることを保証する必要がある場合は`flushSync`で同期化すること。また、作成したrootは要素を破棄するタイミングで必ず`root.unmount()`を呼ぶこと（呼ばないとメモリリークする）。
