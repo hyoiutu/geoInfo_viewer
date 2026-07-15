@@ -4,8 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { of, throwError } from 'rxjs';
 import { describe, expect, test, vi } from 'vitest';
-import { AppException } from '../../common/errors/app.exception';
 import { APP_ERROR_CODE } from '../../common/errors/app-error-code.constants';
+import { assertIsAppException } from '../../test-utils/assert-is-app-exception';
 import { StravaAuthService } from '../strava-auth.service';
 
 const ENV_VALUES: Record<string, string> = {
@@ -83,10 +83,7 @@ describe('StravaAuthServiceに関するテスト', () => {
       await service.getAccessToken();
       expect.unreachable('例外が投げられるはず');
     } catch (error) {
-      expect(error).toBeInstanceOf(AppException);
-      if (!(error instanceof AppException)) {
-        throw error;
-      }
+      assertIsAppException(error);
       expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaAuthFailed }));
     }
   });

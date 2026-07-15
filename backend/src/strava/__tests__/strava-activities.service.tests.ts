@@ -3,8 +3,8 @@ import { HttpService } from '@nestjs/axios';
 import { Test } from '@nestjs/testing';
 import { of, throwError } from 'rxjs';
 import { describe, expect, test, vi } from 'vitest';
-import { AppException } from '../../common/errors/app.exception';
 import { APP_ERROR_CODE } from '../../common/errors/app-error-code.constants';
+import { assertIsAppException } from '../../test-utils/assert-is-app-exception';
 import { StravaActivitiesService } from '../strava-activities.service';
 import { StravaAuthService } from '../strava-auth.service';
 import { StravaRateLimiterService } from '../strava-rate-limiter.service';
@@ -90,10 +90,7 @@ describe('StravaActivitiesServiceに関するテスト', () => {
       await service.fetchCyclingActivities();
       expect.unreachable('例外が投げられるはず');
     } catch (error) {
-      expect(error).toBeInstanceOf(AppException);
-      if (!(error instanceof AppException)) {
-        throw error;
-      }
+      assertIsAppException(error);
       expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaApiError }));
     }
   });
@@ -146,10 +143,7 @@ describe('StravaActivitiesServiceに関するテスト', () => {
         await service.fetchAllCyclingActivities();
         expect.unreachable('例外が投げられるはず');
       } catch (error) {
-        expect(error).toBeInstanceOf(AppException);
-        if (!(error instanceof AppException)) {
-          throw error;
-        }
+        assertIsAppException(error);
         expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaRateLimited }));
       }
     });
@@ -187,10 +181,7 @@ describe('StravaActivitiesServiceに関するテスト', () => {
         await service.fetchCyclingActivityDetail(1);
         expect.unreachable('例外が投げられるはず');
       } catch (error) {
-        expect(error).toBeInstanceOf(AppException);
-        if (!(error instanceof AppException)) {
-          throw error;
-        }
+        assertIsAppException(error);
         expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.stravaApiError }));
       }
     });
