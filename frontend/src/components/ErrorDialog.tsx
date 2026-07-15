@@ -1,8 +1,9 @@
-import { Button, Dialog, Portal, Text } from '@chakra-ui/react';
+import { Button, Text } from '@chakra-ui/react';
 import { useAtom } from 'jotai';
 import { useState } from 'react';
 import { errorsAtom } from '../atoms/errorsAtom';
 import type { AppErrorInfo } from '../types/apiError';
+import { AppDialog } from './AppDialog';
 
 const FIRST_INDEX = 0;
 const SINGLE_ERROR_COUNT = 1;
@@ -23,12 +24,6 @@ export const ErrorDialog = () => {
     setErrors((current) => current.filter((_, currentErrorIndex) => currentErrorIndex !== index));
   };
 
-  const handleOpenChange = (details: { open: boolean }) => {
-    if (!details.open && currentError) {
-      dismiss(currentIndex);
-    }
-  };
-
   const handleDismiss = () => {
     if (currentError) {
       dismiss(currentIndex);
@@ -39,42 +34,39 @@ export const ErrorDialog = () => {
   const handleNext = () => setViewIndex((current) => Math.min(current + 1, lastIndex));
 
   return (
-    <Dialog.Root open={currentError !== undefined} onOpenChange={handleOpenChange} role="alertdialog">
-      <Portal>
-        <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content>
-            <Dialog.Header>
-              <Dialog.Title>
-                エラーが発生しました
-                {errors.length > SINGLE_ERROR_COUNT && `（${currentIndex + 1}/${errors.length}）`}
-              </Dialog.Title>
-            </Dialog.Header>
-            <Dialog.Body>
-              <Text>{currentError?.message}</Text>
-              {currentError?.hint !== null && currentError?.hint !== undefined && (
-                <Text fontSize="sm" color="fg.muted" marginTop="2">
-                  {currentError.hint}
-                </Text>
-              )}
-            </Dialog.Body>
-            <Dialog.Footer>
-              {errors.length > SINGLE_ERROR_COUNT && (
-                <>
-                  <Button onClick={handlePrevious} disabled={currentIndex === FIRST_INDEX} variant="ghost" size="sm">
-                    前へ
-                  </Button>
-                  <Button onClick={handleNext} disabled={currentIndex === lastIndex} variant="ghost" size="sm">
-                    次へ
-                  </Button>
-                </>
-              )}
-              <Button onClick={handleDismiss}>OK</Button>
-            </Dialog.Footer>
-            <Dialog.CloseTrigger />
-          </Dialog.Content>
-        </Dialog.Positioner>
-      </Portal>
-    </Dialog.Root>
+    <AppDialog
+      isOpen={currentError !== undefined}
+      onClose={handleDismiss}
+      title={
+        <>
+          エラーが発生しました
+          {errors.length > SINGLE_ERROR_COUNT && `（${currentIndex + 1}/${errors.length}）`}
+        </>
+      }
+      showCloseButton={false}
+      role="alertdialog"
+      footer={
+        <>
+          {errors.length > SINGLE_ERROR_COUNT && (
+            <>
+              <Button onClick={handlePrevious} disabled={currentIndex === FIRST_INDEX} variant="ghost" size="sm">
+                前へ
+              </Button>
+              <Button onClick={handleNext} disabled={currentIndex === lastIndex} variant="ghost" size="sm">
+                次へ
+              </Button>
+            </>
+          )}
+          <Button onClick={handleDismiss}>OK</Button>
+        </>
+      }
+    >
+      <Text>{currentError?.message}</Text>
+      {currentError?.hint !== null && currentError?.hint !== undefined && (
+        <Text fontSize="sm" color="fg.muted" marginTop="2">
+          {currentError.hint}
+        </Text>
+      )}
+    </AppDialog>
   );
 };

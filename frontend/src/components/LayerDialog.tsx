@@ -1,5 +1,6 @@
-import { Button, Checkbox, Dialog, Flex, Portal } from '@chakra-ui/react';
+import { Button, Checkbox, Flex } from '@chakra-ui/react';
 import type { ToggleableLayerId } from '../types/layer';
+import { AppDialog } from './AppDialog';
 
 /** ダイアログに表示する1レイヤー分の情報 */
 type LayerDialogLayer = {
@@ -31,58 +32,32 @@ type LayerDialogProps = {
  * レイヤーの表示/非表示を切り替えるダイアログ。
  * 入力内容は「実行」を押したときのみ確定し、閉じるボタン等で閉じた場合は破棄される
  */
-export const LayerDialog = ({ isOpen, layers, onToggleDraft, onReset, onApply, onClose }: LayerDialogProps) => {
-  const handleOpenChange = (details: { open: boolean }) => {
-    if (!details.open) {
-      onClose();
+export const LayerDialog = ({ isOpen, layers, onToggleDraft, onReset, onApply, onClose }: LayerDialogProps) => (
+  <AppDialog
+    isOpen={isOpen}
+    onClose={onClose}
+    title="レイヤー切り替え"
+    footer={
+      <>
+        <Button onClick={onReset} variant="ghost" size="sm">
+          リセット
+        </Button>
+        <Button onClick={onApply} size="sm">
+          実行
+        </Button>
+      </>
     }
-  };
-
-  return (
-    <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
-      <Portal>
-        <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content>
-            <Dialog.Header>
-              <Dialog.Title>レイヤー切り替え</Dialog.Title>
-              <Button
-                onClick={onClose}
-                aria-label="閉じる"
-                variant="ghost"
-                size="sm"
-                position="absolute"
-                top="2"
-                right="2"
-              >
-                ×
-              </Button>
-            </Dialog.Header>
-            <Dialog.Body>
-              <Flex direction="column" gap="3">
-                {layers.map((layer) => (
-                  <Checkbox.Root key={layer.id} checked={layer.checked} onCheckedChange={() => onToggleDraft(layer.id)}>
-                    <Checkbox.HiddenInput />
-                    <Checkbox.Control>
-                      <Checkbox.Indicator />
-                    </Checkbox.Control>
-                    <Checkbox.Label>{layer.name}</Checkbox.Label>
-                  </Checkbox.Root>
-                ))}
-              </Flex>
-            </Dialog.Body>
-            <Dialog.Footer>
-              <Button onClick={onReset} variant="ghost" size="sm">
-                リセット
-              </Button>
-              <Button onClick={onApply} size="sm">
-                実行
-              </Button>
-            </Dialog.Footer>
-            <Dialog.CloseTrigger />
-          </Dialog.Content>
-        </Dialog.Positioner>
-      </Portal>
-    </Dialog.Root>
-  );
-};
+  >
+    <Flex direction="column" gap="3">
+      {layers.map((layer) => (
+        <Checkbox.Root key={layer.id} checked={layer.checked} onCheckedChange={() => onToggleDraft(layer.id)}>
+          <Checkbox.HiddenInput />
+          <Checkbox.Control>
+            <Checkbox.Indicator />
+          </Checkbox.Control>
+          <Checkbox.Label>{layer.name}</Checkbox.Label>
+        </Checkbox.Root>
+      ))}
+    </Flex>
+  </AppDialog>
+);

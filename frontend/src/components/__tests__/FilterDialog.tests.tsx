@@ -7,7 +7,7 @@ import { FilterDialog } from '../FilterDialog';
 const renderDialog = (overrides: Partial<Parameters<typeof FilterDialog>[0]> = {}) =>
   renderWithChakra(
     <FilterDialog
-      isOpen={true}
+      isOpen
       draftFilter={DEFAULT_ACTIVITY_FILTER}
       onUpdateDraft={vi.fn()}
       onReset={vi.fn()}

@@ -1,6 +1,6 @@
 # Test Rules（単体テスト規約）
 
-本ファイルは、AIエージェントが単体テストを作成・実行する際に必ず遵守すべきルールを定義します。テストコードにも `rules.md` のコーディング規約（`type` の使用、アロー関数、命名規則等）は変わらず適用されます。本ファイルはテスト固有の追加ルールです。
+本ファイルは、AIエージェントが単体テストを作成・実行する際に必ず遵守すべきルールを定義します。テストコードにも [typescript_rules.md](./typescript_rules.md) のコーディング規約（`type` の使用、アロー関数、命名規則等）は変わらず適用されます。本ファイルはテスト固有の追加ルールです。
 
 参考記事:
 - https://qiita.com/mokio/items/95e962c59a142978bcb2
@@ -9,6 +9,17 @@
 ---
 
 ## 🚫 絶対遵守ルール (Mandatory Rules)
+
+0. **テストケースは日本語で書く**
+   - `describe`/`test`のタイトルは日本語で、何を保証するテストかが分かるように書く（Issue #47でコード規約から移動）。
+   ```typescript
+   // OK
+   describe('APIに関するテスト', () => {
+     test('APIが呼ばれたとき、ステータスコードは200を返す', () => {
+       // ...
+     });
+   });
+   ```
 
 1. **AAAパターンで書く**
    - 各テストケースは Arrange（準備）→ Act（実行）→ Assert（確認）の3段階で構成する。
@@ -54,7 +65,7 @@
 
 - **テストシナリオは日本語で先に書く**: 実装前にテストの意図を日本語で書き出し、何を保証したいテストかを明確にしてから実装する。
 - **4種類の入出力を意識する**: 明示的な入力（引数）・明示的な出力（戻り値）に加え、隠れた入力（依存関係・内部状態・外部プロセス）・隠れた出力（副作用・状態変化）も洗い出し、必要に応じてテストダブル（モック/スタブ/フェイク）で扱う。
-- **DAMP（Descriptive And Meaningful Phrases）を優先する**: テストコードはDRYよりも「読んで意図がわかること」を優先する。可読性を犠牲にしてまで共通化しない（ただし本プロジェクトの `rules.md` のDRY原則と矛盾する場合は、テスト対象コードではなくテストコード側にのみこの例外を適用する）。
+- **DAMP（Descriptive And Meaningful Phrases）を優先する**: テストコードはDRYよりも「読んで意図がわかること」を優先する。可読性を犠牲にしてまで共通化しない（ただし本プロジェクトの [design_principles.md](./design_principles.md) のDRY原則と矛盾する場合は、テスト対象コードではなくテストコード側にのみこの例外を適用する）。
 - **アサーションは意図が伝わるものを選ぶ**: `toBe` / `toEqual` / `toBeInTheDocument` 等、失敗時のメッセージが分かりやすいマッチャーを選択する。
 - **カバレッジ率は目的ではなく手段**: 高いカバレッジ率はテストの質を保証しない。ルール2（分岐網羅）を満たした結果として計測されるものであり、数値自体を目的化しない。
 
@@ -79,7 +90,7 @@
 - **テストフレームワーク**: Vitest（`@nestjs/testing`の`Test.createTestingModule`でテスト対象のモジュール/コントローラ/サービスを組み立てる）
 - **設定ファイル**: `backend/vitest.config.ts`
   - vitestの既定トランスフォーム（esbuild、およびvitest v4で既定化されたOxc）は`emitDecoratorMetadata`をサポートしないため、`unplugin-swc`（`@swc/core`）をpluginとして使い、`oxc: false`を明示的に設定してOxcトランスフォームを無効化すること。これを怠るとNestJSのコンストラクタインジェクション（DI）が正しく動作しない。
-  - コンストラクタで注入するクラス（例: `constructor(private readonly appService: AppService) {}`）はBiomeの`lint/style/useImportType`から「型としてのみ使用」と誤検知され`import type`への変換を提案されることがあるが、実行時の型メタデータ解決に実体の参照が必要なため、提案を鵜呑みにせず通常の`import`のまま残すこと（詳細は`rules.md`参照）。
+  - コンストラクタで注入するクラス（例: `constructor(private readonly appService: AppService) {}`）はBiomeの`lint/style/useImportType`から「型としてのみ使用」と誤検知され`import type`への変換を提案されることがあるが、実行時の型メタデータ解決に実体の参照が必要なため、提案を鵜呑みにせず通常の`import`のまま残すこと（詳細は[typescript_rules.md](./typescript_rules.md)参照）。
 - **命名・配置規約**: NestJS既定の`.spec.ts`ではなく、フロントエンドと同じ`__tests__`配置・`<対象ファイル名>.tests.ts`命名を使う（例: `backend/src/app.service.ts` → `backend/src/__tests__/app.service.tests.ts`）。
 - **実行コマンド**: `pnpm --filter backend test:unit`
 - **DB（PostgreSQL/PostGIS, TypeORM）を伴うサービスのテスト**: 実DBには接続せず、`@nestjs/typeorm`の`getRepositoryToken(Entity)`を使い`Repository<Entity>`を`vi.fn()`でモック化する（`find`/`save`/`findOneBy`等）。実際のSQL・PostGIS空間クエリの振る舞い自体はこの方法では検証できないため、マイグレーション適用やPostGISジオメトリの保存・取得結果は、ルートの`docker-compose.yml`（PostGIS同梱のPostgreSQLコンテナ、ポート`5433`）を`docker-compose up -d`で起動した上で手動確認すること（詳細はREADME.md参照）。

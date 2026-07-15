@@ -6,7 +6,7 @@ import { SettingsDialog } from '../SettingsDialog';
 const renderDialog = (overrides: Partial<Parameters<typeof SettingsDialog>[0]> = {}) =>
   renderWithChakra(
     <SettingsDialog
-      isOpen={true}
+      isOpen
       isBackfillRunning={false}
       onStartBackfill={vi.fn()}
       onStartForceRefetch={vi.fn()}

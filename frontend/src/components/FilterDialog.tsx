@@ -1,6 +1,7 @@
-import { Button, Dialog, Flex, HStack, Input, NativeSelect, Portal, Text } from '@chakra-ui/react';
+import { Button, Flex, HStack, Input, NativeSelect, Text } from '@chakra-ui/react';
 import type { ActivityFilter } from '../types/activityFilter';
 import { isActivityFilterValid } from '../utils/filterActivities';
+import { AppDialog } from './AppDialog';
 
 const MIN_YEAR = 1980;
 const JANUARY = 1;
@@ -128,87 +129,64 @@ type FilterDialogProps = {
 export const FilterDialog = ({ isOpen, draftFilter, onUpdateDraft, onReset, onApply, onClose }: FilterDialogProps) => {
   const isValid = isActivityFilterValid(draftFilter);
 
-  const handleOpenChange = (details: { open: boolean }) => {
-    if (!details.open) {
-      onClose();
-    }
-  };
-
   return (
-    <Dialog.Root open={isOpen} onOpenChange={handleOpenChange}>
-      <Portal>
-        <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content>
-            <Dialog.Header>
-              <Dialog.Title>自転車ログのフィルタ</Dialog.Title>
-              <Button
-                onClick={onClose}
-                aria-label="閉じる"
-                variant="ghost"
-                size="sm"
-                position="absolute"
-                top="2"
-                right="2"
-              >
-                ×
-              </Button>
-            </Dialog.Header>
-            <Dialog.Body>
-              <Flex direction="column" gap="4">
-                <YearMonthField
-                  label="検索範囲始まり"
-                  year={draftFilter.startYear}
-                  month={draftFilter.startMonth}
-                  onChangeYear={(year) => onUpdateDraft({ startYear: year })}
-                  onChangeMonth={(month) => onUpdateDraft({ startMonth: month })}
-                />
-                <YearMonthField
-                  label="検索範囲終わり"
-                  year={draftFilter.endYear}
-                  month={draftFilter.endMonth}
-                  onChangeYear={(year) => onUpdateDraft({ endYear: year })}
-                  onChangeMonth={(month) => onUpdateDraft({ endMonth: month })}
-                />
-                {!isValid && (
-                  <Text fontSize="sm" color="fg.error">
-                    {VALIDATION_ERROR_MESSAGE}
-                  </Text>
-                )}
-                <NumberFilterField
-                  label="獲得標高"
-                  unit="m"
-                  step={1}
-                  value={draftFilter.minElevationGainMeters}
-                  onChange={(value) => onUpdateDraft({ minElevationGainMeters: value })}
-                />
-                <NumberFilterField
-                  label="平均時速"
-                  unit="km/h"
-                  step={0.1}
-                  value={draftFilter.minAverageSpeedKmh}
-                  onChange={(value) => onUpdateDraft({ minAverageSpeedKmh: value })}
-                />
-                <NumberFilterField
-                  label="走行距離"
-                  unit="km"
-                  step={0.1}
-                  value={draftFilter.minDistanceKm}
-                  onChange={(value) => onUpdateDraft({ minDistanceKm: value })}
-                />
-              </Flex>
-            </Dialog.Body>
-            <Dialog.Footer>
-              <Button onClick={onReset} variant="ghost" size="sm">
-                リセット
-              </Button>
-              <Button onClick={onApply} disabled={!isValid} size="sm">
-                実行
-              </Button>
-            </Dialog.Footer>
-          </Dialog.Content>
-        </Dialog.Positioner>
-      </Portal>
-    </Dialog.Root>
+    <AppDialog
+      isOpen={isOpen}
+      onClose={onClose}
+      title="自転車ログのフィルタ"
+      footer={
+        <>
+          <Button onClick={onReset} variant="ghost" size="sm">
+            リセット
+          </Button>
+          <Button onClick={onApply} disabled={!isValid} size="sm">
+            実行
+          </Button>
+        </>
+      }
+    >
+      <Flex direction="column" gap="4">
+        <YearMonthField
+          label="検索範囲始まり"
+          year={draftFilter.startYear}
+          month={draftFilter.startMonth}
+          onChangeYear={(year) => onUpdateDraft({ startYear: year })}
+          onChangeMonth={(month) => onUpdateDraft({ startMonth: month })}
+        />
+        <YearMonthField
+          label="検索範囲終わり"
+          year={draftFilter.endYear}
+          month={draftFilter.endMonth}
+          onChangeYear={(year) => onUpdateDraft({ endYear: year })}
+          onChangeMonth={(month) => onUpdateDraft({ endMonth: month })}
+        />
+        {!isValid && (
+          <Text fontSize="sm" color="fg.error">
+            {VALIDATION_ERROR_MESSAGE}
+          </Text>
+        )}
+        <NumberFilterField
+          label="獲得標高"
+          unit="m"
+          step={1}
+          value={draftFilter.minElevationGainMeters}
+          onChange={(value) => onUpdateDraft({ minElevationGainMeters: value })}
+        />
+        <NumberFilterField
+          label="平均時速"
+          unit="km/h"
+          step={0.1}
+          value={draftFilter.minAverageSpeedKmh}
+          onChange={(value) => onUpdateDraft({ minAverageSpeedKmh: value })}
+        />
+        <NumberFilterField
+          label="走行距離"
+          unit="km"
+          step={0.1}
+          value={draftFilter.minDistanceKm}
+          onChange={(value) => onUpdateDraft({ minDistanceKm: value })}
+        />
+      </Flex>
+    </AppDialog>
   );
 };

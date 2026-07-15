@@ -14,6 +14,37 @@
 
 ## 変更履歴
 
+### [2026-07-16] PR #55のレビュー対応としてDialog系コンポーネントの共通ラッパーAppDialogを切り出した
+* **修正の動機・概要**:
+  - PR #55（Issue #47対応）で追加した`check-file-size.mjs`のレビューで、「主にDialog系ファイルでJSXネスト深さの閾値超過が発生しているが、共通コンポーネントとして切り出せばネストを浅くできないか」という指摘を受けた。
+  - `LayerDialog`・`SettingsDialog`・`FilterDialog`・`ErrorDialog`の4コンポーネントを確認したところ、いずれもChakra UIの`Dialog.Root`/`Dialog.Backdrop`/`Dialog.Positioner`/`Dialog.Content`/`Dialog.Header`（タイトル+閉じるボタン）/`Dialog.Body`/`Dialog.Footer`/`Dialog.CloseTrigger`という同一のラッパー構造を持っていることを確認し、`AppDialog`（新規）として共通化した。
+  - `ErrorDialog`は他の3つと異なり、閉じる(×)ボタンが無くrole="alertdialog"・タイトルが動的（件数表示）という点で差異があったため、`AppDialog`に`showCloseButton`（省略時true）・`role`（省略時'dialog'）・`title`をReactNodeとして受け取れるオプションを設け、いずれのケースにも対応できるようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/components/AppDialog.tsx`（新規）・`frontend/src/components/__tests__/AppDialog.tests.tsx`（新規）。
+    - `frontend/src/components/LayerDialog.tsx`・`SettingsDialog.tsx`・`FilterDialog.tsx`・`ErrorDialog.tsx`: `AppDialog`を使うようリファクタリング（振る舞いの変更は無い、既存テストは無修正のまま全てGreen）。
+    - `check:file-size`で検出していた`LayerDialog.tsx`のJSXネスト深さ超過（9、閾値8）を解消したことを確認済み。
+    - 単体テスト（フロントエンド202件）・lint・typecheckは全てGreen。E2Eテスト4件も実行し（1回目は既知のタイル読み込み・タイミングのフレーキーさで2件失敗したが、再実行で全て成功）、実装変更による回帰でないことを確認した。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（UIの見た目・挙動に変更は無く内部実装の共通化のため）。
+  * **設計書**: `designs/class_diagram.md`のフロントエンドのクラス図に`AppDialog`と4ダイアログからの依存関係を追加。
+
+### [2026-07-15] GitHub Issue #47としてrules.mdを分割し機械チェック可能なルールをスクリプトへ移行した
+* **修正の動機・概要**:
+  - rules.mdが1000行を超えており、エージェントがこれを全て読み込んでも守りきれていないという依頼（Issue #47）。自律モードで対応した。issue-reviewの観点（大規模な再編・分割Issueは境界の判断基準を先に固める）に従い、以下の方針を決めた上で着手した。
+  - **分割方針**: 「参照するタイミング」で3ファイルに分割した。`rules.md`（実装時に常に参照する基礎的なTypeScript/React構文規約）、`design_principles.md`（新規、DRY/KISS/YAGNI・SOLID原則等、モジュール分割を判断する場面でのみ参照）、`ui_rules.md`（新規、Chakra UI・色/余白トークン等、フロントエンドUI実装時のみ参照）。より細かい粒度（TypeScript/React/ドキュメントコメント等でさらに分割する案）も検討したが、変更のリスク・レビュー負荷が大きくなるため今回は見送り、3分割にとどめた。
+  - **Biomeで既に自動検出されるルールの整理**: `biome.json`の設定と照合したところ、rules.mdの一部規約（default export禁止・三項演算子ネスト禁止・命名規則・型推論の省略・自己閉じタグ・未使用変数/引数・アロー関数・importソート・型定義のtype使用等）はBiomeが既に自動検出・一部は自動修正することを確認した。該当箇所はNG/OK例を削り、Biomeのルール名への参照のみに圧縮した。
+  - **rules.md内の重複の発見**: 整理の過程で、rules.md自体に「マジックナンバー」「importソート」「default export禁止」の3項目が実質的に重複して2回ずつ記載されていること、および「コミットメッセージにはプレフィックスを付与する」がcommit_rules.mdと完全に重複していることを発見し、統合・削除した。また「eslint-disableを使用する場合は理由を明記する」等、Biome移行前のESLint時代の構文（`eslint-disable-next-line`）が残っていたため、実際に使われている`biome-ignore`構文に修正した。
+  - **「テストケースは日本語で書く」の移動**: コード規約ではなくテスト規約のため、test_rules.mdへ移動した。
+  - **ファイルサイズ・JSXネスト深さの機械チェック**: 設計原則（特にSRP）は機械的に判定できないが、責務が集まりすぎている兆候として、ファイル行数・JSXネスト深さの閾値超過を検出する`scripts/check-file-size.mjs`（新規、`check-type-assertions.mjs`と同様のTypeScript Compiler APIベースのスクリプト）を追加した。閾値は行数300・JSXネスト深さ8とした（JSXネスト深さは当初6で試したが、Chakra UIのDialogコンポーネント（Root/Backdrop/Positioner/Content等の必須ラッパー構造）が軒並り引っかかり誤検知が多かったため8に調整した）。実際に実行したところ`MapView.tsx`（459行）・`LayerDialog.tsx`（JSXネスト深さ9）の2件が閾値超過だったが、既存debtの解消は別途判断が必要なため本対応では見送り、スクリプトの追加のみを行った（`check-type-assertions.mjs`と同じ扱い）。現時点ではコミット時の自動実行には組み込んでおらず、手動実行のみ。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `scripts/check-file-size.mjs`（新規）: ファイル行数・JSXネスト深さの検出スクリプト。
+    - `package.json`: `check:file-size`スクリプトを追加。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（AIエージェントの内部運用ルールであり、アプリケーションの機能仕様には影響しないため）。
+  * **その他**: `rules.md`を大幅に整理（1243行→470行）。`design_principles.md`（新規）・`ui_rules.md`（新規）を追加。`test_rules.md`に「テストケースは日本語で書く」を移動。`AGENTS.md`・`.agents/skills/finish-review/SKILL.md`のルールファイル参照箇所に新ファイルを追記。
+
 ### [2026-07-15] GitHub Issue #35として振り返りを行いissue-reviewスキルを新設した
 * **修正の動機・概要**:
   - レビューやプロンプト入力の都度ルール追加を行っており、これまでのルール・CHANGELOG.md・PRのレビューを俯瞰して振り返る機会が無かった。またユーザーが実装後に仕様書に書いていないことを求めたり、自律モードで実装中に設計上の判断が毎回必要になったりする状況があった（Issue #35）。自律モードで対応した。

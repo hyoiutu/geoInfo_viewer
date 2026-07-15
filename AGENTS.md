@@ -6,12 +6,12 @@
 - 実装, README.md, 仕様書, 設計書いずれかの修正に応じてそれぞれ連動して乖離を埋めるために修正を行った場合、どんな修正があり、それによって実装, README.md, 仕様書, 設計書がそれぞれどのように修正されたか紐づけて履歴として残す
   - 履歴はCHANGELOG.mdに記載する
 - 実装を行うときはコード規約に従う
-  - コード規約はrules.mdに記載する
+  - コード規約は、参照するタイミングに応じて複数ファイルに分割している（Issue #47。コンテキスト量を減らすため）。TypeScript構文規約はtypescript_rules.md、React/JSX規約はreact_rules.md、TSDoc・コメント規約はcomment_rules.md、設計原則（DRY/KISS/YAGNI・SOLID等）はdesign_principles.md、Chakra UI/スタイリング規約はui_rules.mdに記載する
 - 開発はTDDで行う
   - 既存のコードを変更するときはRed-Green-Refactoringに則って行う
 - リファクタリングも同様にRed-Green-Refactoringに則って行う
   - またリファクタリングによる変更もCHANGELOG.mdに記載する
-- 人間からの指摘でコードを修正する場合、rules.mdに新しくルールを追加する
+- 人間からの指摘でコードを修正する場合、内容に応じた規約ファイル（typescript_rules.md/react_rules.md/comment_rules.md/design_principles.md/ui_rules.md）に新しくルールを追加する
 - git commitはauto-commitスキル（.agents/skills/auto-commit/SKILL.md）を経由してのみ実行し、スキルを介さずに直接git commitを実行してはならない
 - 単体テスト・E2Eテストを作成または実行する場合はtest_rules.mdに記載されたルールに従う
 - GitHub Issueをもとに実装・修正を行う場合はissue-implementスキル（.agents/skills/issue-implement/SKILL.md）を経由し、branch_rules.mdに記載された「1 Issue = 1 Branch」の原則に従ってブランチを作成する。対話モードでは対象Issue・ブランチ名・派生元ブランチをユーザーに確認するが、/loop等による自律モードでは確認を省略して自己判断し、実装完了後にpush・PR作成まで行う（詳細はスキル本文参照）
