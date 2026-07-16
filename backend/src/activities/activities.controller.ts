@@ -1,5 +1,6 @@
-import { Controller, Get, Param, Post } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { assertMunicipalityEra, MUNICIPALITY_ERA_CURRENT } from '../municipalities/era.constants';
 import { MunicipalitiesService, type PassedMunicipalityDto } from '../municipalities/municipalities.service';
 import {
   ACTIVITIES_BACKFILL_FORCE_REFETCH_ROUTE,
@@ -57,9 +58,12 @@ export class ActivitiesController {
     return this.activitiesBackfillService.startForceRefetch();
   }
 
-  /** GET /activities/:id/municipalities: 指定したアクティビティが通過した自治体一覧を返す */
+  /** GET /activities/:id/municipalities: 指定したアクティビティが通過した自治体一覧を返す（年代省略時は現行） */
   @Get(ACTIVITIES_MUNICIPALITIES_ROUTE)
-  getPassedMunicipalities(@Param('id') id: string): Promise<PassedMunicipalityDto[]> {
-    return this.municipalitiesService.findPassedMunicipalities(id);
+  getPassedMunicipalities(
+    @Param('id') id: string,
+    @Query('era') era: string = MUNICIPALITY_ERA_CURRENT
+  ): Promise<PassedMunicipalityDto[]> {
+    return this.municipalitiesService.findPassedMunicipalities(id, assertMunicipalityEra(era));
   }
 }
