@@ -14,6 +14,19 @@
 
 ## 変更履歴
 
+### [2026-07-17] Issue #34対応(フェーズ2の一部)として行政区画レイヤーに過去年代(1950年・昭和の大合併前)を追加した
+* **修正の動機・概要**:
+  - PR #62（2000-10-01の投入）でパイプライン（DBスキーマ→シード→REST API→フロントエンド描画→年代選択UI→通過自治体連動）の動作検証が完了したため、Issue #34フェーズ2の残り年代のうち1950-10-01（昭和の大合併前）を追加投入した。パイプライン自体は年代非依存に一般化済みのため、年代識別子の追加（バックエンド・フロントエンド）とシード実行のみで完結する変更となった。
+  - `MUNICIPALITY_ERA_PRE_SHOWA_MERGER`（値: `'1950-10-01'`）を`MUNICIPALITY_ERA_PRE_HEISEI_MERGER`と同じ命名パターンで追加し、`seed:municipalities`を再実行して全国47都道府県分のデータを投入した（投入結果: `current` 1,917件、`2000-10-01` 3,372件、`1950-10-01` 10,562件。市区町村数が合併の進行に伴い減少している傾向と整合する）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - バックエンド: `backend/src/municipalities/era.constants.ts`に`MUNICIPALITY_ERA_PRE_SHOWA_MERGER`を追加し`MUNICIPALITY_ERAS`へ追記、`seed-municipalities.ts`の`TOPOJSON_DATE_BY_ERA`に`'1950-10-01': '19501001'`を追加。
+    - フロントエンド: `frontend/src/types/municipalityEra.ts`の`MunicipalityEra`型・`MUNICIPALITY_ERAS`に追記、`constants/municipalityEraOptions.ts`の`MUNICIPALITY_ERA_OPTIONS`に「1950年(昭和の大合併前)」の選択肢を追加。
+    - 単体テスト（バックエンド・フロントエンド）・lint・型チェック・`check:type-assertions`は全てGreen。DBへの投入（`pnpm run seed:municipalities`）も実行し成功を確認。
+  * **README.md**: 通過自治体データ・行政区画データの投入手順の節で、投入対象の年代に1950-10-01を追記。
+  * **仕様書**: `specs/system_specification.md`のレイヤ切り替え機能節のプルダウン選択肢に「1950年〈昭和の大合併前〉」を追記。
+  * **設計書**: `designs/technical_design.md`の「行政区画レイヤー（年代選択）」節の投入済み年代一覧を更新（`1950-10-01`を投入済みに、未投入は`1920-01-01`のみに）。
+
 ### [2026-07-17] PR #62のレビュー対応として過去年代の行政区画レイヤーにminzoomを設定した
 * **修正の動機・概要**:
   - PR #62（Issue #34フェーズ2）のレビューで、実機（Electronアプリ）で動作確認したところ「ズームレベルを下げても行政区画（過去年代）が計算され続ける」という指摘を受けた。現行年代の市町村境界（`admin-boundary-municipality`）には元々`ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM`（低ズームでの過密表示・不要な計算を避けるための閾値）が設定されていたが、過去年代用に新規追加した塗り・線・ラベルの3レイヤーには同等の設定が漏れていた。

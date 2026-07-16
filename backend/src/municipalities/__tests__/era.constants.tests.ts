@@ -5,6 +5,7 @@ import {
   isMunicipalityEra,
   MUNICIPALITY_ERA_CURRENT,
   MUNICIPALITY_ERA_PRE_HEISEI_MERGER,
+  MUNICIPALITY_ERA_PRE_SHOWA_MERGER,
   MUNICIPALITY_ERAS
 } from '../era.constants';
 
@@ -24,6 +25,11 @@ describe('isMunicipalityEraに関するテスト', () => {
   test('MUNICIPALITY_ERA_PRE_HEISEI_MERGERは平成の大合併前(2000-10-01)を表し、MUNICIPALITY_ERASに含まれる', () => {
     expect(MUNICIPALITY_ERA_PRE_HEISEI_MERGER).toBe('2000-10-01');
     expect(MUNICIPALITY_ERAS).toContain(MUNICIPALITY_ERA_PRE_HEISEI_MERGER);
+  });
+
+  test('MUNICIPALITY_ERA_PRE_SHOWA_MERGERは昭和の大合併前(1950-10-01)を表し、MUNICIPALITY_ERASに含まれる', () => {
+    expect(MUNICIPALITY_ERA_PRE_SHOWA_MERGER).toBe('1950-10-01');
+    expect(MUNICIPALITY_ERAS).toContain(MUNICIPALITY_ERA_PRE_SHOWA_MERGER);
   });
 });
 

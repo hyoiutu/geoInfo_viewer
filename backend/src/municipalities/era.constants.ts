@@ -6,13 +6,20 @@ export const MUNICIPALITY_ERA_CURRENT = 'current';
 /** 平成の大合併前（2000-10-01時点）の行政区画を表す年代識別子 */
 export const MUNICIPALITY_ERA_PRE_HEISEI_MERGER = '2000-10-01';
 
+/** 昭和の大合併前（1950-10-01時点）の行政区画を表す年代識別子 */
+export const MUNICIPALITY_ERA_PRE_SHOWA_MERGER = '1950-10-01';
+
 /**
  * 選択可能な行政区画の年代識別子一覧（Issue #34）。現行データは'current'、過去データは
  * geoshape.ex.nii.ac.jp（国土数値情報 行政区域データ）の基準日をそのまま使う。
  * 過去年代を追加する場合はこの配列に追記し、`scripts/seed-municipalities.ts`で該当年代を投入すること。
- * 平成の大合併前（2000-10-01）のみ投入済み。昭和の大合併前（1950-10-01）・大正期（1920-01-01）は今後追加予定
+ * 平成の大合併前（2000-10-01）・昭和の大合併前（1950-10-01）を投入済み。大正期（1920-01-01）は今後追加予定
  */
-export const MUNICIPALITY_ERAS = [MUNICIPALITY_ERA_CURRENT, MUNICIPALITY_ERA_PRE_HEISEI_MERGER] as const;
+export const MUNICIPALITY_ERAS = [
+  MUNICIPALITY_ERA_CURRENT,
+  MUNICIPALITY_ERA_PRE_HEISEI_MERGER,
+  MUNICIPALITY_ERA_PRE_SHOWA_MERGER
+] as const;
 
 /** 行政区画の年代識別子 */
 export type MunicipalityEra = (typeof MUNICIPALITY_ERAS)[number];
