@@ -85,7 +85,7 @@ root/
 - 取得したGeoJSONは年代ごとに`MapView`内の`Map<MunicipalityEra, FeatureCollection>`（`historicalBoundariesCacheRef`）へキャッシュし、同じ年代へ再度切り替えた際の再取得を避ける
 - レイヤーダイアログの年代選択（プルダウン）は、レイヤーの表示/非表示と同じ`useLayerVisibility`フックが`draftEra`/`appliedEra`として管理し、同じ「実行」ボタンのタイミングで確定する（年代選択のためだけの別ダイアログ・別フックを設けていない）
 - 選択中の年代は`MapWorkspace`から`MapView`（描画用）・`ActivityDetailSidebar`（通過自治体の判定用、`usePassedMunicipalities`経由）の両方へ`adminBoundaryEra`として渡される
-- 2026-07時点で投入済みの年代は`current`（2023-01-01）・`2000-10-01`（平成の大合併前）・`1950-10-01`（昭和の大合併前）の3つ。`1920-01-01`（大正期）はIssue #34の要望に含まれるが今後追加予定（`MUNICIPALITY_ERAS`に追記し`seed:municipalities`を再実行するだけで追加可能な設計にしてある）
+- 2026-07時点で投入済みの年代は`current`（2023-01-01）・`2000-10-01`（平成の大合併前）・`1950-10-01`（昭和の大合併前）・`1920-01-01`（大正時代）の4つで、Issue #34が要望する全年代の投入が完了している
 
 # エラーハンドリング機構
 ## バックエンド

@@ -2,6 +2,7 @@ import {
   MUNICIPALITY_ERA_CURRENT,
   MUNICIPALITY_ERA_PRE_HEISEI_MERGER,
   MUNICIPALITY_ERA_PRE_SHOWA_MERGER,
+  MUNICIPALITY_ERA_TAISHO,
   type MunicipalityEra
 } from '../types/municipalityEra';
 
@@ -16,5 +17,6 @@ export type MunicipalityEraOption = {
 export const MUNICIPALITY_ERA_OPTIONS: MunicipalityEraOption[] = [
   { value: MUNICIPALITY_ERA_CURRENT, label: '現在' },
   { value: MUNICIPALITY_ERA_PRE_HEISEI_MERGER, label: '2000年(平成の大合併前)' },
-  { value: MUNICIPALITY_ERA_PRE_SHOWA_MERGER, label: '1950年(昭和の大合併前)' }
+  { value: MUNICIPALITY_ERA_PRE_SHOWA_MERGER, label: '1950年(昭和の大合併前)' },
+  { value: MUNICIPALITY_ERA_TAISHO, label: '1920年(大正時代)' }
 ];
