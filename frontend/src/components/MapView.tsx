@@ -1,4 +1,5 @@
 import { Box } from '@chakra-ui/react';
+import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -22,12 +23,19 @@ import { useErrorReporter } from '../hooks/useErrorReporter';
 import type { ActivityFilter } from '../types/activityFilter';
 import type { AppErrorInfo } from '../types/apiError';
 import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
+import type { MunicipalityEra } from '../types/municipalityEra';
 import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
 import { filterActivities } from '../utils/filterActivities';
 import { findActivityById } from '../utils/findActivityById';
 import { groupLayerIdsByCategory, resolveStyleLayerIds } from '../utils/mapLayerCategory';
-import { addAdminBoundaryLayer, addAerialPhotoLayer, addBicycleLogLayer } from '../utils/mapLayerSetup';
+import {
+  addAdminBoundaryHistoricalLayer,
+  addAdminBoundaryLayer,
+  addAerialPhotoLayer,
+  addBicycleLogLayer,
+  applyAdminBoundaryHistoricalData
+} from '../utils/mapLayerSetup';
 import { createGoalMarkerElement, createStartMarkerElement } from '../utils/startGoalMarkerElement';
 import { typedEntries } from '../utils/typedObject';
 
@@ -54,6 +62,8 @@ type MapViewProps = {
   onActivitiesLoaded: (activities: CyclingActivity[]) => void;
   /** 地図に表示するアクティビティを絞り込むフィルタ条件 */
   filter: ActivityFilter;
+  /** 表示する行政区画の年代 */
+  adminBoundaryEra: MunicipalityEra;
 };
 
 /**
@@ -210,17 +220,19 @@ const applyStartGoalMarkers = (
  * @param map 反映先のMapLibre地図インスタンス
  * @param categorizedLayerIds カテゴリごとに分類されたスタイルレイヤーIDの一覧
  * @param layerVisibility レイヤーIDごとの表示/非表示状態
+ * @param adminBoundaryEra 選択中の行政区画の年代識別子
  */
 const applyLayerVisibility = (
   map: maplibregl.Map,
   categorizedLayerIds: CategorizedLayerIds,
-  layerVisibility: LayerVisibility
+  layerVisibility: LayerVisibility,
+  adminBoundaryEra: MunicipalityEra
 ) => {
   const entries = typedEntries(layerVisibility);
 
   for (const [layerId, isVisible] of entries) {
     const visibility = isVisible ? VISIBLE_VALUE : HIDDEN_VALUE;
-    const styleLayerIds = resolveStyleLayerIds(layerId, categorizedLayerIds);
+    const styleLayerIds = resolveStyleLayerIds(layerId, categorizedLayerIds, adminBoundaryEra);
     for (const styleLayerId of styleLayerIds) {
       map.setLayoutProperty(styleLayerId, 'visibility', visibility);
     }
@@ -234,7 +246,8 @@ export const MapView = ({
   focusedId,
   onSelectActivities,
   onActivitiesLoaded,
-  filter
+  filter,
+  adminBoundaryEra
 }: MapViewProps) => {
   const addError = useErrorReporter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -242,6 +255,7 @@ export const MapView = ({
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
   const wasBicycleLogVisibleRef = useRef(false);
   const startGoalMarkersRef = useRef<StartGoalMarkerEntry[]>([]);
+  const historicalBoundariesCacheRef = useRef<Map<MunicipalityEra, FeatureCollection>>(new Map());
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
   const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
@@ -274,6 +288,7 @@ export const MapView = ({
       categorizedLayerIdsRef.current = categorizedLayerIds;
       addAerialPhotoLayer(map, categorizedLayerIds);
       addAdminBoundaryLayer(map);
+      addAdminBoundaryHistoricalLayer(map);
       addBicycleLogLayer(map);
       registerBicycleLogClickHandler(
         map,
@@ -324,7 +339,7 @@ export const MapView = ({
     applyStartGoalMarkers(map, startGoalMarkersRef, focusedActivity);
   }, [filteredActivities, focusedId, isStyleLoaded]);
 
-  // layerVisibilityが変化するたびに各レイヤーの表示/非表示を反映し、
+  // layerVisibility・選択中の行政区画年代が変化するたびに各レイヤーの表示/非表示を反映し、
   // 自転車ログレイヤーがOFF→ONに変化した場合はStrava新規アクティビティ取得・データ取得を行う
   useEffect(() => {
     const map = mapRef.current;
@@ -333,7 +348,7 @@ export const MapView = ({
       return;
     }
 
-    applyLayerVisibility(map, categorizedLayerIds, layerVisibility);
+    applyLayerVisibility(map, categorizedLayerIds, layerVisibility, adminBoundaryEra);
 
     const isBicycleLogVisible = layerVisibility['bicycle-log'];
     const wasBicycleLogVisible = wasBicycleLogVisibleRef.current;
@@ -345,7 +360,21 @@ export const MapView = ({
         onActivitiesLoaded(loaded);
       });
     }
-  }, [layerVisibility, isStyleLoaded, addError, onActivitiesLoaded]);
+  }, [layerVisibility, adminBoundaryEra, isStyleLoaded, addError, onActivitiesLoaded]);
+
+  // 選択中の行政区画年代が変化するたびに、過去年代用のGeoJSONを取得し反映する（currentの場合は何もしない）
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isStyleLoaded) {
+      return;
+    }
+
+    void applyAdminBoundaryHistoricalData(map, adminBoundaryEra, historicalBoundariesCacheRef.current).catch(
+      (error: unknown) => {
+        addError(toAppErrorInfo(error));
+      }
+    );
+  }, [adminBoundaryEra, isStyleLoaded, addError]);
 
   return <Box ref={containerRef} flex="1" minWidth="0" height="100%" data-testid="map-container" />;
 };

@@ -3,6 +3,7 @@ import { Provider as JotaiProvider, useAtomValue } from 'jotai';
 import { describe, expect, test, vi } from 'vitest';
 import { fetchPassedMunicipalities } from '../../api/activitiesApi';
 import { errorsAtom } from '../../atoms/errorsAtom';
+import type { MunicipalityEra } from '../../types/municipalityEra';
 import { usePassedMunicipalities } from '../usePassedMunicipalities';
 
 vi.mock('../../api/activitiesApi', () => ({
@@ -10,7 +11,7 @@ vi.mock('../../api/activitiesApi', () => ({
 }));
 
 describe('usePassedMunicipalitiesに関するテスト', () => {
-  test('マウント時、指定したアクティビティIDで通過自治体を取得する', async () => {
+  test('マウント時、指定したアクティビティID・年代(省略時は現行)で通過自治体を取得する', async () => {
     const municipalities = [{ prefectureName: '東京都', municipalityName: '千代田区' }];
     vi.mocked(fetchPassedMunicipalities).mockResolvedValue(municipalities);
 
@@ -19,7 +20,33 @@ describe('usePassedMunicipalitiesに関するテスト', () => {
     await waitFor(() => {
       expect(result.current.municipalities).toEqual(municipalities);
     });
-    expect(fetchPassedMunicipalities).toHaveBeenCalledWith('123');
+    expect(fetchPassedMunicipalities).toHaveBeenCalledWith('123', 'current');
+  });
+
+  test('年代を指定した場合、その年代で通過自治体を取得する', async () => {
+    vi.mocked(fetchPassedMunicipalities).mockResolvedValue([]);
+
+    renderHook(() => usePassedMunicipalities('123', '2000-10-01'));
+
+    await waitFor(() => {
+      expect(fetchPassedMunicipalities).toHaveBeenCalledWith('123', '2000-10-01');
+    });
+  });
+
+  test('年代が変わると再取得する', async () => {
+    vi.mocked(fetchPassedMunicipalities).mockResolvedValue([]);
+    const { rerender } = renderHook(({ era }: { era: MunicipalityEra }) => usePassedMunicipalities('123', era), {
+      initialProps: { era: 'current' }
+    });
+    await waitFor(() => {
+      expect(fetchPassedMunicipalities).toHaveBeenCalledWith('123', 'current');
+    });
+
+    rerender({ era: '2000-10-01' });
+
+    await waitFor(() => {
+      expect(fetchPassedMunicipalities).toHaveBeenCalledWith('123', '2000-10-01');
+    });
   });
 
   test('取得完了までisLoadingはtrue、完了後はfalseになる', async () => {
@@ -39,13 +66,13 @@ describe('usePassedMunicipalitiesに関するテスト', () => {
       initialProps: { activityId: '123' }
     });
     await waitFor(() => {
-      expect(fetchPassedMunicipalities).toHaveBeenCalledWith('123');
+      expect(fetchPassedMunicipalities).toHaveBeenCalledWith('123', 'current');
     });
 
     rerender({ activityId: '456' });
 
     await waitFor(() => {
-      expect(fetchPassedMunicipalities).toHaveBeenCalledWith('456');
+      expect(fetchPassedMunicipalities).toHaveBeenCalledWith('456', 'current');
     });
   });
 

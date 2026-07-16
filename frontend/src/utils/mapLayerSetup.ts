@@ -1,6 +1,16 @@
 import type { FeatureCollection } from 'geojson';
 import type maplibregl from 'maplibre-gl';
+import { fetchMunicipalityBoundaries } from '../api/municipalitiesApi';
 import {
+  ADMIN_BOUNDARY_HISTORICAL_FILL_COLOR,
+  ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_FILL_OPACITY,
+  ADMIN_BOUNDARY_HISTORICAL_LABEL_HALO_COLOR,
+  ADMIN_BOUNDARY_HISTORICAL_LABEL_HALO_WIDTH,
+  ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_LABEL_TEXT_COLOR,
+  ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_FILTER,
   ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR,
@@ -35,8 +45,10 @@ import {
   BICYCLE_LOG_SOURCE_ID
 } from '../constants/bicycleLog';
 import type { CategorizedLayerIds } from '../types/layer';
+import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 
 const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] };
+const LABEL_TEXT_SIZE = 12;
 
 /**
  * 航空写真のラスタータイルレイヤーを地図に追加する
@@ -128,4 +140,69 @@ export const addBicycleLogLayer = (map: maplibregl.Map) => {
     BICYCLE_LOG_LINE_COLOR_FOCUSED,
     BICYCLE_LOG_LINE_WIDTH_FOCUSED
   );
+};
+
+/**
+ * 過去の行政区画（era!=='current'）を描画するための、空のGeoJSONソースと塗り・線・ラベルの3レイヤーを地図に追加する。
+ * 実際のデータはapplyAdminBoundaryHistoricalDataがsetDataで反映する
+ * @param map 追加先のMapLibre地図インスタンス
+ */
+export const addAdminBoundaryHistoricalLayer = (map: maplibregl.Map) => {
+  map.addSource(ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+  map.addLayer({
+    id: ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+    type: 'fill',
+    source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
+    paint: {
+      'fill-color': ADMIN_BOUNDARY_HISTORICAL_FILL_COLOR,
+      'fill-opacity': ADMIN_BOUNDARY_HISTORICAL_FILL_OPACITY
+    }
+  });
+  map.addLayer({
+    id: ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+    type: 'line',
+    source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
+    paint: {
+      'line-color': ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR,
+      'line-dasharray': ADMIN_BOUNDARY_MUNICIPALITY_LINE_DASHARRAY
+    }
+  });
+  map.addLayer({
+    id: ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
+    type: 'symbol',
+    source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
+    layout: { 'text-field': ['get', 'municipalityName'], 'text-size': LABEL_TEXT_SIZE },
+    paint: {
+      'text-color': ADMIN_BOUNDARY_HISTORICAL_LABEL_TEXT_COLOR,
+      'text-halo-color': ADMIN_BOUNDARY_HISTORICAL_LABEL_HALO_COLOR,
+      'text-halo-width': ADMIN_BOUNDARY_HISTORICAL_LABEL_HALO_WIDTH
+    }
+  });
+};
+
+/**
+ * 選択中の年代の行政区画境界データを、過去年代用GeoJSONソースへ反映する。currentの場合は現行のベクトルタイル
+ * （boundary_3・admin-boundary-municipality）を使うため何もしない。取得結果はeraごとにcacheへ保存し、
+ * 同じ年代へ再度切り替えた際の再取得を避ける
+ * @param map 反映先のMapLibre地図インスタンス
+ * @param era 選択中の年代識別子
+ * @param cache 年代ごとに取得済みのGeoJSONを保持するキャッシュ（呼び出し元が状態を持ち、この関数はそれを読み書きする）
+ */
+export const applyAdminBoundaryHistoricalData = async (
+  map: maplibregl.Map,
+  era: MunicipalityEra,
+  cache: Map<MunicipalityEra, FeatureCollection>
+): Promise<void> => {
+  if (era === MUNICIPALITY_ERA_CURRENT) {
+    return;
+  }
+
+  const cached = cache.get(era);
+  const featureCollection = cached ?? (await fetchMunicipalityBoundaries(era));
+  if (!cached) {
+    cache.set(era, featureCollection);
+  }
+
+  const source = map.getSource<maplibregl.GeoJSONSource>(ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID);
+  source?.setData(featureCollection);
 };

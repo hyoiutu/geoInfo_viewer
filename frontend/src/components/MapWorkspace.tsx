@@ -26,6 +26,9 @@ export const MapWorkspace = () => {
   const {
     appliedVisibility,
     draftVisibility,
+    appliedEra,
+    draftEra,
+    setDraftEra,
     isDialogOpen: isLayerDialogOpen,
     openDialog: openLayerDialog,
     closeDialog: closeLayerDialog,
@@ -81,6 +84,7 @@ export const MapWorkspace = () => {
             onSelectActivities={selectActivities}
             onActivitiesLoaded={setActivities}
             filter={appliedFilter}
+            adminBoundaryEra={appliedEra}
           />
           <MapControls
             onOpenLayerDialog={openLayerDialog}
@@ -100,10 +104,13 @@ export const MapWorkspace = () => {
         onFocus={focusActivity}
         onBackFromDetail={clearFocus}
         onBackFromList={clearSelection}
+        adminBoundaryEra={appliedEra}
       />
       <LayerDialog
         isOpen={isLayerDialogOpen}
         layers={layers}
+        era={draftEra}
+        onEraChange={setDraftEra}
         onToggleDraft={toggleLayerDraft}
         onReset={resetLayerDraft}
         onApply={applyLayerDraft}

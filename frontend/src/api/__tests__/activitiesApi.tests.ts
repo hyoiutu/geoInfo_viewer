@@ -148,7 +148,7 @@ describe('fetchPassedMunicipalitiesに関するテスト', () => {
     vi.unstubAllGlobals();
   });
 
-  test('GETでactivities/:id/municipalitiesエンドポイントを呼び出し、レスポンスをそのまま返す', async () => {
+  test('年代を指定しない場合、現行(current)をクエリパラメータに付けて呼び出し、レスポンスをそのまま返す', async () => {
     const municipalities = [{ prefectureName: '東京都', municipalityName: '千代田区' }];
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -158,8 +158,17 @@ describe('fetchPassedMunicipalitiesに関するテスト', () => {
 
     const result = await fetchPassedMunicipalities('123');
 
-    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/activities/123/municipalities');
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/activities/123/municipalities?era=current');
     expect(result).toEqual(municipalities);
+  });
+
+  test('年代を指定した場合、その年代をクエリパラメータに付けて呼び出す', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchPassedMunicipalities('123', '2000-10-01');
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/activities/123/municipalities?era=2000-10-01');
   });
 
   test('レスポンスが異常なとき、ApiErrorを投げる', async () => {

@@ -1,6 +1,10 @@
 import type maplibregl from 'maplibre-gl';
-import { describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import {
+  ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_FILTER,
   ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR,
@@ -34,16 +38,28 @@ import {
   BICYCLE_LOG_SOURCE_ID
 } from '../../constants/bicycleLog';
 import type { CategorizedLayerIds } from '../../types/layer';
-import { addAdminBoundaryLayer, addAerialPhotoLayer, addBicycleLogLayer } from '../mapLayerSetup';
+import type { MunicipalityEra } from '../../types/municipalityEra';
+import {
+  addAdminBoundaryHistoricalLayer,
+  addAdminBoundaryLayer,
+  addAerialPhotoLayer,
+  addBicycleLogLayer,
+  applyAdminBoundaryHistoricalData
+} from '../mapLayerSetup';
 
-/** map.addSource/map.addLayerのみを呼び出す最小限のMapLibre地図モック */
+vi.mock('../../api/municipalitiesApi', () => ({
+  fetchMunicipalityBoundaries: vi.fn()
+}));
+
+/** map.addSource/map.addLayer/map.getSourceのみを呼び出す最小限のMapLibre地図モック */
 const createMapMock = () => ({
   addSource: vi.fn(),
-  addLayer: vi.fn<(layer: { id: string }, beforeId?: string) => void>()
+  addLayer: vi.fn<(layer: { id: string }, beforeId?: string) => void>(),
+  getSource: vi.fn()
 });
 
 /**
- * テスト対象の各関数はmap.addSource/map.addLayerのみを呼ぶため、maplibregl.Mapの全プロパティを
+ * テスト対象の各関数はmap.addSource/map.addLayer/map.getSourceのみを呼ぶため、maplibregl.Mapの全プロパティを
  * 満たすテストダブルは用意せず、必要最小限のモックをテスト対象の引数として渡せるようにキャストする
  */
 const asMap = (mock: ReturnType<typeof createMapMock>): maplibregl.Map => mock as never;
@@ -166,5 +182,97 @@ describe('addBicycleLogLayerに関するテスト', () => {
       BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
       BICYCLE_LOG_FOCUSED_LAYER_ID
     ]);
+  });
+});
+
+describe('addAdminBoundaryHistoricalLayerに関するテスト', () => {
+  test('空のGeoJSONソースを追加する', () => {
+    const map = createMapMock();
+
+    addAdminBoundaryHistoricalLayer(asMap(map));
+
+    expect(map.addSource).toHaveBeenCalledWith(ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    });
+  });
+
+  test('塗り・線・ラベルの3レイヤーを同じソースを参照して追加する', () => {
+    const map = createMapMock();
+
+    addAdminBoundaryHistoricalLayer(asMap(map));
+
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+        type: 'fill',
+        source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID
+      })
+    );
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+        type: 'line',
+        source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID
+      })
+    );
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
+        type: 'symbol',
+        source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID
+      })
+    );
+  });
+});
+
+describe('applyAdminBoundaryHistoricalDataに関するテスト', () => {
+  let setData: ReturnType<typeof vi.fn>;
+  let fetchMunicipalityBoundaries: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    setData = vi.fn();
+    fetchMunicipalityBoundaries = vi.mocked((await import('../../api/municipalitiesApi')).fetchMunicipalityBoundaries);
+    fetchMunicipalityBoundaries.mockReset();
+  });
+
+  test('eraがcurrentの場合、何もしない（取得もsetDataも行わない）', async () => {
+    const mapMock = createMapMock();
+    mapMock.getSource.mockReturnValue({ setData });
+    const map = asMap(mapMock);
+    const cache = new Map<MunicipalityEra, GeoJSON.FeatureCollection>();
+
+    await applyAdminBoundaryHistoricalData(map, 'current', cache);
+
+    expect(fetchMunicipalityBoundaries).not.toHaveBeenCalled();
+    expect(setData).not.toHaveBeenCalled();
+  });
+
+  test('eraがcurrent以外かつキャッシュが無い場合、取得しキャッシュへ保存した上でsetDataへ渡す', async () => {
+    const featureCollection = { type: 'FeatureCollection' as const, features: [] };
+    fetchMunicipalityBoundaries.mockResolvedValue(featureCollection);
+    const mapMock = createMapMock();
+    mapMock.getSource.mockReturnValue({ setData });
+    const map = asMap(mapMock);
+    const cache = new Map<MunicipalityEra, GeoJSON.FeatureCollection>();
+
+    await applyAdminBoundaryHistoricalData(map, '2000-10-01', cache);
+
+    expect(fetchMunicipalityBoundaries).toHaveBeenCalledWith('2000-10-01');
+    expect(setData).toHaveBeenCalledWith(featureCollection);
+    expect(cache.get('2000-10-01')).toBe(featureCollection);
+  });
+
+  test('キャッシュに既に該当年代のデータがある場合、再取得せずキャッシュの内容をsetDataへ渡す', async () => {
+    const cachedFeatureCollection = { type: 'FeatureCollection' as const, features: [] };
+    const mapMock = createMapMock();
+    mapMock.getSource.mockReturnValue({ setData });
+    const map = asMap(mapMock);
+    const cache = new Map<MunicipalityEra, GeoJSON.FeatureCollection>([['2000-10-01', cachedFeatureCollection]]);
+
+    await applyAdminBoundaryHistoricalData(map, '2000-10-01', cache);
+
+    expect(fetchMunicipalityBoundaries).not.toHaveBeenCalled();
+    expect(setData).toHaveBeenCalledWith(cachedFeatureCollection);
   });
 });

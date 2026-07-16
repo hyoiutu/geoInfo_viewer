@@ -7,6 +7,7 @@ import {
   getBackfillStatus,
   syncCyclingActivities
 } from '../../api/activitiesApi';
+import { fetchMunicipalityBoundaries } from '../../api/municipalitiesApi';
 import {
   ADMIN_BOUNDARY_MUNICIPALITY_FILTER,
   ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
@@ -53,6 +54,10 @@ vi.mock('../../api/activitiesApi', () => ({
   getBackfillStatus: vi.fn()
 }));
 
+vi.mock('../../api/municipalitiesApi', () => ({
+  fetchMunicipalityBoundaries: vi.fn()
+}));
+
 const NOT_RUNNING_BACKFILL_STATUS = {
   isRunning: false,
   totalCount: 0,
@@ -92,7 +97,8 @@ const DEFAULT_SELECTION_PROPS = {
   focusedId: DEFAULT_FOCUSED_ID,
   onSelectActivities: vi.fn(),
   onActivitiesLoaded: vi.fn(),
-  filter: DEFAULT_ACTIVITY_FILTER
+  filter: DEFAULT_ACTIVITY_FILTER,
+  adminBoundaryEra: 'current' as const
 };
 
 // ソースIDごとに独立したsetDataスパイを返す（BICYCLE_LOG_SOURCE_ID等、複数ソースを区別して検証するため）
@@ -281,6 +287,44 @@ describe('MapViewに関するテスト', () => {
       },
       'boundary_3'
     );
+  });
+
+  test('スタイルロード時、過去年代用の行政区画境界レイヤー(塗り・線・ラベル)が追加される', () => {
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
+    const mapInstance = getMapInstance();
+
+    expect(mapInstance.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'admin-boundary-historical-fill', type: 'fill' })
+    );
+    expect(mapInstance.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'admin-boundary-historical-line', type: 'line' })
+    );
+    expect(mapInstance.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'admin-boundary-historical-label', type: 'symbol' })
+    );
+  });
+
+  test('adminBoundaryEraがcurrent以外のとき、過去年代の境界GeoJSONを取得しGeoJSONソースへ反映する', async () => {
+    const featureCollection = { type: 'FeatureCollection' as const, features: [] };
+    vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue(featureCollection);
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
+
+    rerender(
+      <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} adminBoundaryEra="2000-10-01" />
+    );
+
+    await waitFor(() => {
+      expect(fetchMunicipalityBoundaries).toHaveBeenCalledWith('2000-10-01');
+    });
+    await waitFor(() => {
+      expect(getSetDataMock('admin-boundary-historical-source')).toHaveBeenCalledWith(featureCollection);
+    });
+  });
+
+  test('adminBoundaryEraがcurrentのままのとき、過去年代の境界取得は行わない', () => {
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
+
+    expect(fetchMunicipalityBoundaries).not.toHaveBeenCalled();
   });
 
   test('スタイルロード時、OFFのカテゴリに属するレイヤーはvisibility:noneになる', () => {

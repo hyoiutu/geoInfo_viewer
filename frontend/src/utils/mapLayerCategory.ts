@@ -1,5 +1,10 @@
 import type { LayerSpecification } from 'maplibre-gl';
-import { ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID } from '../constants/adminBoundary';
+import {
+  ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+  ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID
+} from '../constants/adminBoundary';
 import { AERIAL_PHOTO_LAYER_ID } from '../constants/aerialPhoto';
 import {
   BICYCLE_LOG_FOCUSED_LAYER_ID,
@@ -8,6 +13,7 @@ import {
   BICYCLE_LOG_SELECTED_LAYER_ID
 } from '../constants/bicycleLog';
 import type { CategorizedLayerIds, ToggleableLayerId } from '../types/layer';
+import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 
 const OSM_ROAD_SOURCE_LAYERS = new Set(['transportation', 'transportation_name', 'aeroway']);
 const OSM_PLACE_NAME_SOURCE_LAYERS = new Set(['water_name']);
@@ -88,14 +94,18 @@ export const groupLayerIdsByCategory = (layers: LayerSpecification[]): Record<To
 };
 
 /**
- * トグル可能なレイヤーIDに対応する、実際のMapLibreスタイルレイヤーIDの一覧を求める
+ * トグル可能なレイヤーIDに対応する、実際のMapLibreスタイルレイヤーIDの一覧を求める。
+ * admin-boundaryは選択中の年代によって参照するレイヤーが異なる（current: 現行のベクトルタイル、
+ * それ以外: 過去年代用にGeoJSONで描画している塗り・線・ラベルレイヤー）
  * @param layerId トグル可能なレイヤーID
  * @param categorizedLayerIds カテゴリごとに分類されたスタイルレイヤーIDの一覧
+ * @param adminBoundaryEra 選択中の行政区画の年代識別子（admin-boundary以外のlayerIdでは無視される）
  * @returns 対応するスタイルレイヤーIDの配列
  */
 export const resolveStyleLayerIds = (
   layerId: ToggleableLayerId,
-  categorizedLayerIds: CategorizedLayerIds
+  categorizedLayerIds: CategorizedLayerIds,
+  adminBoundaryEra: MunicipalityEra
 ): string[] => {
   if (layerId === 'aerial-photo') {
     return [AERIAL_PHOTO_LAYER_ID];
@@ -109,7 +119,14 @@ export const resolveStyleLayerIds = (
     ];
   }
   if (layerId === 'admin-boundary') {
-    return [...categorizedLayerIds['admin-boundary'], ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID];
+    if (adminBoundaryEra === MUNICIPALITY_ERA_CURRENT) {
+      return [...categorizedLayerIds['admin-boundary'], ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID];
+    }
+    return [
+      ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+      ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+      ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID
+    ];
   }
   return categorizedLayerIds[layerId];
 };
