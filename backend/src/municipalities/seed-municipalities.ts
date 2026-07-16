@@ -6,7 +6,12 @@ import type { GeometryCollection, Topology } from 'topojson-specification';
 import { DataSource, type Repository } from 'typeorm';
 import { createDataSourceOptions } from '../database/database.config';
 import { MunicipalityEntity } from './entities/municipality.entity';
-import { MUNICIPALITY_ERAS, type MunicipalityEra } from './era.constants';
+import {
+  MUNICIPALITY_ERA_CURRENT,
+  MUNICIPALITY_ERA_PRE_HEISEI_MERGER,
+  MUNICIPALITY_ERAS,
+  type MunicipalityEra
+} from './era.constants';
 
 const PREFECTURE_CODE_MIN = 1;
 const PREFECTURE_CODE_MAX = 47;
@@ -21,8 +26,8 @@ const INSERT_BATCH_SIZE = 500;
 // 'current'は国土数値情報(N03)の最新基準日（全都道府県で2023-01-01が最新であることを確認済み）、
 // 過去年代はIssue #34が指定する基準日（2000-10-01=平成の大合併前 等）をそのまま使う
 const TOPOJSON_DATE_BY_ERA: Record<MunicipalityEra, string> = {
-  current: '20230101',
-  '2000-10-01': '20001001'
+  [MUNICIPALITY_ERA_CURRENT]: '20230101',
+  [MUNICIPALITY_ERA_PRE_HEISEI_MERGER]: '20001001'
 };
 
 /** N03形式の市区町村ポリゴンのプロパティ（都道府県名・郡/政令市名・市区町村名） */
