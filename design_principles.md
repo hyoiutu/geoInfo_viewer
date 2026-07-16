@@ -240,7 +240,21 @@ export const MapView = (props: MapViewProps) => {
 };
 ```
 
-コンポーネントファイル（`components/`配下）には、表示（JSX）や地図ライブラリ操作等の画面に直接関わる処理のみを置く。データの検索・変換等、画面表示に依存しない純粋関数はコンポーネントファイル内に定義せず`utils/`へ切り出すこと。切り出すことで、DOMや外部ライブラリのモック無しに単体テストできるようになり、コンポーネントファイル自体の見通しも良くなる（PR #36レビュー対応）。
+コンポーネントファイル（`components/`配下）に直接置いてよいのは、原則としてJSX（表示）のみとする。以下の基準で判断する（PR #59レビュー対応で言語化）。
+
+- **状態が絡むロジック**（`useState`/`useCallback`/`useMemo`/`useEffect`等のReact Hooksを使い、状態の計算・更新を行うもの）は、カスタムフックへまとめる。ただし数行程度で完結する場合は、わざわざカスタムフックに分離する必要は無い。
+- **状態が絡まないロジック**（Hooksを呼ばず、与えられた引数に対して計算やAPI呼び出しを行い、何かを返す/副作用を起こすだけのもの）は、カスタムフックではなく`utils/`へまとめる。地図ライブラリ操作であっても、`map`インスタンス等を引数として受け取るだけでReactの状態・refに直接触れない関数（例: 下記`addAerialPhotoLayer`のような、MapLibreへレイヤー・ソースを追加するだけの関数）はこちらに該当する。
+- コンポーネント内のrefが持つ値（`useRef`の`.current`）を直接読み書きするクロージャや、コンポーネントのマウント/アンマウントに紐づく副作用の登録（イベントリスナー登録等）は、状態管理と不可分なためコンポーネントファイルに残してよい。
+
+```typescript
+// utils/mapLayerSetup.ts: mapを引数として受け取り設定を注入するだけの関数はutilsへ
+export const addAerialPhotoLayer = (map: maplibregl.Map, categorizedLayerIds: CategorizedLayerIds) => {
+  map.addSource(AERIAL_PHOTO_SOURCE_ID, { type: 'raster', tiles: [AERIAL_PHOTO_TILE_URL], /* ... */ });
+  map.addLayer({ id: AERIAL_PHOTO_LAYER_ID, type: 'raster', source: AERIAL_PHOTO_SOURCE_ID }, categorizedLayerIds['osm-road'][0]);
+};
+```
+
+データの検索・変換等、画面表示に依存しない純粋関数（`findActivityById`が典型例）はもちろん、上記のような「map引数+定数注入のみ」の地図ライブラリ操作も含めてコンポーネントファイル内に定義せず`utils/`へ切り出すこと。切り出すことで、DOMや外部ライブラリのモック無しに単体テストできるようになり、コンポーネントファイル自体の見通しも良くなる（PR #36・PR #59レビュー対応）。
 
 ---
 
