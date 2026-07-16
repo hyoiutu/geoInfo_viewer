@@ -1,11 +1,11 @@
 // biome-ignore-all lint/style/useNamingConvention: Strava APIレスポンス形式(snake_case)に合わせたテストダブル
 import { Test } from '@nestjs/testing';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { StravaActivitiesService } from '../../strava/strava-activities.service';
 import { StravaRateLimiterService } from '../../strava/strava-rate-limiter.service';
 import type { StravaActivity, StravaActivityDetail } from '../../strava/types/strava-activity.type';
 import { ActivitiesBackfillService } from '../activities-backfill.service';
+import { CyclingActivityRepository } from '../cycling-activity.repository';
 import { CyclingActivityEntity } from '../entities/cycling-activity.entity';
 
 const createActivity = (overrides: Partial<StravaActivity>): StravaActivity => ({
@@ -37,49 +37,25 @@ const createActivityDetail = (overrides: Partial<StravaActivityDetail>): StravaA
 // runBackfillはfire-and-forgetの非同期処理のため、内部のawait連鎖が完了するまでイベントループを回す
 const flushMicrotasks = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-// TypeORMのIsNull()/Not(IsNull())はFindOperatorインスタンス(.typeで種別を判別可能)になる。
-// 呼び出し「順番」ではなくクエリの中身（引数の形）に応じて結果を返すことで、
-// 「何回目の呼び出しか」を数えるコメントを書かずに済むようにする。
-type FindOperatorLike = { type?: string };
-
 describe('ActivitiesBackfillServiceに関するテスト', () => {
   let fetchAllCyclingActivities: ReturnType<typeof vi.fn>;
   let fetchCyclingActivityDetail: ReturnType<typeof vi.fn>;
   let getIntervalMs: ReturnType<typeof vi.fn>;
   let cyclingActivityRepository: {
-    find: ReturnType<typeof vi.fn>;
-    save: ReturnType<typeof vi.fn>;
-    count: ReturnType<typeof vi.fn>;
-    createQueryBuilder: ReturnType<typeof vi.fn>;
-  };
-  let queryBuilderExecute: ReturnType<typeof vi.fn>;
-  let queryBuilderSet: ReturnType<typeof vi.fn>;
-
-  // find()はfetchAndSavePlaceholders内の既存ID確認（引数無し）と、
-  // runBackfill内の未取得分取得（where: detailFetchedAt IsNull）の2種類の呼ばれ方をする。
-  const mockCyclingActivityFind = (params: {
-    existingEntities: CyclingActivityEntity[];
-    pendingEntities: CyclingActivityEntity[];
-  }) => {
-    cyclingActivityRepository.find.mockImplementation((options?: { where?: unknown }) =>
-      Promise.resolve(options === undefined ? params.existingEntities : params.pendingEntities)
-    );
+    findPendingDetail: ReturnType<typeof vi.fn>;
+    saveDetail: ReturnType<typeof vi.fn>;
+    savePlaceholdersIfNotExists: ReturnType<typeof vi.fn>;
+    resetAllDetailFetchedAt: ReturnType<typeof vi.fn>;
+    countAll: ReturnType<typeof vi.fn>;
+    countPendingDetail: ReturnType<typeof vi.fn>;
+    countCompletedDetail: ReturnType<typeof vi.fn>;
   };
 
-  // count()はisFullyBackfilled/getStatus内で、引数無し(totalCount)・
-  // where: detailFetchedAt IsNull(pendingCount)・where: detailFetchedAt Not(IsNull())(completedCount)
-  // の3種類の呼ばれ方をする。呼び出し回数に関わらず正しい値を返す。
+  // totalCount・pendingCountから、countAll/countPendingDetail/countCompletedDetailの返り値をまとめて設定する
   const mockCyclingActivityCounts = (params: { totalCount: number; pendingCount: number }) => {
-    const completedCount = params.totalCount - params.pendingCount;
-    cyclingActivityRepository.count.mockImplementation(
-      (options?: { where?: { detailFetchedAt?: FindOperatorLike } }) => {
-        const operatorType = options?.where?.detailFetchedAt?.type;
-        if (operatorType === undefined) {
-          return Promise.resolve(params.totalCount);
-        }
-        return Promise.resolve(operatorType === 'isNull' ? params.pendingCount : completedCount);
-      }
-    );
+    cyclingActivityRepository.countAll.mockResolvedValue(params.totalCount);
+    cyclingActivityRepository.countPendingDetail.mockResolvedValue(params.pendingCount);
+    cyclingActivityRepository.countCompletedDetail.mockResolvedValue(params.totalCount - params.pendingCount);
   };
 
   const createService = async () => {
@@ -88,7 +64,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
         ActivitiesBackfillService,
         { provide: StravaActivitiesService, useValue: { fetchAllCyclingActivities, fetchCyclingActivityDetail } },
         { provide: StravaRateLimiterService, useValue: { getIntervalMs } },
-        { provide: getRepositoryToken(CyclingActivityEntity), useValue: cyclingActivityRepository }
+        { provide: CyclingActivityRepository, useValue: cyclingActivityRepository }
       ]
     }).compile();
 
@@ -99,15 +75,14 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     fetchAllCyclingActivities = vi.fn().mockResolvedValue([]);
     fetchCyclingActivityDetail = vi.fn().mockResolvedValue(createActivityDetail({}));
     getIntervalMs = vi.fn().mockReturnValue(9000);
-    queryBuilderExecute = vi.fn().mockResolvedValue(undefined);
-    queryBuilderSet = vi.fn().mockReturnValue({ execute: queryBuilderExecute });
     cyclingActivityRepository = {
-      find: vi.fn().mockResolvedValue([]),
-      save: vi.fn(),
-      count: vi.fn().mockResolvedValue(0),
-      createQueryBuilder: vi.fn().mockReturnValue({
-        update: vi.fn().mockReturnValue({ set: queryBuilderSet })
-      })
+      findPendingDetail: vi.fn().mockResolvedValue([]),
+      saveDetail: vi.fn(),
+      savePlaceholdersIfNotExists: vi.fn().mockResolvedValue(undefined),
+      resetAllDetailFetchedAt: vi.fn().mockResolvedValue(undefined),
+      countAll: vi.fn().mockResolvedValue(0),
+      countPendingDetail: vi.fn().mockResolvedValue(0),
+      countCompletedDetail: vi.fn().mockResolvedValue(0)
     };
   });
 
@@ -141,29 +116,22 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
       expect(result).toEqual({ started: false });
     });
 
-    test('一覧取得したアクティビティのうちDB未登録のものだけプレースホルダーとして保存する', async () => {
-      fetchAllCyclingActivities.mockResolvedValue([createActivity({ id: 1 }), createActivity({ id: 2 })]);
-      cyclingActivityRepository.find.mockResolvedValue([
-        Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null })
-      ]);
+    test('Strava一覧取得したアクティビティを、DB未登録分のみプレースホルダー保存するリポジトリへ渡す（重複チェックはリポジトリ側の責務）', async () => {
+      const activities = [createActivity({ id: 1 }), createActivity({ id: 2 })];
+      fetchAllCyclingActivities.mockResolvedValue(activities);
       const service = await createService();
 
       await service.start();
       await flushMicrotasks();
 
-      expect(cyclingActivityRepository.save).toHaveBeenCalledWith([
-        expect.objectContaining({ id: '2', path: null, detailFetchedAt: null })
-      ]);
+      expect(cyclingActivityRepository.savePlaceholdersIfNotExists).toHaveBeenCalledWith(activities);
     });
 
     test('detailFetchedAtがnullの行それぞれについて詳細APIを呼び出し、Entityを更新保存する', async () => {
-      mockCyclingActivityFind({
-        existingEntities: [],
-        pendingEntities: [
-          Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null }),
-          Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null })
-        ]
-      });
+      cyclingActivityRepository.findPendingDetail.mockResolvedValue([
+        Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null }),
+        Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null })
+      ]);
       fetchCyclingActivityDetail.mockImplementation((id: number) => Promise.resolve(createActivityDetail({ id })));
       const service = await createService();
 
@@ -172,10 +140,10 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
 
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(1);
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(2);
-      expect(cyclingActivityRepository.save).toHaveBeenCalledWith(
+      expect(cyclingActivityRepository.saveDetail).toHaveBeenCalledWith(
         expect.objectContaining({ id: '1', detailFetchedAt: expect.any(Date) })
       );
-      expect(cyclingActivityRepository.save).toHaveBeenCalledWith(
+      expect(cyclingActivityRepository.saveDetail).toHaveBeenCalledWith(
         expect.objectContaining({ id: '2', detailFetchedAt: expect.any(Date) })
       );
     });
@@ -237,14 +205,11 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     });
 
     test('詳細API取得中にエラーが発生した場合、それ以降の未取得アクティビティの処理を中断する', async () => {
-      mockCyclingActivityFind({
-        existingEntities: [],
-        pendingEntities: [
-          Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null }),
-          Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null }),
-          Object.assign(new CyclingActivityEntity(), { id: '3', detailFetchedAt: null })
-        ]
-      });
+      cyclingActivityRepository.findPendingDetail.mockResolvedValue([
+        Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null }),
+        Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null }),
+        Object.assign(new CyclingActivityEntity(), { id: '3', detailFetchedAt: null })
+      ]);
       fetchCyclingActivityDetail.mockImplementation((id: number) => {
         if (id === 2) {
           return Promise.reject(new Error('Strava API error'));
@@ -264,13 +229,10 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
 
     test('エラー発生後に再度startすると、未処理のまま残ったアクティビティ(DB上でdetailFetchedAtがnullのもの)のみを取得する', async () => {
       // id:1は既に取得済み(detailFetchedAt設定済み)、id:2・3が前回のエラーで未取得のまま残っている状況を想定
-      mockCyclingActivityFind({
-        existingEntities: [],
-        pendingEntities: [
-          Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null }),
-          Object.assign(new CyclingActivityEntity(), { id: '3', detailFetchedAt: null })
-        ]
-      });
+      cyclingActivityRepository.findPendingDetail.mockResolvedValue([
+        Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null }),
+        Object.assign(new CyclingActivityEntity(), { id: '3', detailFetchedAt: null })
+      ]);
       fetchCyclingActivityDetail.mockImplementation((id: number) => Promise.resolve(createActivityDetail({ id })));
       const service = await createService();
 
@@ -286,7 +248,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
   describe('startForceRefetch', () => {
     test('未実行の場合、started:trueを返しisRunningがtrueになる', async () => {
       fetchCyclingActivityDetail.mockReturnValue(new Promise(() => {}));
-      cyclingActivityRepository.find.mockResolvedValue([
+      cyclingActivityRepository.findPendingDetail.mockResolvedValue([
         Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null })
       ]);
       const service = await createService();
@@ -309,7 +271,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
 
     test('既にstartForceRefetchが実行中の場合、startはstarted:falseを返す（isRunningガードを共有する）', async () => {
       fetchCyclingActivityDetail.mockReturnValue(new Promise(() => {}));
-      cyclingActivityRepository.find.mockResolvedValue([
+      cyclingActivityRepository.findPendingDetail.mockResolvedValue([
         Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null })
       ]);
       const service = await createService();
@@ -321,7 +283,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     });
 
     test('全アクティビティのdetailFetchedAtをnullにリセットしてから、詳細を再取得する', async () => {
-      cyclingActivityRepository.find.mockResolvedValue([
+      cyclingActivityRepository.findPendingDetail.mockResolvedValue([
         Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null }),
         Object.assign(new CyclingActivityEntity(), { id: '2', detailFetchedAt: null })
       ]);
@@ -331,8 +293,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
       await service.startForceRefetch();
       await flushMicrotasks();
 
-      expect(queryBuilderSet).toHaveBeenCalledWith({ detailFetchedAt: null });
-      expect(queryBuilderExecute).toHaveBeenCalled();
+      expect(cyclingActivityRepository.resetAllDetailFetchedAt).toHaveBeenCalled();
       expect(fetchAllCyclingActivities).not.toHaveBeenCalled();
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(1);
       expect(fetchCyclingActivityDetail).toHaveBeenCalledWith(2);
@@ -348,7 +309,7 @@ describe('ActivitiesBackfillServiceに関するテスト', () => {
     });
 
     test('詳細API取得中にエラーが発生した場合、getStatus()のlastErrorに記録される', async () => {
-      cyclingActivityRepository.find.mockResolvedValue([
+      cyclingActivityRepository.findPendingDetail.mockResolvedValue([
         Object.assign(new CyclingActivityEntity(), { id: '1', detailFetchedAt: null })
       ]);
       fetchCyclingActivityDetail.mockRejectedValue(new Error('Strava API error'));

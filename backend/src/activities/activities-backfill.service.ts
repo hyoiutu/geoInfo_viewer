@@ -1,13 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { ApiProperty } from '@nestjs/swagger';
-import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, type Repository } from 'typeorm';
 import { AppErrorInfo } from '../common/errors/app-error-info.type';
 import { toAppErrorInfo } from '../common/errors/app-error-info.util';
 import { StravaActivitiesService } from '../strava/strava-activities.service';
 import { StravaRateLimiterService } from '../strava/strava-rate-limiter.service';
-import { toCyclingActivityEntityFromDetail, toPlaceholderCyclingActivityEntity } from './cycling-activity-entity.util';
-import { CyclingActivityEntity } from './entities/cycling-activity.entity';
+import { CyclingActivityRepository } from './cycling-activity.repository';
+import { toCyclingActivityEntityFromDetail } from './cycling-activity-entity.util';
 
 const MILLISECONDS_PER_SECOND = 1000;
 const NO_ACTIVITIES = 0;
@@ -59,8 +57,7 @@ export class ActivitiesBackfillService {
   constructor(
     private readonly stravaActivitiesService: StravaActivitiesService,
     private readonly stravaRateLimiterService: StravaRateLimiterService,
-    @InjectRepository(CyclingActivityEntity)
-    private readonly cyclingActivityRepository: Repository<CyclingActivityEntity>
+    private readonly cyclingActivityRepository: CyclingActivityRepository
   ) {}
 
   /** @returns バックフィルが実行中かどうか */
@@ -112,10 +109,8 @@ export class ActivitiesBackfillService {
 
   /** @returns 現在のバックフィル進捗状況 */
   async getStatus(): Promise<BackfillStatus> {
-    const totalCount = await this.cyclingActivityRepository.count();
-    const completedCount = await this.cyclingActivityRepository.count({
-      where: { detailFetchedAt: Not(IsNull()) }
-    });
+    const totalCount = await this.cyclingActivityRepository.countAll();
+    const completedCount = await this.cyclingActivityRepository.countCompletedDetail();
     const progressPercent = totalCount === NO_ACTIVITIES ? 0 : Math.round((completedCount / totalCount) * 100);
     const estimatedRemainingSeconds = this.running
       ? ((totalCount - completedCount) * this.stravaRateLimiterService.getIntervalMs()) / MILLISECONDS_PER_SECOND
@@ -145,21 +140,17 @@ export class ActivitiesBackfillService {
    * 新規アクティビティの検出（Strava一覧の再取得）は目的に含まないため、fetchAndSavePlaceholdersは呼ばない
    */
   private async runForceRefetch(): Promise<void> {
-    await this.cyclingActivityRepository
-      .createQueryBuilder()
-      .update(CyclingActivityEntity)
-      .set({ detailFetchedAt: null })
-      .execute();
+    await this.cyclingActivityRepository.resetAllDetailFetchedAt();
 
     await this.fetchPendingDetails();
   }
 
   /** detailFetchedAtがnullの行それぞれについて詳細APIを呼び出し、Entityを更新保存する */
   private async fetchPendingDetails(): Promise<void> {
-    const pendingEntities = await this.cyclingActivityRepository.find({ where: { detailFetchedAt: IsNull() } });
+    const pendingEntities = await this.cyclingActivityRepository.findPendingDetail();
     for (const pendingEntity of pendingEntities) {
       const detail = await this.stravaActivitiesService.fetchCyclingActivityDetail(Number(pendingEntity.id));
-      await this.cyclingActivityRepository.save(toCyclingActivityEntityFromDetail(detail));
+      await this.cyclingActivityRepository.saveDetail(toCyclingActivityEntityFromDetail(detail));
     }
   }
 
@@ -170,24 +161,17 @@ export class ActivitiesBackfillService {
    * @returns 未取得のアクティビティが1件も無ければtrue
    */
   private async isFullyBackfilled(): Promise<boolean> {
-    const totalCount = await this.cyclingActivityRepository.count();
+    const totalCount = await this.cyclingActivityRepository.countAll();
     if (totalCount === NO_ACTIVITIES) {
       return false;
     }
-    const pendingCount = await this.cyclingActivityRepository.count({ where: { detailFetchedAt: IsNull() } });
+    const pendingCount = await this.cyclingActivityRepository.countPendingDetail();
     return pendingCount === NO_ACTIVITIES;
   }
 
   /** Stravaのアクティビティ一覧を取得し、DB未登録の分だけプレースホルダーとして保存する */
   private async fetchAndSavePlaceholders(): Promise<void> {
     const activities = await this.stravaActivitiesService.fetchAllCyclingActivities();
-    const existingIds = new Set((await this.cyclingActivityRepository.find()).map((entity) => entity.id));
-    const newPlaceholders = activities
-      .filter((activity) => !existingIds.has(String(activity.id)))
-      .map((activity) => toPlaceholderCyclingActivityEntity(activity));
-
-    if (newPlaceholders.length > NO_ACTIVITIES) {
-      await this.cyclingActivityRepository.save(newPlaceholders);
-    }
+    await this.cyclingActivityRepository.savePlaceholdersIfNotExists(activities);
   }
 }
