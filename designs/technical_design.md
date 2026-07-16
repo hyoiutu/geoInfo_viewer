@@ -81,6 +81,7 @@ root/
 # 行政区画レイヤー（年代選択）
 - 現行（`era === 'current'`）の行政区画は、既存のOSMベクトルタイル（`boundary_3`＝都道府県境界＋新規追加の市町村境界レイヤー、`place`ソースレイヤーの都道府県名・市町村名ラベル）をそのまま可視性トグルの対象とする（Issue #34フェーズ1）
 - 過去の行政区画（`era !== 'current'`）はベクトルタイルに存在しないため、`GET /municipalities/boundaries?era=...`（`MunicipalitiesController.getBoundaries`、新規）がDBの`municipalities`テーブルから該当年代のポリゴンをGeoJSON `FeatureCollection`として返す。フロントエンドはこれをMapLibreのGeoJSONソース（`admin-boundary-historical-source`）へ`setData`し、塗り（`fill`、視認性を優先し不透明度0.05の薄い塗り）・線（`line`、現行の市町村境界と同じ配色・破線パターン）・ラベル（`symbol`、`municipalityName`プロパティをテキストフィールドとし既存OSM地名ラベルと同じ配色）の3レイヤーとして描画する（`addAdminBoundaryHistoricalLayer`/`applyAdminBoundaryHistoricalData`、`frontend/src/utils/mapLayerSetup.ts`）
+  - 塗り・線・ラベルの3レイヤーいずれにも、現行の市町村境界（`admin-boundary-municipality`）と同じ`ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM`（`minzoom`）を設定し、低ズームでの過密表示・不要な計算を避ける（PR #62レビュー対応。実機確認でズームアウトしても行政区画の計算が継続する点が指摘された）
 - 取得したGeoJSONは年代ごとに`MapView`内の`Map<MunicipalityEra, FeatureCollection>`（`historicalBoundariesCacheRef`）へキャッシュし、同じ年代へ再度切り替えた際の再取得を避ける
 - レイヤーダイアログの年代選択（プルダウン）は、レイヤーの表示/非表示と同じ`useLayerVisibility`フックが`draftEra`/`appliedEra`として管理し、同じ「実行」ボタンのタイミングで確定する（年代選択のためだけの別ダイアログ・別フックを設けていない）
 - 選択中の年代は`MapWorkspace`から`MapView`（描画用）・`ActivityDetailSidebar`（通過自治体の判定用、`usePassedMunicipalities`経由）の両方へ`adminBoundaryEra`として渡される

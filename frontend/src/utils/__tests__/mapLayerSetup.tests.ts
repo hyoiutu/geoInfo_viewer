@@ -206,21 +206,24 @@ describe('addAdminBoundaryHistoricalLayerに関するテスト', () => {
       expect.objectContaining({
         id: ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
         type: 'fill',
-        source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID
+        source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
+        minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM
       })
     );
     expect(map.addLayer).toHaveBeenCalledWith(
       expect.objectContaining({
         id: ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
         type: 'line',
-        source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID
+        source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
+        minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM
       })
     );
     expect(map.addLayer).toHaveBeenCalledWith(
       expect.objectContaining({
         id: ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
         type: 'symbol',
-        source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID
+        source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
+        minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM
       })
     );
   });

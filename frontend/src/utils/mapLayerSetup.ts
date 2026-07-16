@@ -144,7 +144,8 @@ export const addBicycleLogLayer = (map: maplibregl.Map) => {
 
 /**
  * 過去の行政区画（era!=='current'）を描画するための、空のGeoJSONソースと塗り・線・ラベルの3レイヤーを地図に追加する。
- * 実際のデータはapplyAdminBoundaryHistoricalDataがsetDataで反映する
+ * 実際のデータはapplyAdminBoundaryHistoricalDataがsetDataで反映する。市町村境界(admin-boundary-municipality)と
+ * 同じ理由（低ズームでの過密表示・不要な計算を避けるため）で同じminzoomを設定する
  * @param map 追加先のMapLibre地図インスタンス
  */
 export const addAdminBoundaryHistoricalLayer = (map: maplibregl.Map) => {
@@ -153,6 +154,7 @@ export const addAdminBoundaryHistoricalLayer = (map: maplibregl.Map) => {
     id: ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
     type: 'fill',
     source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
+    minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM,
     paint: {
       'fill-color': ADMIN_BOUNDARY_HISTORICAL_FILL_COLOR,
       'fill-opacity': ADMIN_BOUNDARY_HISTORICAL_FILL_OPACITY
@@ -162,6 +164,7 @@ export const addAdminBoundaryHistoricalLayer = (map: maplibregl.Map) => {
     id: ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
     type: 'line',
     source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
+    minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM,
     paint: {
       'line-color': ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR,
       'line-dasharray': ADMIN_BOUNDARY_MUNICIPALITY_LINE_DASHARRAY
@@ -171,6 +174,7 @@ export const addAdminBoundaryHistoricalLayer = (map: maplibregl.Map) => {
     id: ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
     type: 'symbol',
     source: ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
+    minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM,
     layout: { 'text-field': ['get', 'municipalityName'], 'text-size': LABEL_TEXT_SIZE },
     paint: {
       'text-color': ADMIN_BOUNDARY_HISTORICAL_LABEL_TEXT_COLOR,
