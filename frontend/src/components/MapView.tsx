@@ -10,11 +10,8 @@ import {
   type SyncResult,
   syncCyclingActivities
 } from '../api/activitiesApi';
-import { ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID } from '../constants/adminBoundary';
-import { AERIAL_PHOTO_LAYER_ID } from '../constants/aerialPhoto';
 import {
   BICYCLE_LOG_FOCUSED_LAYER_ID,
-  BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
   BICYCLE_LOG_FOCUSED_SOURCE_ID,
   BICYCLE_LOG_LAYER_ID,
   BICYCLE_LOG_SELECTED_LAYER_ID,
@@ -24,12 +21,12 @@ import {
 import { useErrorReporter } from '../hooks/useErrorReporter';
 import type { ActivityFilter } from '../types/activityFilter';
 import type { AppErrorInfo } from '../types/apiError';
-import type { CategorizedLayerIds, LayerVisibility, ToggleableLayerId } from '../types/layer';
+import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
 import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
 import { filterActivities } from '../utils/filterActivities';
 import { findActivityById } from '../utils/findActivityById';
-import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
+import { groupLayerIdsByCategory, resolveStyleLayerIds } from '../utils/mapLayerCategory';
 import { addAdminBoundaryLayer, addAerialPhotoLayer, addBicycleLogLayer } from '../utils/mapLayerSetup';
 import { createGoalMarkerElement, createStartMarkerElement } from '../utils/startGoalMarkerElement';
 import { typedEntries } from '../utils/typedObject';
@@ -206,30 +203,6 @@ const applyStartGoalMarkers = (
     { marker: goalMarker, root: goal.root },
     { marker: startMarker, root: start.root }
   ];
-};
-
-/**
- * トグル可能なレイヤーIDに対応する、実際のMapLibreスタイルレイヤーIDの一覧を求める
- * @param layerId トグル可能なレイヤーID
- * @param categorizedLayerIds カテゴリごとに分類されたスタイルレイヤーIDの一覧
- * @returns 対応するスタイルレイヤーIDの配列
- */
-const resolveStyleLayerIds = (layerId: ToggleableLayerId, categorizedLayerIds: CategorizedLayerIds): string[] => {
-  if (layerId === 'aerial-photo') {
-    return [AERIAL_PHOTO_LAYER_ID];
-  }
-  if (layerId === 'bicycle-log') {
-    return [
-      BICYCLE_LOG_LAYER_ID,
-      BICYCLE_LOG_SELECTED_LAYER_ID,
-      BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
-      BICYCLE_LOG_FOCUSED_LAYER_ID
-    ];
-  }
-  if (layerId === 'admin-boundary') {
-    return [...categorizedLayerIds['admin-boundary'], ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID];
-  }
-  return categorizedLayerIds[layerId];
 };
 
 /**

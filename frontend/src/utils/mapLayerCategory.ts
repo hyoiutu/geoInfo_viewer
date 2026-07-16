@@ -1,5 +1,13 @@
 import type { LayerSpecification } from 'maplibre-gl';
-import type { ToggleableLayerId } from '../types/layer';
+import { ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID } from '../constants/adminBoundary';
+import { AERIAL_PHOTO_LAYER_ID } from '../constants/aerialPhoto';
+import {
+  BICYCLE_LOG_FOCUSED_LAYER_ID,
+  BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+  BICYCLE_LOG_LAYER_ID,
+  BICYCLE_LOG_SELECTED_LAYER_ID
+} from '../constants/bicycleLog';
+import type { CategorizedLayerIds, ToggleableLayerId } from '../types/layer';
 
 const OSM_ROAD_SOURCE_LAYERS = new Set(['transportation', 'transportation_name', 'aeroway']);
 const OSM_PLACE_NAME_SOURCE_LAYERS = new Set(['water_name']);
@@ -77,4 +85,31 @@ export const groupLayerIdsByCategory = (layers: LayerSpecification[]): Record<To
   }
 
   return grouped;
+};
+
+/**
+ * トグル可能なレイヤーIDに対応する、実際のMapLibreスタイルレイヤーIDの一覧を求める
+ * @param layerId トグル可能なレイヤーID
+ * @param categorizedLayerIds カテゴリごとに分類されたスタイルレイヤーIDの一覧
+ * @returns 対応するスタイルレイヤーIDの配列
+ */
+export const resolveStyleLayerIds = (
+  layerId: ToggleableLayerId,
+  categorizedLayerIds: CategorizedLayerIds
+): string[] => {
+  if (layerId === 'aerial-photo') {
+    return [AERIAL_PHOTO_LAYER_ID];
+  }
+  if (layerId === 'bicycle-log') {
+    return [
+      BICYCLE_LOG_LAYER_ID,
+      BICYCLE_LOG_SELECTED_LAYER_ID,
+      BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+      BICYCLE_LOG_FOCUSED_LAYER_ID
+    ];
+  }
+  if (layerId === 'admin-boundary') {
+    return [...categorizedLayerIds['admin-boundary'], ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID];
+  }
+  return categorizedLayerIds[layerId];
 };

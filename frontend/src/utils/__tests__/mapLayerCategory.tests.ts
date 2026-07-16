@@ -1,6 +1,15 @@
 import type { LayerSpecification } from 'maplibre-gl';
 import { describe, expect, test } from 'vitest';
-import { categorizeStyleLayer, groupLayerIdsByCategory } from '../mapLayerCategory';
+import { ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID } from '../../constants/adminBoundary';
+import { AERIAL_PHOTO_LAYER_ID } from '../../constants/aerialPhoto';
+import {
+  BICYCLE_LOG_FOCUSED_LAYER_ID,
+  BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+  BICYCLE_LOG_LAYER_ID,
+  BICYCLE_LOG_SELECTED_LAYER_ID
+} from '../../constants/bicycleLog';
+import type { CategorizedLayerIds } from '../../types/layer';
+import { categorizeStyleLayer, groupLayerIdsByCategory, resolveStyleLayerIds } from '../mapLayerCategory';
 
 const createLayer = (id: string, type: LayerSpecification['type'], sourceLayer?: string): LayerSpecification => {
   // categorizeStyleLayerはid・type・source-layerのみ参照するため、LayerSpecification（type別の
@@ -185,5 +194,46 @@ describe('groupLayerIdsByCategoryに関するテスト', () => {
       'aerial-photo': [],
       'bicycle-log': []
     });
+  });
+});
+
+describe('resolveStyleLayerIdsに関するテスト', () => {
+  const SampleCategorizedLayerIds: CategorizedLayerIds = {
+    'osm-poi': ['poi_r1'],
+    'osm-road': ['road_motorway'],
+    'osm-building': ['building'],
+    'osm-place-name': ['label_country_1'],
+    'admin-boundary': ['boundary_3', 'label_city'],
+    'aerial-photo': [],
+    'bicycle-log': []
+  };
+
+  test('aerial-photoのとき、専用のラスターレイヤーIDのみを返す', () => {
+    const result = resolveStyleLayerIds('aerial-photo', SampleCategorizedLayerIds);
+
+    expect(result).toEqual([AERIAL_PHOTO_LAYER_ID]);
+  });
+
+  test('bicycle-logのとき、通常・選択・フォーカスのハロー・フォーカス本体のレイヤーIDを返す', () => {
+    const result = resolveStyleLayerIds('bicycle-log', SampleCategorizedLayerIds);
+
+    expect(result).toEqual([
+      BICYCLE_LOG_LAYER_ID,
+      BICYCLE_LOG_SELECTED_LAYER_ID,
+      BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
+      BICYCLE_LOG_FOCUSED_LAYER_ID
+    ]);
+  });
+
+  test('admin-boundaryのとき、カテゴリ分類済みのレイヤーIDに加え市町村境界レイヤーIDを含める', () => {
+    const result = resolveStyleLayerIds('admin-boundary', SampleCategorizedLayerIds);
+
+    expect(result).toEqual(['boundary_3', 'label_city', ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID]);
+  });
+
+  test('それ以外のカテゴリのとき、カテゴリ分類済みのレイヤーIDをそのまま返す', () => {
+    const result = resolveStyleLayerIds('osm-road', SampleCategorizedLayerIds);
+
+    expect(result).toEqual(['road_motorway']);
   });
 });
