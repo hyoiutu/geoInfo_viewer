@@ -14,6 +14,36 @@ type LayerDialogLayer = {
   checked: boolean;
 };
 
+/** AdminBoundaryEraSelectのprops */
+type AdminBoundaryEraSelectProps = {
+  /** 入力中(draft)の行政区画の年代 */
+  era: MunicipalityEra;
+  /** 年代が変更されたときに呼ばれるコールバック */
+  onChange: (era: MunicipalityEra) => void;
+};
+
+/** 行政区画レイヤーの表示年代を選ぶプルダウン */
+const AdminBoundaryEraSelect = ({ era, onChange }: AdminBoundaryEraSelectProps) => (
+  <NativeSelect.Root size="sm" width="auto" marginLeft="6">
+    <NativeSelect.Field
+      aria-label="行政区画の年代"
+      value={era}
+      onChange={(event) => {
+        if (isMunicipalityEra(event.target.value)) {
+          onChange(event.target.value);
+        }
+      }}
+    >
+      {MUNICIPALITY_ERA_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </NativeSelect.Field>
+    <NativeSelect.Indicator />
+  </NativeSelect.Root>
+);
+
 /** LayerDialogのprops */
 type LayerDialogProps = {
   /** ダイアログが開いているかどうか */
@@ -73,26 +103,7 @@ export const LayerDialog = ({
             </Checkbox.Control>
             <Checkbox.Label>{layer.name}</Checkbox.Label>
           </Checkbox.Root>
-          {layer.id === 'admin-boundary' && (
-            <NativeSelect.Root size="sm" width="auto" marginLeft="6">
-              <NativeSelect.Field
-                aria-label="行政区画の年代"
-                value={era}
-                onChange={(event) => {
-                  if (isMunicipalityEra(event.target.value)) {
-                    onEraChange(event.target.value);
-                  }
-                }}
-              >
-                {MUNICIPALITY_ERA_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </NativeSelect.Field>
-              <NativeSelect.Indicator />
-            </NativeSelect.Root>
-          )}
+          {layer.id === 'admin-boundary' && <AdminBoundaryEraSelect era={era} onChange={onEraChange} />}
         </Flex>
       ))}
     </Flex>
