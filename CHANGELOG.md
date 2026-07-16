@@ -14,6 +14,23 @@
 
 ## 変更履歴
 
+### [2026-07-16] Issue #34対応(フェーズ1)として都道府県・市町村の行政区画+地名を切り替え可能な「行政区画」レイヤーとして追加した
+* **修正の動機・概要**:
+  - Issue #34「歴史的行政区画表示機能」は、現行データでの行政区画レイヤー化（フェーズ1）と、過去3時代（2000/1950/1920年）の行政区画データ導入（フェーズ2）の2段階の要望を含む大規模なIssueだった。Issue本文が「まずは」/「次に」と明示的にフェーズ分けしていたため、今回はフェーズ1（現行データでの行政区画レイヤー化）のみをスコープとし、フェーズ2（過去データの取り込み・年代選択UI・通過自治体の年代連動）は別途対応する前提で見送った。
+  - フェーズ1の要望は「都道府県・市町村の行政区画（境界線+地名）を、既存の地名レイヤーとは別の1つの切り替え可能なレイヤーにまとめる。地名レイヤーは都道府県名・市町村名以外の地名（国名・河川名等）のみに絞る」というもの。
+  - Issue本文は「sourceLayerはboundary_3」としていたが、実際にOpenFreeMap Liberty（OpenMapTilesスキーマ）のスタイルJSONを取得して確認したところ、`boundary_3`はベーススタイル側のスタイルレイヤーIDであり、ベクトルタイル側のsource-layer名は`boundary`だった。またadmin_levelでフィルタしたところ`boundary_3`は3〜6（国〜都道府県相当）のみを含み、市町村相当のadmin_level 7〜8はベーススタイルに元々描画されていないことが判明した。そのため、都道府県境界は既存の`boundary_3`をそのまま可視性トグルの対象に含め、市町村境界（admin_level 7〜8）は新規スタイルレイヤー（`admin-boundary-municipality`）として追加し、見た目（線の色・破線パターン）は`boundary_3`を模倣した。
+  - 地名側は、OpenFreeMap Libertyの`place`ソースレイヤーの各スタイルレイヤーの`filter`を確認し、`label_state`/`label_city`/`label_city_capital`/`label_town`/`label_village`（都道府県名・市町村名）のみを新設の「行政区画」カテゴリへ移し、`label_country_1〜3`・`label_other`（国名・その他の地名）は既存の「地名」カテゴリに残した（`label_other`はfilterで`class`が`city`/`continent`/`country`/`state`/`town`/`village`以外のもののみを含むため、都道府県・市町村名との重複は無い）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/types/layer.ts`: `ToggleableLayerId`に`'admin-boundary'`を追加。
+    - `frontend/src/constants/layerDefinitions.ts`: `LAYER_DEFINITIONS`に`{ id: 'admin-boundary', name: '行政区画', defaultChecked: true }`を追加。
+    - `frontend/src/constants/adminBoundary.ts`（新規）: 市町村行政区画レイヤーのID・source-layer・filter（admin_level 7〜8）・paint（`boundary_3`と同じ色・破線）・minzoom（8）を定義。
+    - `frontend/src/utils/mapLayerCategory.ts`: `categorizeStyleLayer`を拡張し、`boundary_3`と`place`ソースレイヤーの都道府県・市町村名レイヤーを`admin-boundary`へ分類。
+    - `frontend/src/components/MapView.tsx`: `addAdminBoundaryLayer`（新規）で市町村境界レイヤーを`boundary_3`の手前に追加。`resolveStyleLayerIds`に`admin-boundary`カテゴリ（ベーススタイル由来+新規追加レイヤー）の分岐を追加。
+    - 既存テスト（`mapLayerCategory.tests.ts`・`MapView.tests.tsx`・`useLayerVisibility.tests.ts`）のフィクスチャに`admin-boundary`を追加し、TDD（Red→Green）で実装。単体テスト（フロントエンド全件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`のレイヤ切り替え機能節に「行政区画」レイヤーを追記し、「地名」の説明を「都道府県名・市町村名を除く地名」に修正。`specs/glossary.md`に「行政区画」の用語定義を追加。
+
 ### [2026-07-16] PR #56のレビュー対応としてcatch節のAppExceptionナローイングをassertsアサーション関数に置き換えた
 * **修正の動機・概要**:
   - PR #56（Issue #48対応）で`error as AppException`のキャストを避けるために追加した`if (!(error instanceof AppException)) { throw error; }`というナローイングについて、「直前の`expect(error).toBeInstanceOf(AppException)`自体が失敗時に例外を投げるため、このif/throwは実質到達しない冗長なコードではないか」という指摘を受けた。

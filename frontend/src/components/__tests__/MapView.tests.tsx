@@ -8,6 +8,15 @@ import {
   syncCyclingActivities
 } from '../../api/activitiesApi';
 import {
+  ADMIN_BOUNDARY_MUNICIPALITY_FILTER,
+  ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
+  ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR,
+  ADMIN_BOUNDARY_MUNICIPALITY_LINE_DASHARRAY,
+  ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM,
+  ADMIN_BOUNDARY_MUNICIPALITY_SOURCE_ID,
+  ADMIN_BOUNDARY_MUNICIPALITY_SOURCE_LAYER
+} from '../../constants/adminBoundary';
+import {
   AERIAL_PHOTO_ATTRIBUTION,
   AERIAL_PHOTO_LAYER_ID,
   AERIAL_PHOTO_SOURCE_ID,
@@ -60,6 +69,8 @@ const FIXTURE_STYLE_LAYERS = [
   { id: 'road_minor', type: 'line', 'source-layer': 'transportation' },
   { id: 'building', type: 'fill', 'source-layer': 'building' },
   { id: 'poi_r1', type: 'symbol', 'source-layer': 'poi' },
+  { id: 'label_country_1', type: 'symbol', 'source-layer': 'place' },
+  { id: 'boundary_3', type: 'line', 'source-layer': 'boundary' },
   { id: 'label_city', type: 'symbol', 'source-layer': 'place' }
 ];
 
@@ -68,6 +79,7 @@ const ALL_ON_VISIBILITY: LayerVisibility = {
   'osm-road': true,
   'osm-building': true,
   'osm-place-name': true,
+  'admin-boundary': true,
   'aerial-photo': false,
   'bicycle-log': false
 };
@@ -223,7 +235,52 @@ describe('MapViewに関するテスト', () => {
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_motorway', 'visibility', 'visible');
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('building', 'visibility', 'visible');
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('poi_r1', 'visibility', 'visible');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('label_country_1', 'visibility', 'visible');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('boundary_3', 'visibility', 'visible');
     expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('label_city', 'visibility', 'visible');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(
+      ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
+      'visibility',
+      'visible'
+    );
+  });
+
+  test('layerVisibilityでadmin-boundaryがOFFのとき、行政区画の境界線・地名レイヤーがvisibility:noneになる', () => {
+    renderWithChakra(
+      <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'admin-boundary': false }} {...DEFAULT_SELECTION_PROPS} />
+    );
+    const mapInstance = getMapInstance();
+
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('boundary_3', 'visibility', 'none');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('label_city', 'visibility', 'none');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(
+      ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
+      'visibility',
+      'none'
+    );
+    // osm-place-nameは別カテゴリのため影響を受けない
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('label_country_1', 'visibility', 'visible');
+  });
+
+  test('スタイルロード時、市町村行政区画の境界線レイヤーが都道府県境界(boundary_3)と同じ見た目でboundary_3の手前に追加される', () => {
+    renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
+    const mapInstance = getMapInstance();
+
+    expect(mapInstance.addLayer).toHaveBeenCalledWith(
+      {
+        id: ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
+        type: 'line',
+        source: ADMIN_BOUNDARY_MUNICIPALITY_SOURCE_ID,
+        'source-layer': ADMIN_BOUNDARY_MUNICIPALITY_SOURCE_LAYER,
+        filter: ADMIN_BOUNDARY_MUNICIPALITY_FILTER,
+        minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM,
+        paint: {
+          'line-color': ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR,
+          'line-dasharray': ADMIN_BOUNDARY_MUNICIPALITY_LINE_DASHARRAY
+        }
+      },
+      'boundary_3'
+    );
   });
 
   test('スタイルロード時、OFFのカテゴリに属するレイヤーはvisibility:noneになる', () => {
