@@ -2,6 +2,7 @@ import { Box, Button, Flex, Text } from '@chakra-ui/react';
 import type { CyclingActivity, PassedMunicipality } from '../api/activitiesApi';
 import { usePassedMunicipalities } from '../hooks/usePassedMunicipalities';
 import { layout } from '../theme';
+import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 import { toActivityDetailView } from '../utils/activityDetailView';
 
 const NO_ACTIVITIES = 0;
@@ -23,6 +24,8 @@ type ActivityDetailSidebarProps = {
   onBackFromDetail: () => void;
   /** 一覧画面の戻るボタンが押されたときに呼ばれるコールバック */
   onBackFromList: () => void;
+  /** 通過自治体の判定に使う行政区画の年代（省略時は現行） */
+  adminBoundaryEra?: MunicipalityEra;
 };
 
 /** ActivityListのprops */
@@ -83,12 +86,14 @@ type ActivityDetailProps = {
   activity: CyclingActivity;
   /** 詳細画面の戻るボタンが押されたときに呼ばれるコールバック */
   onBackFromDetail: () => void;
+  /** 通過自治体の判定に使う行政区画の年代 */
+  adminBoundaryEra: MunicipalityEra;
 };
 
-/** フォーカス中のアクティビティの詳細（詳細画面）を表示する。フォーカス中のアクティビティが変わるたびに通過自治体を取得する */
-const ActivityDetail = ({ activity, onBackFromDetail }: ActivityDetailProps) => {
+/** フォーカス中のアクティビティの詳細（詳細画面）を表示する。フォーカス中のアクティビティ・行政区画の年代が変わるたびに通過自治体を取得する */
+const ActivityDetail = ({ activity, onBackFromDetail, adminBoundaryEra }: ActivityDetailProps) => {
   const view = toActivityDetailView(activity);
-  const { municipalities, isLoading } = usePassedMunicipalities(activity.id);
+  const { municipalities, isLoading } = usePassedMunicipalities(activity.id, adminBoundaryEra);
 
   return (
     <Flex direction="column" gap="2">
@@ -117,7 +122,8 @@ export const ActivityDetailSidebar = ({
   focusedIndex,
   onFocus,
   onBackFromDetail,
-  onBackFromList
+  onBackFromList,
+  adminBoundaryEra = MUNICIPALITY_ERA_CURRENT
 }: ActivityDetailSidebarProps) => {
   if (activities.length === NO_ACTIVITIES) {
     return null;
@@ -137,7 +143,11 @@ export const ActivityDetailSidebar = ({
       padding="4"
     >
       {focusedActivity ? (
-        <ActivityDetail activity={focusedActivity} onBackFromDetail={onBackFromDetail} />
+        <ActivityDetail
+          activity={focusedActivity}
+          onBackFromDetail={onBackFromDetail}
+          adminBoundaryEra={adminBoundaryEra}
+        />
       ) : (
         <ActivityList activities={activities} onFocus={onFocus} onBackFromList={onBackFromList} />
       )}

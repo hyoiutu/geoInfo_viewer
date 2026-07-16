@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { describe, expect, test, vi } from 'vitest';
 import { MunicipalitiesService, type PassedMunicipalityDto } from '../../municipalities/municipalities.service';
@@ -116,7 +117,7 @@ describe('ActivitiesControllerに関するテスト', () => {
     expect(result).toBe(startResult);
   });
 
-  test('getPassedMunicipalitiesが呼ばれたとき、MunicipalitiesServiceのfindPassedMunicipalitiesへアクティビティIDを渡しその戻り値をそのまま返す', async () => {
+  test('getPassedMunicipalitiesが呼ばれたとき、MunicipalitiesServiceのfindPassedMunicipalitiesへアクティビティID・年代を渡しその戻り値をそのまま返す', async () => {
     const municipalities: PassedMunicipalityDto[] = [{ prefectureName: '東京都', municipalityName: '千代田区' }];
     const findPassedMunicipalities = vi.fn().mockResolvedValue(municipalities);
     const moduleRef = await Test.createTestingModule({
@@ -129,9 +130,42 @@ describe('ActivitiesControllerに関するテスト', () => {
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
 
-    const result = await controller.getPassedMunicipalities('123');
+    const result = await controller.getPassedMunicipalities('123', '2000-10-01');
 
-    expect(findPassedMunicipalities).toHaveBeenCalledWith('123');
+    expect(findPassedMunicipalities).toHaveBeenCalledWith('123', '2000-10-01');
     expect(result).toBe(municipalities);
+  });
+
+  test('getPassedMunicipalitiesでeraを指定しない場合、現行(current)を渡す', async () => {
+    const findPassedMunicipalities = vi.fn().mockResolvedValue([]);
+    const moduleRef = await Test.createTestingModule({
+      controllers: [ActivitiesController],
+      providers: [
+        { provide: ActivitiesService, useValue: {} },
+        { provide: ActivitiesBackfillService, useValue: {} },
+        { provide: MunicipalitiesService, useValue: { findPassedMunicipalities } }
+      ]
+    }).compile();
+    const controller = moduleRef.get(ActivitiesController);
+
+    await controller.getPassedMunicipalities('123', undefined);
+
+    expect(findPassedMunicipalities).toHaveBeenCalledWith('123', 'current');
+  });
+
+  test('getPassedMunicipalitiesで不正な年代が指定された場合、BadRequestExceptionを投げる', async () => {
+    const findPassedMunicipalities = vi.fn();
+    const moduleRef = await Test.createTestingModule({
+      controllers: [ActivitiesController],
+      providers: [
+        { provide: ActivitiesService, useValue: {} },
+        { provide: ActivitiesBackfillService, useValue: {} },
+        { provide: MunicipalitiesService, useValue: { findPassedMunicipalities } }
+      ]
+    }).compile();
+    const controller = moduleRef.get(ActivitiesController);
+
+    expect(() => controller.getPassedMunicipalities('123', '1999-01-01')).toThrow(BadRequestException);
+    expect(findPassedMunicipalities).not.toHaveBeenCalled();
   });
 });

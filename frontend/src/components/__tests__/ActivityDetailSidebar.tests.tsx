@@ -156,11 +156,28 @@ describe('ActivityDetailSidebarに関するテスト', () => {
       />
     );
 
-    expect(fetchPassedMunicipalities).toHaveBeenCalledWith('42');
+    expect(fetchPassedMunicipalities).toHaveBeenCalledWith('42', 'current');
     await waitFor(() => {
       expect(screen.getByText('東京都千代田区')).toBeInTheDocument();
     });
     expect(screen.getByText('神奈川県横浜市中区')).toBeInTheDocument();
+  });
+
+  test('adminBoundaryEraを指定した場合、その年代で通過自治体を取得する', () => {
+    const activity = createActivity({ id: '42' });
+
+    renderWithChakra(
+      <ActivityDetailSidebar
+        activities={[activity]}
+        focusedIndex={0}
+        onFocus={vi.fn()}
+        onBackFromDetail={vi.fn()}
+        onBackFromList={vi.fn()}
+        adminBoundaryEra="2000-10-01"
+      />
+    );
+
+    expect(fetchPassedMunicipalities).toHaveBeenCalledWith('42', '2000-10-01');
   });
 
   test('通過自治体が無い場合、その旨を表示する', async () => {

@@ -1,6 +1,11 @@
 import type { LayerSpecification } from 'maplibre-gl';
 import { describe, expect, test } from 'vitest';
-import { ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID } from '../../constants/adminBoundary';
+import {
+  ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+  ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID
+} from '../../constants/adminBoundary';
 import { AERIAL_PHOTO_LAYER_ID } from '../../constants/aerialPhoto';
 import {
   BICYCLE_LOG_FOCUSED_LAYER_ID,
@@ -209,13 +214,13 @@ describe('resolveStyleLayerIdsに関するテスト', () => {
   };
 
   test('aerial-photoのとき、専用のラスターレイヤーIDのみを返す', () => {
-    const result = resolveStyleLayerIds('aerial-photo', SampleCategorizedLayerIds);
+    const result = resolveStyleLayerIds('aerial-photo', SampleCategorizedLayerIds, 'current');
 
     expect(result).toEqual([AERIAL_PHOTO_LAYER_ID]);
   });
 
   test('bicycle-logのとき、通常・選択・フォーカスのハロー・フォーカス本体のレイヤーIDを返す', () => {
-    const result = resolveStyleLayerIds('bicycle-log', SampleCategorizedLayerIds);
+    const result = resolveStyleLayerIds('bicycle-log', SampleCategorizedLayerIds, 'current');
 
     expect(result).toEqual([
       BICYCLE_LOG_LAYER_ID,
@@ -225,14 +230,24 @@ describe('resolveStyleLayerIdsに関するテスト', () => {
     ]);
   });
 
-  test('admin-boundaryのとき、カテゴリ分類済みのレイヤーIDに加え市町村境界レイヤーIDを含める', () => {
-    const result = resolveStyleLayerIds('admin-boundary', SampleCategorizedLayerIds);
+  test('admin-boundaryかつ年代がcurrentのとき、カテゴリ分類済みのレイヤーIDに加え市町村境界レイヤーIDを含める', () => {
+    const result = resolveStyleLayerIds('admin-boundary', SampleCategorizedLayerIds, 'current');
 
     expect(result).toEqual(['boundary_3', 'label_city', ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID]);
   });
 
+  test('admin-boundaryかつ年代がcurrent以外のとき、過去年代用の塗り・線・ラベルレイヤーIDを返す', () => {
+    const result = resolveStyleLayerIds('admin-boundary', SampleCategorizedLayerIds, '2000-10-01');
+
+    expect(result).toEqual([
+      ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+      ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+      ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID
+    ]);
+  });
+
   test('それ以外のカテゴリのとき、カテゴリ分類済みのレイヤーIDをそのまま返す', () => {
-    const result = resolveStyleLayerIds('osm-road', SampleCategorizedLayerIds);
+    const result = resolveStyleLayerIds('osm-road', SampleCategorizedLayerIds, 'current');
 
     expect(result).toEqual(['road_motorway']);
   });

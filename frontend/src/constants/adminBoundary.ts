@@ -20,3 +20,17 @@ export const ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR = 'hsl(0, 0%, 70%)';
 export const ADMIN_BOUNDARY_MUNICIPALITY_LINE_DASHARRAY: [number, number] = [1, 1];
 // 市町村境界は都道府県境界よりズームインした際にのみ意味を持つ情報のため、低ズームでの過密表示を避ける
 export const ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM = 8;
+
+// 過去の行政区画（era!=='current'）は現行のベクトルタイルに存在しないため、バックエンドAPIから取得した
+// GeoJSONを別ソースとして描画する（Issue #34フェーズ2）
+export const ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID = 'admin-boundary-historical-source';
+export const ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID = 'admin-boundary-historical-fill';
+export const ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID = 'admin-boundary-historical-line';
+export const ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID = 'admin-boundary-historical-label';
+// 境界線の視認性を優先し、下地（航空写真等）を隠しすぎないよう塗りは非常に薄くする
+export const ADMIN_BOUNDARY_HISTORICAL_FILL_COLOR = ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR;
+export const ADMIN_BOUNDARY_HISTORICAL_FILL_OPACITY = 0.05;
+// 地名ラベル（label_city等）と同じ配色にし、既存OSMスタイルの見た目を模倣する
+export const ADMIN_BOUNDARY_HISTORICAL_LABEL_TEXT_COLOR = '#000';
+export const ADMIN_BOUNDARY_HISTORICAL_LABEL_HALO_COLOR = '#fff';
+export const ADMIN_BOUNDARY_HISTORICAL_LABEL_HALO_WIDTH = 1;

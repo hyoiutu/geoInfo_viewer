@@ -14,7 +14,10 @@ classDiagram
         +startBackfill() BackfillStartResult
         +startForceRefetch() BackfillStartResult
         +getBackfillStatus() BackfillStatus
-        +getPassedMunicipalities(id) PassedMunicipalityDto[]
+        +getPassedMunicipalities(id, era) PassedMunicipalityDto[]
+    }
+    class MunicipalitiesController {
+        +getBoundaries(era) FeatureCollection
     }
     class ActivitiesService {
         +findAll() CyclingActivityDto[]
@@ -39,7 +42,8 @@ classDiagram
         +wait() Promise~void~
     }
     class MunicipalitiesService {
-        +findPassedMunicipalities(activityId) PassedMunicipalityDto[]
+        +findPassedMunicipalities(activityId, era) PassedMunicipalityDto[]
+        +findBoundariesByEra(era) FeatureCollection
     }
     class CyclingActivityRepository {
         +findAll() CyclingActivityEntity[]
@@ -63,6 +67,7 @@ classDiagram
         +lastSyncedAt Date
     }
     class MunicipalityEntity {
+        +era string
         +prefectureName string
         +municipalityName string
         +geom MultiPolygon
@@ -81,6 +86,7 @@ classDiagram
     ActivitiesController --> ActivitiesService
     ActivitiesController --> ActivitiesBackfillService
     ActivitiesController --> MunicipalitiesService
+    MunicipalitiesController --> MunicipalitiesService
     ActivitiesService --> StravaActivitiesService
     ActivitiesService --> ActivitiesBackfillService : 実行中判定を委譲
     ActivitiesService --> CyclingActivityRepository

@@ -14,6 +14,30 @@
 
 ## 変更履歴
 
+### [2026-07-17] PR #62のレビュー対応として過去年代の行政区画レイヤーにminzoomを設定した
+* **修正の動機・概要**:
+  - PR #62（Issue #34フェーズ2）のレビューで、実機（Electronアプリ）で動作確認したところ「ズームレベルを下げても行政区画（過去年代）が計算され続ける」という指摘を受けた。現行年代の市町村境界（`admin-boundary-municipality`）には元々`ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM`（低ズームでの過密表示・不要な計算を避けるための閾値）が設定されていたが、過去年代用に新規追加した塗り・線・ラベルの3レイヤーには同等の設定が漏れていた。
+  - 同じ閾値定数を過去年代の3レイヤーにも設定し、都道府県境界より広域なズームでは行政区画（現行・過去年代とも）が描画・計算されないよう統一した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `frontend/src/utils/mapLayerSetup.ts`の`addAdminBoundaryHistoricalLayer`が追加する塗り(`fill`)・線(`line`)・ラベル(`symbol`)の3レイヤー全てに`minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM`を追加。対応するテスト（`mapLayerSetup.tests.ts`）も更新。単体テスト・lint・型チェックは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た挙動は「低ズームで行政区画が表示されない」という既存仕様の延長で、新たな仕様追加ではないため）。
+  * **設計書**: `designs/technical_design.md`の「行政区画レイヤー（年代選択）」節に、過去年代レイヤーのminzoom設定を追記。
+
+### [2026-07-17] Issue #34対応(フェーズ2の一部)として行政区画レイヤーに過去年代(2000年)選択機能を追加した
+* **修正の動機・概要**:
+  - Issue #34「歴史的行政区画表示機能」のフェーズ2（過去3時代の行政区画データ導入・年代選択UI・通過自治体の年代連動）のうち、まず1年代分（2000-10-01、平成の大合併前）のパイプラインを通し、年代選択UI・地図描画・通過自治体連動まで一通り動作することを検証する方針とした（ユーザーとの相談の上、3年代を一度に投入せず段階的に進める判断）。1950-10-01・1920-01-01は`MUNICIPALITY_ERAS`に追記し`seed:municipalities`を再実行するだけで追加できる設計にしてあり、別途対応する。
+  - 過去の行政区画データは、既存の`municipalities`テーブル（現行データ用、Issue #18）に`era`列を追加し同じテーブルに複数年代分を格納する方針とした（新規テーブルへ分離する案もあったが、通過自治体判定のクエリが1テーブルで完結する方を採用）。
+  - 現行データはOSMのベクトルタイル（Issue #34フェーズ1でPR #59により実装済み）をそのまま使えるが、過去データにはベクトルタイルが存在しないため、バックエンドAPI（`GET /municipalities/boundaries?era=...`）経由でGeoJSONを取得しMapLibreのGeoJSONソースとして描画する方式を採用した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - バックエンド: `backend/src/migrations/1720900000000-AddEraToMunicipalities.ts`（新規、`municipalities`テーブルに`era`列+インデックス追加）、`MunicipalityEntity`に`era`列追加、`backend/src/municipalities/era.constants.ts`（新規、年代識別子の定義・検証）、`seed-municipalities.ts`（年代ごとに洗い替えるよう一般化、現行+2000-10-01を投入）、`MunicipalitiesService`に`findBoundariesByEra`追加・`findPassedMunicipalities`にera引数追加、`MunicipalitiesController`（新規、`GET /municipalities/boundaries`）、`ActivitiesController.getPassedMunicipalities`にeraクエリパラメータ追加。
+    - フロントエンド: `frontend/src/types/municipalityEra.ts`・`constants/municipalityEraOptions.ts`（新規）、`useLayerVisibility`に`draftEra`/`appliedEra`/`setDraftEra`を追加（レイヤー表示状態と同じダイアログ・同じ「実行」タイミングで確定）、`LayerDialog`に年代選択プルダウンを追加、`frontend/src/api/municipalitiesApi.ts`（新規）、`mapLayerSetup.ts`に`addAdminBoundaryHistoricalLayer`/`applyAdminBoundaryHistoricalData`を追加（GeoJSONソース+塗り・線・ラベルの3レイヤー、年代ごとのキャッシュ付き）、`mapLayerCategory.ts`の`resolveStyleLayerIds`をera対応に拡張、`MapView`に`adminBoundaryEra`プロパティ追加、`usePassedMunicipalities`・`ActivityDetailSidebar`にera引数を追加し`MapWorkspace`から選択中の年代を配線。
+    - 単体テスト（バックエンド・フロントエンド）・lint・型チェックは全てGreen。E2Eテストも実行し回帰が無いことを確認。
+  * **README.md**: 通過自治体データの投入手順の節を、行政区画データ（過去年代含む）の投入手順として更新。年代ごとの洗い替えである旨を明記。
+  * **仕様書**: `specs/system_specification.md`のレイヤ切り替え機能節に行政区画の年代選択プルダウンを追記、通過自治体表示機能節に選択中年代との連動を追記。`specs/glossary.md`に「年代（行政区画の）」の用語定義を追加。
+  * **設計書**: `designs/technical_design.md`の通過自治体表示機能節を`era`列・年代引数対応に更新し、新規「行政区画レイヤー（年代選択）」節を追加。`designs/class_diagram.md`に`MunicipalitiesController`クラス・`MunicipalityEntity.era`・関連メソッドのera引数を追記。
+
 ### [2026-07-16] Issue #50対応としてActivitiesServiceとActivitiesBackfillServiceの共通DBアクセスをCyclingActivityRepositoryへ一本化した
 * **修正の動機・概要**:
   - `designs/class_diagram.md`（Issue #29対応）の設計上の改善提案1件目としてIssue化されていた「`ActivitiesService`と`ActivitiesBackfillService`がいずれも`StravaActivitiesService`と`CyclingActivityEntity`のRepositoryに直接依存しており、Strava詳細取得→Entity変換→DB保存という同じ手順を別々の場所で呼び出している」という重複を解消した。

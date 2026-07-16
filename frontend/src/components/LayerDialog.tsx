@@ -1,5 +1,7 @@
-import { Button, Checkbox, Flex } from '@chakra-ui/react';
+import { Button, Checkbox, Flex, NativeSelect } from '@chakra-ui/react';
+import { MUNICIPALITY_ERA_OPTIONS } from '../constants/municipalityEraOptions';
 import type { ToggleableLayerId } from '../types/layer';
+import { isMunicipalityEra, type MunicipalityEra } from '../types/municipalityEra';
 import { AppDialog } from './AppDialog';
 
 /** ダイアログに表示する1レイヤー分の情報 */
@@ -12,12 +14,46 @@ type LayerDialogLayer = {
   checked: boolean;
 };
 
+/** AdminBoundaryEraSelectのprops */
+type AdminBoundaryEraSelectProps = {
+  /** 入力中(draft)の行政区画の年代 */
+  era: MunicipalityEra;
+  /** 年代が変更されたときに呼ばれるコールバック */
+  onChange: (era: MunicipalityEra) => void;
+};
+
+/** 行政区画レイヤーの表示年代を選ぶプルダウン */
+const AdminBoundaryEraSelect = ({ era, onChange }: AdminBoundaryEraSelectProps) => (
+  <NativeSelect.Root size="sm" width="auto" marginLeft="6">
+    <NativeSelect.Field
+      aria-label="行政区画の年代"
+      value={era}
+      onChange={(event) => {
+        if (isMunicipalityEra(event.target.value)) {
+          onChange(event.target.value);
+        }
+      }}
+    >
+      {MUNICIPALITY_ERA_OPTIONS.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </NativeSelect.Field>
+    <NativeSelect.Indicator />
+  </NativeSelect.Root>
+);
+
 /** LayerDialogのprops */
 type LayerDialogProps = {
   /** ダイアログが開いているかどうか */
   isOpen: boolean;
   /** ダイアログに表示するレイヤー一覧（入力中の表示/非表示状態を含む） */
   layers: LayerDialogLayer[];
+  /** 入力中(draft)の行政区画の年代 */
+  era: MunicipalityEra;
+  /** 行政区画の年代が変更されたときに呼ばれるコールバック */
+  onEraChange: (era: MunicipalityEra) => void;
   /** 入力中のレイヤーの表示/非表示状態が切り替えられたときに呼ばれるコールバック */
   onToggleDraft: (id: ToggleableLayerId) => void;
   /** リセットボタンが押されたときに呼ばれるコールバック */
@@ -29,10 +65,19 @@ type LayerDialogProps = {
 };
 
 /**
- * レイヤーの表示/非表示を切り替えるダイアログ。
+ * レイヤーの表示/非表示を切り替えるダイアログ。行政区画レイヤーには、表示する年代を選ぶプルダウンを併設する。
  * 入力内容は「実行」を押したときのみ確定し、閉じるボタン等で閉じた場合は破棄される
  */
-export const LayerDialog = ({ isOpen, layers, onToggleDraft, onReset, onApply, onClose }: LayerDialogProps) => (
+export const LayerDialog = ({
+  isOpen,
+  layers,
+  era,
+  onEraChange,
+  onToggleDraft,
+  onReset,
+  onApply,
+  onClose
+}: LayerDialogProps) => (
   <AppDialog
     isOpen={isOpen}
     onClose={onClose}
@@ -50,13 +95,16 @@ export const LayerDialog = ({ isOpen, layers, onToggleDraft, onReset, onApply, o
   >
     <Flex direction="column" gap="3">
       {layers.map((layer) => (
-        <Checkbox.Root key={layer.id} checked={layer.checked} onCheckedChange={() => onToggleDraft(layer.id)}>
-          <Checkbox.HiddenInput />
-          <Checkbox.Control>
-            <Checkbox.Indicator />
-          </Checkbox.Control>
-          <Checkbox.Label>{layer.name}</Checkbox.Label>
-        </Checkbox.Root>
+        <Flex key={layer.id} direction="column" gap="2">
+          <Checkbox.Root checked={layer.checked} onCheckedChange={() => onToggleDraft(layer.id)}>
+            <Checkbox.HiddenInput />
+            <Checkbox.Control>
+              <Checkbox.Indicator />
+            </Checkbox.Control>
+            <Checkbox.Label>{layer.name}</Checkbox.Label>
+          </Checkbox.Root>
+          {layer.id === 'admin-boundary' && <AdminBoundaryEraSelect era={era} onChange={onEraChange} />}
+        </Flex>
       ))}
     </Flex>
   </AppDialog>

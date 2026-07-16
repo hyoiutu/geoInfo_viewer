@@ -113,4 +113,79 @@ describe('useLayerVisibilityに関するテスト', () => {
     expect(result.current.appliedVisibility).toEqual({ ...DEFAULT_VISIBILITY, 'bicycle-log': true });
     expect(result.current.isDialogOpen).toBe(false);
   });
+
+  describe('行政区画の年代選択に関するテスト', () => {
+    test('初期状態では、適用中・入力中ともに現行(current)である', () => {
+      const { result } = renderHook(() => useLayerVisibility());
+
+      expect(result.current.appliedEra).toBe('current');
+      expect(result.current.draftEra).toBe('current');
+    });
+
+    test('setDraftEraを呼ぶと、入力中の年代が変化する', () => {
+      const { result } = renderHook(() => useLayerVisibility());
+
+      act(() => {
+        result.current.setDraftEra('2000-10-01');
+      });
+
+      expect(result.current.draftEra).toBe('2000-10-01');
+      expect(result.current.appliedEra).toBe('current');
+    });
+
+    test('applyDraftを呼ぶと、入力中の年代が適用中の年代へ反映される', () => {
+      const { result } = renderHook(() => useLayerVisibility());
+      act(() => {
+        result.current.setDraftEra('2000-10-01');
+      });
+
+      act(() => {
+        result.current.applyDraft();
+      });
+
+      expect(result.current.appliedEra).toBe('2000-10-01');
+    });
+
+    test('resetDraftを呼ぶと、入力中の年代がcurrentに戻る（適用中の年代は変化しない）', () => {
+      const { result } = renderHook(() => useLayerVisibility());
+      act(() => {
+        result.current.setDraftEra('2000-10-01');
+      });
+      act(() => {
+        result.current.applyDraft();
+      });
+      act(() => {
+        result.current.openDialog();
+      });
+      act(() => {
+        result.current.setDraftEra('2000-10-01');
+      });
+
+      act(() => {
+        result.current.resetDraft();
+      });
+
+      expect(result.current.draftEra).toBe('current');
+      expect(result.current.appliedEra).toBe('2000-10-01');
+    });
+
+    test('openDialogを呼ぶと、入力中の年代が現在適用中の年代にリセットされる', () => {
+      const { result } = renderHook(() => useLayerVisibility());
+      act(() => {
+        result.current.setDraftEra('2000-10-01');
+      });
+      act(() => {
+        result.current.applyDraft();
+      });
+      act(() => {
+        result.current.closeDialog();
+      });
+
+      act(() => {
+        result.current.openDialog();
+      });
+
+      expect(result.current.draftEra).toBe('2000-10-01');
+    });
+  });
 });

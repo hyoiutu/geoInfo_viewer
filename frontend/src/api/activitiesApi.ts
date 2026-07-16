@@ -1,4 +1,5 @@
 import type { AppErrorInfo } from '../types/apiError';
+import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 import { buildApiError } from '../utils/apiError';
 
 /** 自転車ログ（アクティビティ）1件分 */
@@ -74,10 +75,14 @@ const HTTP_METHOD_POST = 'POST';
 /**
  * 指定したアクティビティの軌跡から算出した、通過した自治体一覧を取得する
  * @param activityId 対象のアクティビティID
+ * @param era 判定に使う行政区画の年代識別子（省略時は現行）
  * @returns 通過した自治体一覧
  */
-export const fetchPassedMunicipalities = async (activityId: string): Promise<PassedMunicipality[]> => {
-  const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_PATH}/${activityId}/municipalities`);
+export const fetchPassedMunicipalities = async (
+  activityId: string,
+  era: MunicipalityEra = MUNICIPALITY_ERA_CURRENT
+): Promise<PassedMunicipality[]> => {
+  const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_PATH}/${activityId}/municipalities?era=${era}`);
 
   if (!response.ok) {
     throw await buildApiError(response);

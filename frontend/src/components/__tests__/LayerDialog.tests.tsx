@@ -9,11 +9,15 @@ const LAYERS = [
   { id: 'aerial-photo' as const, name: '航空写真', checked: false }
 ];
 
+const LAYERS_WITH_ADMIN_BOUNDARY = [...LAYERS, { id: 'admin-boundary' as const, name: '行政区画', checked: true }];
+
 const renderDialog = (overrides: Partial<Parameters<typeof LayerDialog>[0]> = {}) =>
   renderWithChakra(
     <LayerDialog
       isOpen
       layers={LAYERS}
+      era="current"
+      onEraChange={vi.fn()}
       onToggleDraft={vi.fn()}
       onReset={vi.fn()}
       onApply={vi.fn()}
@@ -73,5 +77,30 @@ describe('LayerDialogに関するテスト', () => {
     fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  describe('行政区画の年代選択に関するテスト', () => {
+    test('行政区画のレイヤーが無い場合、年代選択プルダウンは表示されない', () => {
+      renderDialog({ layers: LAYERS });
+
+      expect(screen.queryByRole('combobox', { name: '行政区画の年代' })).not.toBeInTheDocument();
+    });
+
+    test('行政区画のレイヤーがある場合、年代選択プルダウンが選択中の年代で表示される', () => {
+      renderDialog({ layers: LAYERS_WITH_ADMIN_BOUNDARY, era: '2000-10-01' });
+
+      expect(screen.getByRole('combobox', { name: '行政区画の年代' })).toHaveValue('2000-10-01');
+    });
+
+    test('年代を変更すると、onEraChangeが選択した年代で呼ばれる', () => {
+      const onEraChange = vi.fn();
+      renderDialog({ layers: LAYERS_WITH_ADMIN_BOUNDARY, onEraChange });
+
+      fireEvent.change(screen.getByRole('combobox', { name: '行政区画の年代' }), {
+        target: { value: '2000-10-01' }
+      });
+
+      expect(onEraChange).toHaveBeenCalledWith('2000-10-01');
+    });
   });
 });

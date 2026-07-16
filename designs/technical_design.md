@@ -70,11 +70,22 @@ root/
   - 開始地点と終了地点が同じ座標の場合に手前へ描画されるよう、ゴールのマーカーを先に、スタートのマーカーを後に地図へ追加する（MapLibreの`Marker`はDOM要素として描画されるため、後から追加した方がDOM上で後に来ることを利用している）
 
 # 通過自治体表示機能
-- 全国の市区町村境界データ（[政府統計の総合窓口(e-Stat)地図で見る統計(統計GIS)提供の市区町村界データ、GeoShapeリポジトリ、2023-01-01時点、高解像度版、政令指定都市統合版ではない方](https://geoshape.ex.nii.ac.jp/city/choropleth/)）をバックエンドのDB（`municipalities`テーブル、PostGIS）へ投入しておく（`pnpm --filter backend run seed:municipalities`、詳細はREADME.md参照）
+- 全国の市区町村境界データ（[政府統計の総合窓口(e-Stat)地図で見る統計(統計GIS)提供の市区町村界データ、GeoShapeリポジトリ、高解像度版、政令指定都市統合版ではない方](https://geoshape.ex.nii.ac.jp/city/choropleth/)）をバックエンドのDB（`municipalities`テーブル、PostGIS）へ投入しておく（`pnpm --filter backend run seed:municipalities`、詳細はREADME.md参照）
+  - `municipalities`テーブルは`era`列（年代識別子。現行データは`'current'`、過去データはGeoShapeの基準日をそのまま文字列で保持。例:`'2000-10-01'`）を持ち、複数年代分のデータを同じテーブルに格納する（Issue #34）。現行データは`'20230101'`（国土数値情報(N03)の最新基準日）、`2000-10-01`は`'20001001'`（平成の大合併前）をそれぞれGeoShapeのtopojson基準日として使う。`scripts/seed-municipalities.ts`（`backend/src/municipalities/era.constants.ts`の`MUNICIPALITY_ERAS`で定義された年代分）が、年代ごとに既存行のみを洗い替えて投入する
   - 政令指定都市の区は、国土数値情報(N03)のプロパティ`N03_003`（市名）+`N03_004`（区名）を連結し「市名+区名」（例: 横浜市中区）として保持する
 - 逆ジオコーディングは、アクティビティの軌跡（GPSトラック）をPostGISの`ST_Segmentize`で約100m間隔にサンプリングし、`ST_DumpPoints`で座標点を取り出した上で`ST_Contains`により自治体ポリゴンとの空間結合を行う方式で実装する（`MunicipalitiesService.findPassedMunicipalities`）。全てのGPSポイントに対して逆ジオコーディングすると負荷が高いため間隔を空けてサンプリングする
+  - 判定対象の年代は引数`era`で受け取り（`GET /activities/:id/municipalities?era=...`、省略時は`'current'`）、SQLの`JOIN`条件に`m.era = $3`を追加して絞り込む
 - 一覧の並び順は、`ST_DumpPoints`が返すサンプリング点の`path`（軌跡上の並び順）を用いて、自治体ごとに最初に通過した時点の`path`値で`DISTINCT ON`し、その値順に並べ替えることで実現する
 - 海外を通過した区間の除外は、明示的な国内/海外判定ロジックを追加せず、「`municipalities`テーブルが日本国内のデータのみを保持しているため、海外の区間のサンプリング点はどの自治体にも`ST_Contains`で一致せず、結果として自動的に除外される」という間接的な方式で実現している
+
+# 行政区画レイヤー（年代選択）
+- 現行（`era === 'current'`）の行政区画は、既存のOSMベクトルタイル（`boundary_3`＝都道府県境界＋新規追加の市町村境界レイヤー、`place`ソースレイヤーの都道府県名・市町村名ラベル）をそのまま可視性トグルの対象とする（Issue #34フェーズ1）
+- 過去の行政区画（`era !== 'current'`）はベクトルタイルに存在しないため、`GET /municipalities/boundaries?era=...`（`MunicipalitiesController.getBoundaries`、新規）がDBの`municipalities`テーブルから該当年代のポリゴンをGeoJSON `FeatureCollection`として返す。フロントエンドはこれをMapLibreのGeoJSONソース（`admin-boundary-historical-source`）へ`setData`し、塗り（`fill`、視認性を優先し不透明度0.05の薄い塗り）・線（`line`、現行の市町村境界と同じ配色・破線パターン）・ラベル（`symbol`、`municipalityName`プロパティをテキストフィールドとし既存OSM地名ラベルと同じ配色）の3レイヤーとして描画する（`addAdminBoundaryHistoricalLayer`/`applyAdminBoundaryHistoricalData`、`frontend/src/utils/mapLayerSetup.ts`）
+  - 塗り・線・ラベルの3レイヤーいずれにも、現行の市町村境界（`admin-boundary-municipality`）と同じ`ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM`（`minzoom`）を設定し、低ズームでの過密表示・不要な計算を避ける（PR #62レビュー対応。実機確認でズームアウトしても行政区画の計算が継続する点が指摘された）
+- 取得したGeoJSONは年代ごとに`MapView`内の`Map<MunicipalityEra, FeatureCollection>`（`historicalBoundariesCacheRef`）へキャッシュし、同じ年代へ再度切り替えた際の再取得を避ける
+- レイヤーダイアログの年代選択（プルダウン）は、レイヤーの表示/非表示と同じ`useLayerVisibility`フックが`draftEra`/`appliedEra`として管理し、同じ「実行」ボタンのタイミングで確定する（年代選択のためだけの別ダイアログ・別フックを設けていない）
+- 選択中の年代は`MapWorkspace`から`MapView`（描画用）・`ActivityDetailSidebar`（通過自治体の判定用、`usePassedMunicipalities`経由）の両方へ`adminBoundaryEra`として渡される
+- 2026-07時点で投入済みの年代は`current`（2023-01-01）・`2000-10-01`（平成の大合併前）の2つ。`1950-10-01`（昭和の大合併前）・`1920-01-01`（大正期）はIssue #34の要望に含まれるが、パイプラインの動作検証を優先し今回は未投入（`MUNICIPALITY_ERAS`に追記し`seed:municipalities`を再実行するだけで追加可能な設計にしてある）
 
 # エラーハンドリング機構
 ## バックエンド
