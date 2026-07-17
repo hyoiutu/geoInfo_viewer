@@ -38,6 +38,11 @@ classDiagram
         -tokenState TokenState
         +getAccessToken() string
     }
+    class StravaApiClient {
+        +getActivities(accessToken, params) StravaActivity[]
+        +getActivityDetail(accessToken, activityId) StravaActivityDetail
+        +refreshToken(params) StravaTokenResponse
+    }
     class StravaRateLimiterService {
         +wait() Promise~void~
     }
@@ -97,6 +102,8 @@ classDiagram
     CyclingActivityRepository --> CyclingActivityEntity : Repository
     StravaActivitiesService --> StravaAuthService
     StravaActivitiesService --> StravaRateLimiterService
+    StravaActivitiesService --> StravaApiClient
+    StravaAuthService --> StravaApiClient
     MunicipalitiesService --> MunicipalityEntity : Repository
     AllExceptionsFilter ..> AppException : 整形して返す
 ```
@@ -217,6 +224,6 @@ classDiagram
 
 1. **（対応済み・Issue #50）`ActivitiesService`と`ActivitiesBackfillService`の責務の重なり**: 両者とも`StravaActivitiesService`と`CyclingActivityEntity`のRepositoryに直接依存しており、Strava詳細取得→Entity変換→DB保存という同じ手順を（`cycling-activity-entity.util.ts`の共通関数経由とはいえ）別々の場所で呼び出していた。両サービスが共通で使う`CyclingActivityRepository`（TypeORMのRepositoryをラップする独自クラス、`activities/cycling-activity.repository.ts`）を切り出し、DB未登録分のみプレースホルダー保存する重複チェック処理（`savePlaceholdersIfNotExists`）を含む全てのDBアクセスを一本化した。
 2. **`ActivitiesController`が3つのサービスに直接依存している**: `ActivitiesService`・`ActivitiesBackfillService`・`MunicipalitiesService`という異なる関心事（参照/新規アクティビティ取得・バックフィル・逆ジオコーディング）を1つのコントローラーが束ねている。現状はエンドポイント数が少なく許容範囲だが、今後エンドポイントが増える場合はコントローラーの分割（例: `MunicipalitiesController`を独立させる）を検討するとよい。
-3. **`StravaActivitiesService`/`StravaAuthService`が`HttpService`（axiosの薄いラッパー）に直接依存**: DIP（依存性逆転の原則）の観点では、Strava APIクライアントとしての抽象インターフェースを挟む余地があるが、既存の単体テストは`HttpService`のモックで十分に検証できており、抽象化による実利は現時点では小さいと判断する。将来Strava以外の外部サービス連携（例: Issue #23の写真閲覧機能でのGoogle Photos連携）が増える場合、共通の「外部APIクライアント」抽象を検討する契機になりうる。
+3. **（対応済み・Issue #52）`StravaActivitiesService`/`StravaAuthService`が`HttpService`（axiosの薄いラッパー）に直接依存**: `StravaApiClient`（`strava/strava-api.client.ts`）を切り出し、HTTPリクエストの組み立て・実行とエラーのAppExceptionへの変換のみをその責務とした。認証トークンのキャッシュ・ページング・アクティビティ種別によるフィルタリングは引き続き`StravaActivitiesService`/`StravaAuthService`側の責務として残している。
 4. **フロントエンドの`MapWorkspace`が担う責務の広さ**: レイヤー表示状態・バックフィル進捗・アクティビティ選択・フィルタ条件と、複数のフックを束ねている。Issue #32（左サイドバー廃止・Map Controlsへの移行）で`LayerDialog`・`SettingsDialog`・`BackfillProgressFooter`という独立したコンポーネントに分割したが、各コンポーネントへの配線（フックの呼び出し・propsの受け渡し）自体は引き続き`MapWorkspace`が担っている。責務の広さそのものの解消（例: Contextやカスタムフックへの集約）は現状の規模では過剰設計になりうるため、追加のフックが増えるタイミングで改めて検討する。
 5. **エラーハンドリングの一貫性は良好**: バックエンドは`AllExceptionsFilter`によるレスポンス形式の統一、フロントエンドは`errorsAtom`によるグローバルなエラースタックで一元管理されており、この部分の設計は現状の規模に対して適切と判断する。追加の変更提案は無い。
