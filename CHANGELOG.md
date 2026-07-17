@@ -14,6 +14,22 @@
 
 ## 変更履歴
 
+### [2026-07-17] Issue #52対応としてStrava APIクライアントを抽象化した
+* **修正の動機・概要**:
+  - `designs/class_diagram.md`（Issue #29対応）の設計上の改善提案3件目として指摘されていた、`StravaActivitiesService`/`StravaAuthService`が`HttpService`（axiosの薄いラッパー）に直接依存している問題を解消した（Issue #52）。自律モードで対応した。
+  - `StravaApiClient`（新規）を切り出し、HTTPリクエストの組み立て・実行と、エラーのAppExceptionへの変換（`toStravaApiException`）のみをその責務とした。認証トークンのキャッシュ・ページング・アクティビティ種別によるフィルタリング等の業務ロジックは、引き続き`StravaActivitiesService`/`StravaAuthService`側に残した。
+  - Issueの例では`firstValueFrom(this.getStravaActivitiesByMaxPage(page))`のようにObservableを返す薄いラッパーメソッドが示されていたが、実装時にはPromiseを返す高レベルなメソッド（`getActivities`/`getActivityDetail`/`refreshToken`）として設計した。理由: 各呼び出し箇所で重複していた`try/catch`+`toStravaApiException`変換もクライアント内に集約でき、DRY原則の観点でも呼び出し側がより簡潔になるため。
+  - 実装中、`biome check --write`によりDIコンストラクタ注入で使うクラス（`HttpService`・`ConfigService`・`StravaApiClient`・`StravaAuthService`・`StravaRateLimiterService`）のimportが`import type`へ誤変換される既知の罠（typescript_rules.md記載）が再発した。単体テスト実行前に気づき、該当箇所を通常の`import`に手動で戻して解消した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/strava/strava-api.client.ts`（新規）・`__tests__/strava-api.client.tests.ts`（新規、9件）。
+    - `backend/src/strava/strava-activities.service.ts`・`strava-auth.service.ts`: `HttpService`の直接注入を`StravaApiClient`経由に置き換え。振る舞いは変更していない（既存テストのモック先を`HttpService`から`StravaApiClient`へ差し替え、TDDのRed→Greenで確認）。
+    - `backend/src/strava/strava.module.ts`: providersに`StravaApiClient`を追加。
+    - 単体テスト（バックエンド）・lint・typecheck・`check:type-assertions`は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部実装のリファクタリングのみで、ユーザーから見た挙動に変化は無いため）。
+  * **設計書**: `designs/class_diagram.md`に`StravaApiClient`クラスを追記し、改善提案3件目を「対応済み」に更新。
+
 ### [2026-07-17] Issue #34対応(フェーズ2)として行政区画レイヤーに過去年代(1920年・大正時代)を追加し、Issue #34が要望する全年代の投入を完了した
 * **修正の動機・概要**:
   - PR #63（1950-10-01の投入）に続き、Issue #34が要望する最後の年代である1920-01-01（大正時代）を追加投入した。パイプラインは年代非依存に一般化済みのため、年代識別子の追加（バックエンド・フロントエンド）とシード実行のみで完結する変更となった。

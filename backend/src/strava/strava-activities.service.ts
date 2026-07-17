@@ -1,14 +1,7 @@
-import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
-import { firstValueFrom } from 'rxjs';
-import { toStravaApiException } from '../common/errors/strava-api.exception';
-import {
-  STRAVA_ACTIVITIES_PATH,
-  STRAVA_ACTIVITY_DETAIL_PATH,
-  STRAVA_API_BASE_URL,
-  STRAVA_MAX_PER_PAGE
-} from './strava.constants';
+import { STRAVA_MAX_PER_PAGE } from './strava.constants';
 import { isCyclingActivity } from './strava-activity.util';
+import { StravaApiClient } from './strava-api.client';
 import { StravaAuthService } from './strava-auth.service';
 import { StravaRateLimiterService } from './strava-rate-limiter.service';
 import type { StravaActivity, StravaActivityDetail } from './types/strava-activity.type';
@@ -26,7 +19,7 @@ const EMPTY_PAGE_LENGTH = 0;
 @Injectable()
 export class StravaActivitiesService {
   constructor(
-    private readonly httpService: HttpService,
+    private readonly stravaApiClient: StravaApiClient,
     private readonly stravaAuthService: StravaAuthService,
     private readonly stravaRateLimiterService: StravaRateLimiterService
   ) {}
@@ -39,19 +32,11 @@ export class StravaActivitiesService {
   async fetchCyclingActivities(options: FetchActivitiesOptions = {}): Promise<StravaActivity[]> {
     const accessToken = await this.stravaAuthService.getAccessToken();
 
-    try {
-      const response = await firstValueFrom(
-        this.httpService.get<StravaActivity[]>(`${STRAVA_API_BASE_URL}${STRAVA_ACTIVITIES_PATH}`, {
-          // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
-          headers: { Authorization: `Bearer ${accessToken}` },
-          params: options.afterEpochSeconds === undefined ? undefined : { after: options.afterEpochSeconds }
-        })
-      );
+    const activities = await this.stravaApiClient.getActivities(accessToken, {
+      afterEpochSeconds: options.afterEpochSeconds
+    });
 
-      return response.data.filter((activity) => isCyclingActivity(activity));
-    } catch (error) {
-      throw toStravaApiException(error);
-    }
+    return activities.filter((activity) => isCyclingActivity(activity));
   }
 
   /**
@@ -66,24 +51,13 @@ export class StravaActivitiesService {
     for (let page = FIRST_PAGE; ; page++) {
       await this.stravaRateLimiterService.waitForSlot();
 
-      try {
-        const response = await firstValueFrom(
-          this.httpService.get<StravaActivity[]>(`${STRAVA_API_BASE_URL}${STRAVA_ACTIVITIES_PATH}`, {
-            // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
-            headers: { Authorization: `Bearer ${accessToken}` },
-            // biome-ignore lint/style/useNamingConvention: Strava APIのクエリパラメータ形式(snake_case)に合わせる
-            params: { per_page: STRAVA_MAX_PER_PAGE, page }
-          })
-        );
+      const activities = await this.stravaApiClient.getActivities(accessToken, { perPage: STRAVA_MAX_PER_PAGE, page });
 
-        if (response.data.length === EMPTY_PAGE_LENGTH) {
-          break;
-        }
-
-        allActivities.push(...response.data.filter((activity) => isCyclingActivity(activity)));
-      } catch (error) {
-        throw toStravaApiException(error);
+      if (activities.length === EMPTY_PAGE_LENGTH) {
+        break;
       }
+
+      allActivities.push(...activities.filter((activity) => isCyclingActivity(activity)));
     }
 
     return allActivities;
@@ -98,17 +72,6 @@ export class StravaActivitiesService {
     const accessToken = await this.stravaAuthService.getAccessToken();
     await this.stravaRateLimiterService.waitForSlot();
 
-    try {
-      const response = await firstValueFrom(
-        this.httpService.get<StravaActivityDetail>(`${STRAVA_API_BASE_URL}${STRAVA_ACTIVITY_DETAIL_PATH(activityId)}`, {
-          // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
-          headers: { Authorization: `Bearer ${accessToken}` }
-        })
-      );
-
-      return response.data;
-    } catch (error) {
-      throw toStravaApiException(error);
-    }
+    return this.stravaApiClient.getActivityDetail(accessToken, activityId);
   }
 }
