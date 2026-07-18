@@ -14,6 +14,20 @@
 
 ## 変更履歴
 
+### [2026-07-18] Issue #67対応として行政区画レイヤーの年代切り替え時の重複表示バグを修正した
+* **修正の動機・概要**:
+  - Issue #67「現在以外の行政区画を表示しているとき、現在の行政区画が重複して表示されてしまう」に自律モードで対応した。issue-reviewの各観点には該当しない明確なバグ修正と判断し着手した。
+  - 原因: `resolveStyleLayerIds`（`mapLayerCategory.ts`）はadmin-boundaryレイヤーがONのとき選択中の年代（現行/過去）に対応するレイヤー群のみを返す設計だったが、`MapView`の`applyLayerVisibility`はこの返り値だけを頼りにvisibilityを設定していたため、「選択されていない方の年代のレイヤー群」を非表示にする処理が無かった。年代を切り替えると、直前に表示していた方のレイヤーのvisibility状態がそのまま残り、現行と過去年代の行政区画が重複して表示されていた。
+  - `resolveUnusedAdminBoundaryLayerIds`（新規、選択中の年代の逆側のレイヤーID一覧を返す純粋関数）を追加し、`applyLayerVisibility`が行政区画レイヤーのON/OFFに関わらず常にこれらのレイヤーを非表示にするよう修正した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/mapLayerCategory.ts`: `resolveUnusedAdminBoundaryLayerIds`（新規）を追加。
+    - `frontend/src/components/MapView.tsx`: `applyLayerVisibility`に非選択年代レイヤーの非表示化処理を追加。
+    - 単体テスト（フロントエンド、新規4件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`のレイヤ一覧表示機能の行政区画項目に「選択した年代の行政区画のみが表示され、それ以外の年代（現在を含む）の行政区画は表示されない」を明記（従来は年代を選べることのみ記載され、排他的に表示されることは明記されていなかった）。
+  * **設計書**: `designs/technical_design.md`の「行政区画レイヤー（年代選択）」章に、バグの原因と`resolveUnusedAdminBoundaryLayerIds`追加の経緯を追記。
+
 ### [2026-07-18] Issue #58対応としてMapViewの責務の広さを見直した
 * **修正の動機・概要**:
   - Issue #58「MapViewの責務の広さを見直す」（Issue #53と関連）に自律モードで対応した。issue-reviewの観点2（大規模リファクタの境界基準）はIssue本文に具体的な設計方針が示されていたため追加確認不要と判断した。
