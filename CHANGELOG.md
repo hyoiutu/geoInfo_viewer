@@ -14,6 +14,25 @@
 
 ## 変更履歴
 
+### [2026-07-18] Issue #53対応としてMapWorkspaceの責務の広さを見直した
+* **修正の動機・概要**:
+  - Issue #53「MapWorkspaceの責務の広さを見直す」に自律モードで対応した。issue-reviewの観点2（大規模な再編・分割Issueは境界の判断基準を先に固める）に該当する懸念があったが、Issue本文のコメント2件で既に具体的な設計方針（ダイアログのdraft状態を内部化する、MapControlsが開閉状態・ダイアログ本体を持つ）が固められていたため、着手前の追加調整は不要と判断した。
+  - `LayerDialog`/`FilterDialog`が担っていなかった「入力中(draft)の内容」の保持先を、`MapWorkspace`（`useLayerVisibility`/`useActivityFilter`フック経由）から各ダイアログコンポーネント自身の内部stateへ移した。ダイアログを開くたびに`isOpen`の変化を検知する`useEffect`で、入力中の内容を現在適用中(applied)の内容へリセットする構成とした。
+  - `MapControls`が`LayerDialog`/`FilterDialog`/`StatisticsDialog`/`SettingsDialog`の開閉状態（`useState`）とダイアログ本体自体を保持するよう変更した。`MapWorkspace`はこれに伴い、確定済みの結果（表示状態・行政区画の年代・フィルタ条件）のみをシンプルな`useState`で保持し、各コンポーネントへ配る役目に絞られた。
+  - 上記により`useLayerVisibility`/`useActivityFilter`フックは不要になったため削除した。
+  - 実装中、ダイアログの開閉がChakra UI（Ark UI）の内部で非同期に反映されるため、`MapControls`の単体テストで開閉直後の同期的なアサーションが失敗する箇所があり、`waitFor`で待つよう修正した。また既存の`MapWorkspace.tests.tsx`のタイミング調整用モック遅延（100ms）が、コンポーネント構造の変化により不足するようになったため500msへ延長した（実装のバグではなくテスト側のタイミング調整）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/components/LayerDialog.tsx`/`FilterDialog.tsx`: propsを`appliedXxx`+`onApply(確定値)`形式に変更し、draft管理を内部化。
+    - `frontend/src/components/MapControls.tsx`: 開閉state・4ダイアログ本体を統合するpropsに変更。
+    - `frontend/src/components/MapWorkspace.tsx`: draft管理・個別ダイアログのレンダリングを削除し大幅に簡略化。
+    - `frontend/src/constants/layerDefinitions.ts`: `createDefaultVisibility`を`useLayerVisibility.ts`から移設し共通化。
+    - `frontend/src/hooks/useLayerVisibility.ts`・`useActivityFilter.ts`（削除、対応テストも削除）。
+    - 対応する単体テストを新API向けに全面書き換え。単体テスト（フロントエンド）・lint・typecheck・E2Eテストは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た挙動に変化はなく、内部構造のリファクタリングのみのため）。
+  * **設計書**: `designs/class_diagram.md`のコンポーネント依存関係・`designs/technical_design.md`の「自転車ログフィルタリング機能」「行政区画レイヤー（年代選択）」章を更新。`class_diagram.md`にIssue #33で追加された`StatisticsDialog`の記載漏れも合わせて追記した。
+
 ### [2026-07-18] Issue #33対応として統計データ表示機能を実装した
 * **修正の動機・概要**:
   - Issue #33「統計データ表示機能の実装」（全アクティビティ数・総走行距離数を表示するダイアログ、マップコントロールへのアイコン追加）を自律モードで対応した。
