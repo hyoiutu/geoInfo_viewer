@@ -112,10 +112,17 @@ export const extractMetadataFromJson = (jsonBuffer: Buffer): PhotoMetadata | nul
  * 写真本体のEXIF情報から、撮影日時・位置情報を抽出する。JSONサイドカーが見つからない写真の
  * フォールバック用（Issue #23）
  * @param photoBuffer 写真本体のバイナリ
- * @returns 抽出したメタデータ。DateTimeOriginalが読み取れない場合はnull
+ * @returns 抽出したメタデータ。DateTimeOriginalが読み取れない場合、またはexifrが対応していない
+ * ファイル形式（Takeoutに含まれる動画等）でパース自体が失敗した場合はnull
  */
 export const extractMetadataFromExif = async (photoBuffer: Buffer): Promise<PhotoMetadata | null> => {
-  const exif: unknown = await parse(photoBuffer, { pick: ['DateTimeOriginal'] });
+  let exif: unknown;
+  try {
+    exif = await parse(photoBuffer, { pick: ['DateTimeOriginal'] });
+  } catch {
+    return null;
+  }
+
   const dateTimeOriginal =
     typeof exif === 'object' && exif !== null && 'DateTimeOriginal' in exif ? exif.DateTimeOriginal : undefined;
   if (!(dateTimeOriginal instanceof Date)) {

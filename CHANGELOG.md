@@ -14,6 +14,19 @@
 
 ## 変更履歴
 
+### [2026-07-18] Issue #23対応として写真取り込み時のEXIF解析エラーによるINTERNAL_ERRORを修正した
+* **修正の動機・概要**:
+  - 実際にユーザーがGoogle Takeoutでエクスポートしたzipで`POST /photos/ingest`を実行したところ、`INTERNAL_ERROR`が返るバグが発覚した。
+  - 原因: `extractMetadataFromExif`内の`exifr`の`parse()`呼び出しがtry/catchで囲まれておらず、Takeoutフォルダに含まれる動画ファイル等exifrが対応していない形式の写真本体エントリでパースが例外を投げると、そのまま`PhotoIngestService.ingest()`全体が失敗していた。
+  - `parse()`呼び出しをtry/catchで囲み、失敗時は`null`を返す（＝EXIFからのメタデータ抽出を諦め、当該写真は`skippedCount`としてスキップする）よう修正した。修正後、実際のGoogle Takeoutデータで取り込み成功・`photos`テーブルへの格納をユーザーが確認済み。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/takeout-metadata.util.ts`: `extractMetadataFromExif`の`parse()`呼び出しをtry/catchで囲む。
+    - `backend/src/photos/__tests__/takeout-metadata.util.tests.ts`: 「EXIF解析自体が例外を投げる場合、nullを返す」テストケースを追加（TDDでRed確認後に修正）。
+    - 単体テスト（バックエンド）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（「JSON欠落時はEXIF直読みへフォールバックする」という既存の設計方針自体は変わらず、実装上の見落としを修正したのみのため）。
+
 ### [2026-07-18] Issue #23対応としてGoogle Takeoutの写真データ取り込みパイプラインを実装した
 * **修正の動機・概要**:
   - Issue #23「写真閲覧機能」のうち、Issueコメントに記載された「今後の実装で必要になる要素」から「バックエンドのzip取り込みパイプライン」を対話モードで実装した。フロントエンドのGoogle Picker UI、写真閲覧機能本体（地図上の吹き出し表示・サイドバーのグリッド表示）は今回のスコープ外。

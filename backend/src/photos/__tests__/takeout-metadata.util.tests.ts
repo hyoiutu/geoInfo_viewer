@@ -111,4 +111,13 @@ describe('extractMetadataFromExifに関するテスト', () => {
 
     expect(result).toEqual({ takenAt: new Date('2026-07-01T10:00:00.000Z'), location: null });
   });
+
+  test('EXIF解析自体が例外を投げる場合(動画ファイル等、対応していない形式)、nullを返す', async () => {
+    const { parse } = await import('exifr');
+    vi.mocked(parse).mockRejectedValue(new Error('unsupported file format'));
+
+    const result = await extractMetadataFromExif(Buffer.from('mp4-binary'));
+
+    expect(result).toBeNull();
+  });
 });
