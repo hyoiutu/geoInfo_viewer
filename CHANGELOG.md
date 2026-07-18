@@ -14,6 +14,24 @@
 
 ## 変更履歴
 
+### [2026-07-18] Issue #33対応として統計データ表示機能を実装した
+* **修正の動機・概要**:
+  - Issue #33「統計データ表示機能の実装」（全アクティビティ数・総走行距離数を表示するダイアログ、マップコントロールへのアイコン追加）を自律モードで対応した。
+  - issue-reviewスキルでのレビューの結果、懸念（外部サービス連携の認証情報・大規模な再編の境界基準・主観的UI/UX要望の裏取り）はいずれも該当しないと判断し着手した。
+  - 既存の`LayerDialog`/`FilterDialog`/`SettingsDialog`と同じ構成（共通ラッパー`AppDialog`への委譲、開閉状態は`MapWorkspace`のローカルstate）を踏襲し、`StatisticsDialog`（新規）を実装した。集計・整形処理は`toActivityDetailView`（`activityDetailView.ts`）と同じ「メートル→km変換・小数第1位フォーマット」パターンを踏襲した純粋関数`toActivityStatisticsView`（新規、`activityStatistics.ts`）に切り出した。
+  - 集計対象は地図上の表示フィルタ適用前の全アクティビティ（`MapWorkspace`の`activities`state）とした。理由: 仕様書の「全アクティビティ数」「総走行距離数」はフィルタ条件に関わらず不変の集計値であるべきと判断したため（自律モードでの設計判断、PR説明文に明記）。
+  - Issue本文の「将来的に実装したいアイデア（都道府県別走行距離等）」については、「このIssueでは実装する必要はない」と明記されていたため対象外とした。仕様書には「将来的な拡張予定（本機能の対象外）」として一覧のみ転記し、個別のWIP Issue起票は別途ユーザー判断が必要な事項としてPR説明文に明記した（自律モードでは判断のみ行い、GitHub Issueの新規作成は伴わない運用とした）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/activityStatistics.ts`（新規）・`__tests__/activityStatistics.tests.ts`（新規、3件）。
+    - `frontend/src/components/StatisticsDialog.tsx`（新規）・`__tests__/StatisticsDialog.tests.tsx`（新規、5件）。
+    - `frontend/src/components/MapControls.tsx`: `onOpenStatisticsDialog` propと統計アイコン（`lucide-react`の`ChartColumn`）を追加。
+    - `frontend/src/components/MapWorkspace.tsx`: `isStatisticsDialogOpen` stateを追加し`MapControls`/`StatisticsDialog`へ配線。
+    - 単体テスト（フロントエンド）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`に「## 統計データ表示機能」章を新規追加。`specs/glossary.md`に「統計データ表示ダイアログ」を追加。
+  * **設計書**: `designs/technical_design.md`に「# 統計データ表示機能」章を新規追加。
+
 ### [2026-07-17] Issue #52対応としてStrava APIクライアントを抽象化した
 * **修正の動機・概要**:
   - `designs/class_diagram.md`（Issue #29対応）の設計上の改善提案3件目として指摘されていた、`StravaActivitiesService`/`StravaAuthService`が`HttpService`（axiosの薄いラッパー）に直接依存している問題を解消した（Issue #52）。自律モードで対応した。

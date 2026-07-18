@@ -132,6 +132,23 @@ describe('MapWorkspaceに関するテスト', () => {
     );
   });
 
+  test('統計アイコンをクリックすると、統計ダイアログに全アクティビティ数と総走行距離数が表示される', async () => {
+    const { fetchCyclingActivities } = await import('../../api/activitiesApi');
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([
+      createActivity({ id: 'a', distanceMeters: 12345 }),
+      createActivity({ id: 'b', distanceMeters: 7655 })
+    ]);
+    const { getByRole, getByText } = renderWithChakra(<MapWorkspace />);
+
+    await toggleLayerViaDialog(getByRole, '自転車ログ');
+    await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalled());
+
+    fireEvent.click(getByRole('button', { name: '統計データ' }));
+
+    await waitFor(() => expect(getByText('全アクティビティ数: 2件')).toBeInTheDocument());
+    expect(getByText('総走行距離数: 20.0 km')).toBeInTheDocument();
+  });
+
   test('設定ダイアログの初期取り込みボタンをクリックすると、startBackfillが呼ばれる', async () => {
     const { startBackfill } = await import('../../api/activitiesApi');
     const { getByRole } = renderWithChakra(<MapWorkspace />);
