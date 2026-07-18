@@ -5,6 +5,7 @@ import { createDefaultVisibility } from '../constants/layerDefinitions';
 import { useActivitySelection } from '../hooks/useActivitySelection';
 import { useBackfillProgressFooter } from '../hooks/useBackfillProgressFooter';
 import { useBackfillStatus } from '../hooks/useBackfillStatus';
+import { useCyclingActivities } from '../hooks/useCyclingActivities';
 import { type ActivityFilter, DEFAULT_ACTIVITY_FILTER } from '../types/activityFilter';
 import type { LayerVisibility } from '../types/layer';
 import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
@@ -19,7 +20,9 @@ import { MapView } from './MapView';
  * 地図・Map Controls・各種ダイアログを組み合わせたアプリのメイン画面。
  * 各種状態のうち「確定済みの結果」（レイヤー表示状態・フィルタ条件・アクティビティの選択状態）のみをここで一元管理し、
  * 各コンポーネントへpropsとして渡す。ダイアログの開閉・入力中(draft)の内容はMapControls・各Dialogコンポーネント自身が
- * 保持する（Issue #53）。エラー状態はグローバルステート（errorsAtom）で管理するため、ここでは保持しない
+ * 保持する（Issue #53）。自転車ログの新規アクティビティ取得（Strava同期）は`useCyclingActivities`が担い、
+ * フィルタ計算もここで1回だけ行った上でMapViewへ渡す（Issue #58）。エラー状態はグローバルステート（errorsAtom）で
+ * 管理するため、ここでは保持しない
  */
 export const MapWorkspace = () => {
   const [visibility, setVisibility] = useState<LayerVisibility>(createDefaultVisibility);
@@ -28,13 +31,11 @@ export const MapWorkspace = () => {
   const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus();
   const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =
     useBackfillProgressFooter(backfillStatus);
-  const [activities, setActivities] = useState<CyclingActivity[]>([]);
+  const { activities } = useCyclingActivities(visibility['bicycle-log']);
+  const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
   const { selectedIds, focusedIndex, selectActivities, focusActivity, clearFocus, clearSelection, pruneToVisible } =
     useActivitySelection();
-  const visibleIds = useMemo(
-    () => new Set(filterActivities(activities, filter).map((activity) => activity.id)),
-    [activities, filter]
-  );
+  const visibleIds = useMemo(() => new Set(filteredActivities.map((activity) => activity.id)), [filteredActivities]);
   // フィルタで除外され地図上に表示されなくなったアクティビティは、選択・フォーカス状態からも取り除く
   useEffect(() => {
     pruneToVisible(visibleIds);
@@ -59,8 +60,7 @@ export const MapWorkspace = () => {
             selectedIds={selectedIds}
             focusedId={focusedId}
             onSelectActivities={selectActivities}
-            onActivitiesLoaded={setActivities}
-            filter={filter}
+            filteredActivities={filteredActivities}
             adminBoundaryEra={era}
           />
           <MapControls

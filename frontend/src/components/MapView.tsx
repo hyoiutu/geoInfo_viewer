@@ -2,15 +2,9 @@ import { Box } from '@chakra-ui/react';
 import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Root } from 'react-dom/client';
-import {
-  type CyclingActivity,
-  fetchCyclingActivities,
-  getBackfillStatus,
-  type SyncResult,
-  syncCyclingActivities
-} from '../api/activitiesApi';
+import type { CyclingActivity } from '../api/activitiesApi';
 import {
   BICYCLE_LOG_FOCUSED_LAYER_ID,
   BICYCLE_LOG_FOCUSED_SOURCE_ID,
@@ -20,13 +14,10 @@ import {
   BICYCLE_LOG_SOURCE_ID
 } from '../constants/bicycleLog';
 import { useErrorReporter } from '../hooks/useErrorReporter';
-import type { ActivityFilter } from '../types/activityFilter';
-import type { AppErrorInfo } from '../types/apiError';
 import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
 import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
-import { filterActivities } from '../utils/filterActivities';
 import { findActivityById } from '../utils/findActivityById';
 import { groupLayerIdsByCategory, resolveStyleLayerIds } from '../utils/mapLayerCategory';
 import {
@@ -58,47 +49,10 @@ type MapViewProps = {
   focusedId: string | null;
   /** 地図クリックでアクティビティが検出されたときに呼ばれるコールバック */
   onSelectActivities: (ids: string[]) => void;
-  /** 自転車ログのデータ取得・更新のたびに、取得済みアクティビティ一覧を渡すコールバック */
-  onActivitiesLoaded: (activities: CyclingActivity[]) => void;
-  /** 地図に表示するアクティビティを絞り込むフィルタ条件 */
-  filter: ActivityFilter;
+  /** 地図に描画するアクティビティ一覧（フィルタ適用済み） */
+  filteredActivities: CyclingActivity[];
   /** 表示する行政区画の年代 */
   adminBoundaryEra: MunicipalityEra;
-};
-
-/**
- * Strava上の新規アクティビティを取得し、取得したアクティビティ一覧をコールバックで通知する。
- * 地図への反映（フィルタ適用後のGeoJSON設定）はこの関数の呼び出し元が別途行う
- * @param onError API呼び出し失敗時に呼ばれるコールバック
- * @param onActivitiesLoaded 取得に成功したアクティビティ一覧を渡すコールバック
- */
-const syncAndLoadBicycleLog = async (
-  onError: (error: AppErrorInfo) => void,
-  onActivitiesLoaded: (activities: CyclingActivity[]) => void
-) => {
-  // バックフィル実行中は新規アクティビティ取得を呼ばず、その時点でDBに取得済みの分だけ表示する
-  const backfillStatus = await getBackfillStatus().catch(() => null);
-  if (!backfillStatus?.isRunning) {
-    let syncResult: SyncResult;
-    try {
-      syncResult = await syncCyclingActivities();
-    } catch (error) {
-      onError(toAppErrorInfo(error));
-      return;
-    }
-    // success:falseはバックエンド側の「バックフィル実行中ガード」を踏んだ場合のみ返る（レースコンディション）。
-    // エラーではないため、静かに（ダイアログ無しで）参照APIの呼び出しをスキップする
-    if (!syncResult.success) {
-      return;
-    }
-  }
-
-  try {
-    const activities = await fetchCyclingActivities();
-    onActivitiesLoaded(activities);
-  } catch (error) {
-    onError(toAppErrorInfo(error));
-  }
 };
 
 /**
@@ -239,26 +193,26 @@ const applyLayerVisibility = (
   }
 };
 
-/** MapLibreの地図本体を表示し、レイヤーの表示/非表示・自転車ログの新規アクティビティ取得・選択状態の描画を行うコンポーネント */
+/**
+ * MapLibreの地図本体を表示するコンポーネント。「地図インスタンスの生成・破棄」「渡された表示状態
+ * （レイヤー可視性・フィルタ済みアクティビティ・選択/フォーカス）を地図に反映する」「クリックによる選択検出」に
+ * 責務を絞る。自転車ログの新規アクティビティ取得（Strava同期）は`useCyclingActivities`（呼び出し元が使用）が担う（Issue #58）
+ */
 export const MapView = ({
   layerVisibility,
   selectedIds,
   focusedId,
   onSelectActivities,
-  onActivitiesLoaded,
-  filter,
+  filteredActivities,
   adminBoundaryEra
 }: MapViewProps) => {
   const addError = useErrorReporter();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
-  const wasBicycleLogVisibleRef = useRef(false);
   const startGoalMarkersRef = useRef<StartGoalMarkerEntry[]>([]);
   const historicalBoundariesCacheRef = useRef<Map<MunicipalityEra, FeatureCollection>>(new Map());
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
-  const [activities, setActivities] = useState<CyclingActivity[]>([]);
-  const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
   // クリックハンドラはマウント時に一度だけ登録するため、最新の値をrefで参照する（クロージャの陳腐化対策）
   const onSelectActivitiesRef = useRef(onSelectActivities);
   onSelectActivitiesRef.current = onSelectActivities;
@@ -339,8 +293,7 @@ export const MapView = ({
     applyStartGoalMarkers(map, startGoalMarkersRef, focusedActivity);
   }, [filteredActivities, focusedId, isStyleLoaded]);
 
-  // layerVisibility・選択中の行政区画年代が変化するたびに各レイヤーの表示/非表示を反映し、
-  // 自転車ログレイヤーがOFF→ONに変化した場合はStrava新規アクティビティ取得・データ取得を行う
+  // layerVisibility・選択中の行政区画年代が変化するたびに各レイヤーの表示/非表示を反映する
   useEffect(() => {
     const map = mapRef.current;
     const categorizedLayerIds = categorizedLayerIdsRef.current;
@@ -349,18 +302,7 @@ export const MapView = ({
     }
 
     applyLayerVisibility(map, categorizedLayerIds, layerVisibility, adminBoundaryEra);
-
-    const isBicycleLogVisible = layerVisibility['bicycle-log'];
-    const wasBicycleLogVisible = wasBicycleLogVisibleRef.current;
-    wasBicycleLogVisibleRef.current = isBicycleLogVisible;
-
-    if (!wasBicycleLogVisible && isBicycleLogVisible) {
-      void syncAndLoadBicycleLog(addError, (loaded) => {
-        setActivities(loaded);
-        onActivitiesLoaded(loaded);
-      });
-    }
-  }, [layerVisibility, adminBoundaryEra, isStyleLoaded, addError, onActivitiesLoaded]);
+  }, [layerVisibility, adminBoundaryEra, isStyleLoaded]);
 
   // 選択中の行政区画年代が変化するたびに、過去年代用のGeoJSONを取得し反映する（currentの場合は何もしない）
   useEffect(() => {

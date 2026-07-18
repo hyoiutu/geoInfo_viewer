@@ -1,12 +1,7 @@
-import { screen, waitFor } from '@testing-library/react';
+import { waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import {
-  type CyclingActivity,
-  fetchCyclingActivities,
-  getBackfillStatus,
-  syncCyclingActivities
-} from '../../api/activitiesApi';
+import type { CyclingActivity } from '../../api/activitiesApi';
 import { fetchMunicipalityBoundaries } from '../../api/municipalitiesApi';
 import {
   ADMIN_BOUNDARY_MUNICIPALITY_FILTER,
@@ -41,31 +36,14 @@ import {
   BICYCLE_LOG_SELECTED_SOURCE_ID,
   BICYCLE_LOG_SOURCE_ID
 } from '../../constants/bicycleLog';
-import { ErrorsProbe } from '../../test-utils/ErrorsProbe';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
-import { DEFAULT_ACTIVITY_FILTER } from '../../types/activityFilter';
 import type { LayerVisibility } from '../../types/layer';
 import { createStartMarkerElement } from '../../utils/startGoalMarkerElement';
 import { MapView } from '../MapView';
 
-vi.mock('../../api/activitiesApi', () => ({
-  fetchCyclingActivities: vi.fn(),
-  syncCyclingActivities: vi.fn(),
-  getBackfillStatus: vi.fn()
-}));
-
 vi.mock('../../api/municipalitiesApi', () => ({
   fetchMunicipalityBoundaries: vi.fn()
 }));
-
-const NOT_RUNNING_BACKFILL_STATUS = {
-  isRunning: false,
-  totalCount: 0,
-  completedCount: 0,
-  progressPercent: 0,
-  estimatedRemainingSeconds: null,
-  lastError: null
-};
 
 const FIXTURE_STYLE_LAYERS = [
   { id: 'background', type: 'background' },
@@ -91,13 +69,13 @@ const ALL_ON_VISIBILITY: LayerVisibility = {
 
 const DEFAULT_SELECTED_IDS: string[] = [];
 const DEFAULT_FOCUSED_ID: string | null = null;
+const DEFAULT_FILTERED_ACTIVITIES: CyclingActivity[] = [];
 
 const DEFAULT_SELECTION_PROPS = {
   selectedIds: DEFAULT_SELECTED_IDS,
   focusedId: DEFAULT_FOCUSED_ID,
   onSelectActivities: vi.fn(),
-  onActivitiesLoaded: vi.fn(),
-  filter: DEFAULT_ACTIVITY_FILTER,
+  filteredActivities: DEFAULT_FILTERED_ACTIVITIES,
   adminBoundaryEra: 'current' as const
 };
 
@@ -187,9 +165,6 @@ const getSetDataMock = (sourceId: string) => setDataMocksBySourceId[sourceId];
 describe('MapViewに関するテスト', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(fetchCyclingActivities).mockResolvedValue([]);
-    vi.mocked(syncCyclingActivities).mockResolvedValue({ success: true });
-    vi.mocked(getBackfillStatus).mockResolvedValue(NOT_RUNNING_BACKFILL_STATUS);
   });
 
   test('マウントされたとき、コンテナ要素を指定して地図が生成される', () => {
@@ -425,203 +400,6 @@ describe('MapViewに関するテスト', () => {
     );
   });
 
-  test('自転車ログレイヤーがOFF→ONに変化したとき、同期後に取得したデータが地図に反映される', async () => {
-    vi.mocked(fetchCyclingActivities).mockResolvedValue([
-      {
-        id: '1',
-        name: 'ライド1',
-        distanceMeters: 1000,
-        movingTimeSeconds: 600,
-        elapsedTimeSeconds: 650,
-        elevationGainMeters: 50,
-        startDate: '2026-07-01T00:00:00Z',
-        path: [
-          [
-            [139.7, 35.6],
-            [139.8, 35.7]
-          ]
-        ]
-      }
-    ]);
-    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
-
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
-
-    await waitFor(() => {
-      expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
-    });
-    await waitFor(() => {
-      expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
-    });
-    await waitFor(() => {
-      expect(getSetDataMock(BICYCLE_LOG_SOURCE_ID)).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: 'FeatureCollection',
-          features: [expect.objectContaining({ properties: { id: '1', name: 'ライド1' } })]
-        })
-      );
-    });
-  });
-
-  test('filterで絞り込まれたアクティビティのみが、通常状態の自転車ログレイヤーに反映される', async () => {
-    vi.mocked(fetchCyclingActivities).mockResolvedValue([
-      {
-        id: '1',
-        name: '短距離ライド',
-        distanceMeters: 1000,
-        movingTimeSeconds: 600,
-        elapsedTimeSeconds: 650,
-        elevationGainMeters: 50,
-        startDate: '2026-07-01T00:00:00Z',
-        path: [
-          [
-            [139.7, 35.6],
-            [139.8, 35.7]
-          ]
-        ]
-      },
-      {
-        id: '2',
-        name: '長距離ライド',
-        distanceMeters: 50000,
-        movingTimeSeconds: 7200,
-        elapsedTimeSeconds: 7300,
-        elevationGainMeters: 500,
-        startDate: '2026-07-02T00:00:00Z',
-        path: [
-          [
-            [139.7, 35.6],
-            [139.9, 35.8]
-          ]
-        ]
-      }
-    ]);
-    const { rerender } = renderWithChakra(
-      <MapView
-        layerVisibility={ALL_ON_VISIBILITY}
-        {...DEFAULT_SELECTION_PROPS}
-        filter={{ ...DEFAULT_ACTIVITY_FILTER, minDistanceKm: 10 }}
-      />
-    );
-
-    rerender(
-      <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
-        {...DEFAULT_SELECTION_PROPS}
-        filter={{ ...DEFAULT_ACTIVITY_FILTER, minDistanceKm: 10 }}
-      />
-    );
-
-    await waitFor(() => {
-      expect(getSetDataMock(BICYCLE_LOG_SOURCE_ID)).toHaveBeenCalledWith(
-        expect.objectContaining({
-          features: [expect.objectContaining({ properties: { id: '2', name: '長距離ライド' } })]
-        })
-      );
-    });
-  });
-
-  test('自転車ログレイヤーがOFF→ONに変化したとき、同期に失敗した場合は参照APIを呼ばない', async () => {
-    vi.mocked(syncCyclingActivities).mockResolvedValue({ success: false });
-    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
-
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
-
-    await waitFor(() => {
-      expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
-    });
-    expect(fetchCyclingActivities).not.toHaveBeenCalled();
-  });
-
-  test('自転車ログレイヤーがOFF→ONに変化したとき、初期取り込み実行中の場合は同期用APIを呼ばず取得済み分のみ表示する', async () => {
-    vi.mocked(getBackfillStatus).mockResolvedValue({
-      isRunning: true,
-      totalCount: 4,
-      completedCount: 1,
-      progressPercent: 25,
-      estimatedRemainingSeconds: 27,
-      lastError: null
-    });
-    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
-
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
-
-    await waitFor(() => {
-      expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
-    });
-    expect(syncCyclingActivities).not.toHaveBeenCalled();
-  });
-
-  test('自転車ログレイヤーがON→OFFに変化したときは、同期用APIを呼ばない', () => {
-    const { rerender } = renderWithChakra(
-      <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
-    );
-    vi.mocked(syncCyclingActivities).mockClear();
-
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }} {...DEFAULT_SELECTION_PROPS} />);
-
-    expect(syncCyclingActivities).not.toHaveBeenCalled();
-  });
-
-  test('自転車ログレイヤーがOFF→ON→OFF→ONと変化した場合、ONになる度に同期用APIが呼ばれる', async () => {
-    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
-
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
-    await waitFor(() => {
-      expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
-    });
-
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': false }} {...DEFAULT_SELECTION_PROPS} />);
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
-
-    await waitFor(() => {
-      expect(syncCyclingActivities).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  test('同期用APIの呼び出しが失敗した場合、グローバルなエラースタックに追加される', async () => {
-    vi.mocked(syncCyclingActivities).mockRejectedValue(new Error('sync failed'));
-    const { rerender } = renderWithChakra(
-      <>
-        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
-        <ErrorsProbe />
-      </>
-    );
-
-    rerender(
-      <>
-        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
-        <ErrorsProbe />
-      </>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('errors-probe').textContent).toContain('sync failed');
-    });
-    expect(fetchCyclingActivities).not.toHaveBeenCalled();
-  });
-
-  test('参照用APIの呼び出しが失敗した場合、グローバルなエラースタックに追加される', async () => {
-    vi.mocked(fetchCyclingActivities).mockRejectedValue(new Error('fetch failed'));
-    const { rerender } = renderWithChakra(
-      <>
-        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
-        <ErrorsProbe />
-      </>
-    );
-
-    rerender(
-      <>
-        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
-        <ErrorsProbe />
-      </>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('errors-probe').textContent).toContain('fetch failed');
-    });
-  });
-
   test('自転車ログレイヤーをクリックすると、クリック地点周辺で検出したアクティビティIDでonSelectActivitiesが呼ばれる', () => {
     const onSelectActivities = vi.fn();
     renderWithChakra(
@@ -705,7 +483,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('selectedIds・focusedIdが変化すると、選択用レイヤーにフォーカス中を除いた選択中アクティビティが通し番号順で反映される', async () => {
-    vi.mocked(fetchCyclingActivities).mockResolvedValue([
+    const activities: CyclingActivity[] = [
       {
         id: '1',
         name: 'ライド1',
@@ -751,18 +529,16 @@ describe('MapViewに関するテスト', () => {
           ]
         ]
       }
-    ]);
-    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
-
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
-    await waitFor(() => {
-      expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
-    });
+    ];
+    const { rerender } = renderWithChakra(
+      <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} filteredActivities={activities} />
+    );
 
     rerender(
       <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+        layerVisibility={ALL_ON_VISIBILITY}
         {...DEFAULT_SELECTION_PROPS}
+        filteredActivities={activities}
         selectedIds={['2', '3']}
         focusedId="3"
       />
@@ -780,7 +556,7 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('選択用レイヤーのfeatures配列は、通し番号の昇順（＝後からクリックしたものが配列末尾で最前面）で並ぶ', async () => {
-    vi.mocked(fetchCyclingActivities).mockResolvedValue([
+    const activities: CyclingActivity[] = [
       {
         id: '1',
         name: 'ライド1',
@@ -811,18 +587,17 @@ describe('MapViewに関するテスト', () => {
           ]
         ]
       }
-    ]);
-    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
-    rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
-    await waitFor(() => {
-      expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
-    });
+    ];
+    const { rerender } = renderWithChakra(
+      <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} filteredActivities={activities} />
+    );
 
     // 通し番号0番が'2'、1番が'1'（クリック検出順が数値の昇順とは限らない例）
     rerender(
       <MapView
-        layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+        layerVisibility={ALL_ON_VISIBILITY}
         {...DEFAULT_SELECTION_PROPS}
+        filteredActivities={activities}
         selectedIds={['2', '1']}
         focusedId={null}
       />
@@ -856,34 +631,32 @@ describe('MapViewに関するテスト', () => {
       ]
     };
 
-    test('何もフォーカスされていない場合、マーカーは表示されない', async () => {
-      vi.mocked(fetchCyclingActivities).mockResolvedValue([activityWithPath]);
-      const { rerender } = renderWithChakra(
-        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
+    test('何もフォーカスされていない場合、マーカーは表示されない', () => {
+      renderWithChakra(
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          filteredActivities={[activityWithPath]}
+        />
       );
 
-      rerender(
-        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
-      );
-
-      await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
       expect(getMarkerInstances()).toHaveLength(0);
     });
 
     test('アクティビティをフォーカスすると、開始地点・終了地点にマーカーが表示される', async () => {
-      vi.mocked(fetchCyclingActivities).mockResolvedValue([activityWithPath]);
       const { rerender } = renderWithChakra(
-        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          filteredActivities={[activityWithPath]}
+        />
       );
-      rerender(
-        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
-      );
-      await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
 
       rerender(
         <MapView
-          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          layerVisibility={ALL_ON_VISIBILITY}
           {...DEFAULT_SELECTION_PROPS}
+          filteredActivities={[activityWithPath]}
           selectedIds={['1']}
           focusedId="1"
         />
@@ -896,14 +669,11 @@ describe('MapViewに関するテスト', () => {
     });
 
     test('フォーカスを解除すると、マーカーが取り除かれる', async () => {
-      vi.mocked(fetchCyclingActivities).mockResolvedValue([activityWithPath]);
       const { rerender } = renderWithChakra(
-        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
-      );
-      rerender(
         <MapView
-          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          layerVisibility={ALL_ON_VISIBILITY}
           {...DEFAULT_SELECTION_PROPS}
+          filteredActivities={[activityWithPath]}
           selectedIds={['1']}
           focusedId="1"
         />
@@ -912,7 +682,11 @@ describe('MapViewに関するテスト', () => {
       const previousMarkers = getMarkerInstances();
 
       rerender(
-        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          filteredActivities={[activityWithPath]}
+        />
       );
 
       await waitFor(() => {
@@ -925,19 +699,20 @@ describe('MapViewに関するテスト', () => {
     });
 
     test('軌跡(path)を持たないアクティビティをフォーカスしても、マーカーは表示されない', async () => {
-      vi.mocked(fetchCyclingActivities).mockResolvedValue([{ ...activityWithPath, path: null }]);
+      const activityWithoutPath = { ...activityWithPath, path: null };
       const { rerender } = renderWithChakra(
-        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          filteredActivities={[activityWithoutPath]}
+        />
       );
-      rerender(
-        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
-      );
-      await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
 
       rerender(
         <MapView
-          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          layerVisibility={ALL_ON_VISIBILITY}
           {...DEFAULT_SELECTION_PROPS}
+          filteredActivities={[activityWithoutPath]}
           selectedIds={['1']}
           focusedId="1"
         />
@@ -958,19 +733,19 @@ describe('MapViewに関するテスト', () => {
           ]
         ]
       };
-      vi.mocked(fetchCyclingActivities).mockResolvedValue([roundTripActivity]);
       const { rerender } = renderWithChakra(
-        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          filteredActivities={[roundTripActivity]}
+        />
       );
-      rerender(
-        <MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />
-      );
-      await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalledTimes(1));
 
       rerender(
         <MapView
-          layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
+          layerVisibility={ALL_ON_VISIBILITY}
           {...DEFAULT_SELECTION_PROPS}
+          filteredActivities={[roundTripActivity]}
           selectedIds={['1']}
           focusedId="1"
         />
