@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-07-19] PR #71レビュー対応としてMapViewの地図操作関数をmapLayerInteraction.tsへ切り出した
+* **修正の動機・概要**:
+  - PR #71のレビューコメントで、(1) `MapView.tsx`のHooks記述順序がreact_rules.mdの規約（useState→useRef→カスタムフック→useEffectの順）に沿っていない、(2) `registerBicycleLogClickHandler`/`applySelectionLayers`/`applyStartGoalMarkers`/`applyLayerVisibility`という地図操作の純粋関数がコンポーネントファイルに残っており、design_principles.mdのSRP原則（コンポーネントファイルには表示に関する関数・TSXのみを置く）に照らして`mapLayerSetup.ts`と同様の受け皿へ切り出す余地がある、という2件の指摘を受けた。
+  - (1)は`MapView.tsx`のHooks呼び出し順を規約通りに並べ替えて対応した。
+  - (2)は新規ファイル`frontend/src/utils/mapLayerInteraction.ts`を作成し、上記4関数と関連型`StartGoalMarkerEntry`を移設した。既存の`mapLayerSetup.ts`（レイヤーの追加処理）と対になる、地図の状態反映を担うモジュールとして位置づけた。TDD（Red-Green-Refactor）で、新規ファイルへの単体テスト（`mapLayerInteraction.tests.ts`、`maplibregl.Map`の最小限モックを直接渡す形。`mapLayerSetup.tests.ts`と同じパターン）を先に追加しRed確認後、実装を移設してGreen確認した。`MapView.tsx`は残った4関数をimportして`useEffect`から呼び出すのみとなり、Reactのライフサイクルとの接続に責務が絞られた。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/mapLayerInteraction.ts`（新規）: `registerBicycleLogClickHandler`・`applySelectionLayers`・`applyStartGoalMarkers`・`applyLayerVisibility`・`StartGoalMarkerEntry`型を`MapView.tsx`から移設。
+    - `frontend/src/utils/__tests__/mapLayerInteraction.tests.ts`（新規、11件）。
+    - `frontend/src/components/MapView.tsx`: 上記4関数の定義を削除しimportに置き換え、Hooks記述順序（useState→useRef→カスタムフック→useEffect）を規約通りに整理。
+    - 単体テスト（フロントエンド、全30ファイル248件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た挙動に変化のない内部構造のリファクタリングのため）。
+  * **設計書**: `designs/technical_design.md`のアクティビティ詳細閲覧機能の章、`designs/class_diagram.md`の該当箇所を更新。
+
 ### [2026-07-19] PR #69レビュー対応としてuseActivitySelectionのID→アクティビティ変換を一本化した
 * **修正の動機・概要**:
   - PR #69のレビューコメントで、`useActivitySelection`の戻り値`selectedIds`/`focusedIndex`（ID・インデックス）が`MapWorkspace`・`MapView`・`ActivityDetailSidebar`のいずれでも最終的にアクティビティ本体へ変換されており、ID→アクティビティの変換ロジックが複数箇所に重複しているという指摘を受けた。
@@ -83,6 +98,25 @@
   * **README.md**: 変更なし。
   * **仕様書**: 変更なし（`POST /photos/ingest`は開発者向けの取り込みトリガーであり、Issue本文が要望するユーザー向け機能（地図上表示・サイドバー表示）はまだ実装していないため）。
   * **設計書**: `designs/technical_design.md`に「位置情報付きメディア表示機能（写真データ取り込み基盤）」章を新規追加。`specs/glossary.md`に「Google Takeout」「取り込み」を追加。
+
+### [2026-07-18] Issue #58対応としてMapViewの責務の広さを見直した
+* **修正の動機・概要**:
+  - Issue #58「MapViewの責務の広さを見直す」（Issue #53と関連）に自律モードで対応した。issue-reviewの観点2（大規模リファクタの境界基準）はIssue本文に具体的な設計方針が示されていたため追加確認不要と判断した。
+  - `MapView`が抱えていた「地図表示」以外の関心事（Strava新規アクティビティ取得のトリガー検知・`activities`状態の保持・フィルタ計算）を切り出した。
+    1. Strava同期・DB参照取得・`activities`状態を新規フック`useCyclingActivities`（`frontend/src/hooks/useCyclingActivities.ts`）へ切り出し、`MapWorkspace`が1回だけ呼ぶ構成にした。以前は`MapView`内の「レイヤー可視性反映」用`useEffect`に「表示反映」と「自転車ログOFF→ON検知によるデータ取得トリガー」という異なる関心事が同居していたが、後者を分離した。
+    2. フィルタ計算（`filterActivities`）を`MapWorkspace`側に一本化した。以前は`MapView`（`filteredActivities`算出用）・`MapWorkspace`（`visibleIds`算出用）の双方が独立して同じ計算を行い、`activities`状態も二重管理（`MapView`の`useState`と`MapWorkspace`の`useState`）になっていたが、`MapView`にはフィルタ適用済みの`filteredActivities`をpropsで渡す一本化に統一した。
+    3. 結果、`MapView`の責務は「地図インスタンスの生成・破棄」「渡された表示状態（レイヤー可視性・フィルタ済みアクティビティ・選択/フォーカス）を地図に反映する」「クリックによる選択検出」に絞られた。
+  - `MapView.tsx`は381行→323行に減少したが、`check-file-size.mjs`の閾値（300行）はなお超過している。残る`registerBicycleLogClickHandler`/`applySelectionLayers`/`applyStartGoalMarkers`/`applyLayerVisibility`は地図操作の純粋関数で、design_principles.mdのSRP原則（コンポーネントファイルには表示に関する関数・TSXのみを置く）に照らすと`mapLayerSetup.ts`と同様の受け皿へさらに切り出す余地がある。ただしこれはIssue #58本文が要望した2点（データ取得・フィルタ計算の切り出し）を超えるスコープと判断し、今回は対応しなかった（PR説明文に明記、必要であれば別Issue化を検討）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/hooks/useCyclingActivities.ts`（新規）・`__tests__/useCyclingActivities.tests.tsx`（新規、8件）。
+    - `frontend/src/components/MapView.tsx`: `onActivitiesLoaded`/`filter` propsを`filteredActivities`に置き換え、内部の`activities`/`filteredActivities`state・`syncAndLoadBicycleLog`呼び出しを削除。
+    - `frontend/src/components/MapWorkspace.tsx`: `useCyclingActivities`を呼び出し、フィルタ計算を一本化。
+    - `frontend/src/components/__tests__/MapView.tests.tsx`: Strava同期関連の9テストケースを削除（`useCyclingActivities.tests.tsx`へ移動）、残りは`filteredActivities`を直接propsで渡す形に書き換え。
+    - 単体テスト（フロントエンド）・lint・typecheck・機械チェックは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た挙動に変化はなく、内部構造のリファクタリングのみのため）。
+  * **設計書**: `designs/class_diagram.md`のコンポーネント依存関係・`designs/technical_design.md`の「自転車ログ表示機能」「自転車ログフィルタリング機能」章を更新。
 
 ### [2026-07-18] Issue #57対応として通過自治体の並び順のバグを修正した
 * **修正の動機・概要**:
