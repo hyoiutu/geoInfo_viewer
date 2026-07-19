@@ -216,7 +216,8 @@ classDiagram
 - Issue #32で左サイドバー（`LayerSidebar`）を廃止し、地図右下に浮かぶ`MapControls`のアイコンから`LayerDialog`・`FilterDialog`・`SettingsDialog`を開く構成へ変更した。初期取り込み・強制再取得の進捗表示は、設定ダイアログが即座に閉じる仕様になったことに伴い、地図下部の`BackfillProgressFooter`（表示状態を`useBackfillProgressFooter`で管理）へ移した。
 - Issue #53で、ダイアログの開閉状態・入力中(draft)の内容の保持先を`MapWorkspace`から各コンポーネント自身へ移した。`MapControls`が`LayerDialog`/`FilterDialog`/`StatisticsDialog`/`SettingsDialog`の開閉状態と本体を保持し、`LayerDialog`/`FilterDialog`は入力中の内容を自身の内部stateとして持つ。これに伴い、draft状態の分離管理を担っていた`useLayerVisibility`/`useActivityFilter`フックは廃止し、`MapWorkspace`は確定済みの結果（`appliedVisibility`相当の表示状態・年代・フィルタ条件）のみを保持する構成に単純化した。
 - PR #55のレビュー対応として、`LayerDialog`・`SettingsDialog`・`FilterDialog`・`ErrorDialog`が共通して持っていたChakra UIの`Dialog.Root`/`Backdrop`/`Positioner`/`Content`等のラッパー構造を`AppDialog`（新規）へ切り出した。各ダイアログはJSXのネスト深さが1階層に集約され、`check-file-size.mjs`（design_principles.md参照）が検出していた`LayerDialog`のネスト深さ超過も解消された。
-- `layerVisibility`・`selectedIds`/`focusedId`・`filter`は、現時点では`MapWorkspace`から直接の子コンポーネントへ渡されるのみで、深いバケツリレーは発生していない。
+- `layerVisibility`・`selectedActivities`/`focusedActivity`・`filter`は、現時点では`MapWorkspace`から直接の子コンポーネントへ渡されるのみで、深いバケツリレーは発生していない。
+- `useActivitySelection`は`activities`・`filter`を引数に取り、選択中IDからアクティビティ本体への変換をフック内部で完結させる。これにより`MapWorkspace`・`MapView`・`ActivityDetailSidebar`がそれぞれ個別にID→アクティビティの変換を行う重複が無くなり、各コンポーネントは`selectedActivities`/`focusedActivity`（アクティビティ本体）を直接受け取る（PR #69レビュー対応。ID解決を各所で重複させず1箇所に集約する設計判断は[react_rules.md](../react_rules.md)の「複数の子孫が同じ状態を必要とする場合、状態取得フックは共通の親で呼ぶ」の応用）。`MapView`が地図描画用に保持する`findActivityById`によるID引き当ても不要になり削除した。
 
 ## 設計上の改善提案
 
