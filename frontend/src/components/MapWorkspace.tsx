@@ -16,6 +16,7 @@ import { LayerDialog } from './LayerDialog';
 import { MapControls } from './MapControls';
 import { MapView } from './MapView';
 import { SettingsDialog } from './SettingsDialog';
+import { StatisticsDialog } from './StatisticsDialog';
 
 /**
  * 地図・Map Controls・各種ダイアログを組み合わせたアプリのメイン画面。
@@ -40,6 +41,7 @@ export const MapWorkspace = () => {
   const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =
     useBackfillProgressFooter(backfillStatus);
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
+  const [isStatisticsDialogOpen, setIsStatisticsDialogOpen] = useState(false);
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
   const { selectedIds, focusedIndex, selectActivities, focusActivity, clearFocus, clearSelection, pruneToVisible } =
     useActivitySelection();
@@ -89,6 +91,7 @@ export const MapWorkspace = () => {
           <MapControls
             onOpenLayerDialog={openLayerDialog}
             onOpenFilterDialog={openFilterDialog}
+            onOpenStatisticsDialog={() => setIsStatisticsDialogOpen(true)}
             onOpenSettingsDialog={() => setIsSettingsDialogOpen(true)}
           />
         </Box>
@@ -123,6 +126,11 @@ export const MapWorkspace = () => {
         onReset={resetFilterDraft}
         onApply={applyFilterDraft}
         onClose={closeFilterDialog}
+      />
+      <StatisticsDialog
+        isOpen={isStatisticsDialogOpen}
+        activities={activities}
+        onClose={() => setIsStatisticsDialogOpen(false)}
       />
       <SettingsDialog
         isOpen={isSettingsDialogOpen}

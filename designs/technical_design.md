@@ -102,6 +102,12 @@ root/
 - `ErrorDialog`（Chakra UIの`Dialog`コンポーネントを使用）は`errorsAtom`を直接参照・更新し、`message`と`hint`を表示する
   - 複数のエラーが発生した場合、後から発生したエラーが先発のエラーを上書きすることはない（`errorsAtom`は配列末尾に追加するのみ）。1つのダイアログ内で「前へ/次へ」ボタンによりスタックされた各エラーを切り替えて閲覧でき、件数が2件以上の場合はタイトルに現在の位置を表示する。「OK」ボタンは現在表示中のエラーのみを`errorsAtom`から取り除く
 
+# 統計データ表示機能
+- 既存のダイアログ群（`LayerDialog`・`FilterDialog`・`SettingsDialog`）と同様、共通ラッパー`AppDialog`（`frontend/src/components/AppDialog.tsx`）に委譲する形で`StatisticsDialog`を実装する。開閉状態はJotai atomではなく、他ダイアログと同じく`MapWorkspace`のローカルstate（`isStatisticsDialogOpen`）で管理する
+- 集計対象は、`MapView`がバックエンドから取得した全アクティビティ一覧（`MapWorkspace`の`activities`state。フィルタ適用前）であり、地図上の表示フィルタ（`appliedFilter`）は適用しない。仕様書の「全アクティビティ数」「全アクティビティの総走行距離数」がフィルタに関わらず不変の集計値であるため
+- 集計・整形処理は純粋関数`toActivityStatisticsView`（`frontend/src/utils/activityStatistics.ts`）が担う。`toActivityDetailView`（アクティビティ詳細表示、`activityDetailView.ts`）と同じ「メートル→km変換・小数第1位フォーマット」のパターンを踏襲し、`distanceMeters`の合計を`reduce`で算出する
+- `MapControls`に4つ目のアイコンボタン（`lucide-react`の`ChartColumn`、aria-label「統計データ」）を追加する。既存のレイヤー・フィルタ・設定アイコンと同じ`IconButton`（`borderRadius="full" shadow="md"`）のスタイルを踏襲する
+
 # 位置情報付きメディア表示機能（写真データ取り込み基盤）
 Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの直接連携ではなくGoogle Takeout（増分エクスポート）＋Google Drive経由の取り込み方式を採用した（詳細な調査経緯・GCP設定はIssue #23のコメント参照）。以下は、写真閲覧機能そのもの（地図上の吹き出し表示・サイドバーのグリッド表示、いずれも未実装）の前段として、Google Drive上のTakeoutエクスポート（zip）から写真のメタデータをバックエンドのDBへ取り込むパイプラインの設計である。
 
