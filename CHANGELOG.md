@@ -14,6 +14,38 @@
 
 ## 変更履歴
 
+### [2026-07-18] Issue #23対応として写真取り込み時のEXIF解析エラーによるINTERNAL_ERRORを修正した
+* **修正の動機・概要**:
+  - 実際にユーザーがGoogle Takeoutでエクスポートしたzipで`POST /photos/ingest`を実行したところ、`INTERNAL_ERROR`が返るバグが発覚した。
+  - 原因: `extractMetadataFromExif`内の`exifr`の`parse()`呼び出しがtry/catchで囲まれておらず、Takeoutフォルダに含まれる動画ファイル等exifrが対応していない形式の写真本体エントリでパースが例外を投げると、そのまま`PhotoIngestService.ingest()`全体が失敗していた。
+  - `parse()`呼び出しをtry/catchで囲み、失敗時は`null`を返す（＝EXIFからのメタデータ抽出を諦め、当該写真は`skippedCount`としてスキップする）よう修正した。修正後、実際のGoogle Takeoutデータで取り込み成功・`photos`テーブルへの格納をユーザーが確認済み。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/takeout-metadata.util.ts`: `extractMetadataFromExif`の`parse()`呼び出しをtry/catchで囲む。
+    - `backend/src/photos/__tests__/takeout-metadata.util.tests.ts`: 「EXIF解析自体が例外を投げる場合、nullを返す」テストケースを追加（TDDでRed確認後に修正）。
+    - 単体テスト（バックエンド）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（「JSON欠落時はEXIF直読みへフォールバックする」という既存の設計方針自体は変わらず、実装上の見落としを修正したのみのため）。
+
+### [2026-07-18] Issue #23対応としてGoogle Takeoutの写真データ取り込みパイプラインを実装した
+* **修正の動機・概要**:
+  - Issue #23「写真閲覧機能」のうち、Issueコメントに記載された「今後の実装で必要になる要素」から「バックエンドのzip取り込みパイプライン」を対話モードで実装した。フロントエンドのGoogle Picker UI、写真閲覧機能本体（地図上の吹き出し表示・サイドバーのグリッド表示）は今回のスコープ外。
+  - 着手前に、実装スコープ（フロントエンドPicker UI/バックエンド取り込み/両方）と、写真の実バイナリ自体をキャッシュするかどうかをユーザーに確認し、「バックエンドの取り込みパイプラインのみ、メタデータ保存まで（バイナリキャッシュは表示機能実装時に別途行う）」というスコープで合意を得た。
+  - `PhotoIngestService`が、fileId指定でGoogle Driveからzipをダウンロード（既存の`GoogleDriveAuthService`/`GoogleDriveApiClient`を再利用）→zip展開（`adm-zip`）→写真とJSONサイドカーの紐付け→撮影日時・位置情報の抽出（JSON優先、EXIF直読みへフォールバック、`exifr`）→`photos`テーブルへの保存、という一連のパイプラインをオーケストレーションする。
+  - Google Takeoutのファイル名対応の罠（JSONサイドカー名が46文字制限で`.supplemental-metadata`部分が不規則に切り詰められる、拡張子有無の不一致等、Issue #23コメント記載）に対応するため、`matchPhotosWithJsonSidecars`は単純な完全一致ではなく「写真パスとJSON側（拡張子除去後）のどちらか一方が他方の前方一致になっているか」で判定する緩やかなマッチングとした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/`配下を新規追加: `entities/photo.entity.ts`・`takeout-archive.util.ts`・`takeout-photo-matcher.util.ts`・`takeout-metadata.util.ts`・`photo-ingest.service.ts`・`photos.controller.ts`・`photos.module.ts`・`types/photo-ingest-result.dto.ts`（各`__tests__`含む）。
+    - `backend/src/migrations/1784369772129-CreatePhotos.ts`（新規、`photos`テーブル・GiSTインデックス作成）。マイグレーション自動生成時に混入した無関係な既存差分（`municipalities`のインデックス削除等、Entity定義漏れによる技術的負債）は手動で除去した。
+    - `backend/src/database/database.config.ts`: `PhotoEntity`を登録。
+    - `backend/src/google-drive/google-drive.module.ts`: `GoogleDriveAuthService`/`GoogleDriveApiClient`を`exports`に追加（`PhotosModule`から利用するため）。
+    - `backend/src/app.module.ts`: `PhotosModule`を登録。
+    - `backend/package.json`: `adm-zip`・`exifr`を新規依存として追加（型定義同梱のため`@types/*`の追加は不要）。
+    - 単体テスト（バックエンド、新規25件）・lint・typecheck・実際のアプリ起動確認（全モジュール初期化・ルーティング登録）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（`POST /photos/ingest`は開発者向けの取り込みトリガーであり、Issue本文が要望するユーザー向け機能（地図上表示・サイドバー表示）はまだ実装していないため）。
+  * **設計書**: `designs/technical_design.md`に「位置情報付きメディア表示機能（写真データ取り込み基盤）」章を新規追加。`specs/glossary.md`に「Google Takeout」「取り込み」を追加。
+
 ### [2026-07-18] Issue #23対応としてGoogle Drive連携のGCP設定を検証するバックエンドモックを実装した
 * **修正の動機・概要**:
   - Issue #23のコメントで固まった方針（Google Takeoutの増分エクスポート→Google Drive経由での取り込み、`drive.file`スコープ＋Google Picker API採用、GCP側の設定完了）を踏まえ、実際にバックエンドからDrive APIでファイルを取得できるか（GCP設定が機能しているか）を検証するためのモック実装。ユーザーからの直接依頼により対話モードで着手した。

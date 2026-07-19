@@ -101,3 +101,16 @@ root/
 - エラー状態はJotaiの`errorsAtom`（グローバルステート）でアプリ全体から共有される配列（スタック）として一元管理する。API呼び出し等でエラーが発生しうる箇所（`MapView`・`useBackfillStatus`・`usePassedMunicipalities`）は、`useErrorReporter`フックを直接呼び出してエラーを追加する（`onError`のようなpropsのバケツリレーを行わない。詳細はIssue #28・[class_diagram.md](./class_diagram.md)参照）
 - `ErrorDialog`（Chakra UIの`Dialog`コンポーネントを使用）は`errorsAtom`を直接参照・更新し、`message`と`hint`を表示する
   - 複数のエラーが発生した場合、後から発生したエラーが先発のエラーを上書きすることはない（`errorsAtom`は配列末尾に追加するのみ）。1つのダイアログ内で「前へ/次へ」ボタンによりスタックされた各エラーを切り替えて閲覧でき、件数が2件以上の場合はタイトルに現在の位置を表示する。「OK」ボタンは現在表示中のエラーのみを`errorsAtom`から取り除く
+
+# 位置情報付きメディア表示機能（写真データ取り込み基盤）
+Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの直接連携ではなくGoogle Takeout（増分エクスポート）＋Google Drive経由の取り込み方式を採用した（詳細な調査経緯・GCP設定はIssue #23のコメント参照）。以下は、写真閲覧機能そのもの（地図上の吹き出し表示・サイドバーのグリッド表示、いずれも未実装）の前段として、Google Drive上のTakeoutエクスポート（zip）から写真のメタデータをバックエンドのDBへ取り込むパイプラインの設計である。
+
+- 取り込みは`POST /photos/ingest`（`PhotosController`、リクエストボディ`{ fileId: string }`）で、ユーザーがブラウザ上のGoogle Picker UIで選択したTakeout zipのGoogle Drive上のfileIdをトリガーとして受け取る想定（Picker UI自体は未実装。現時点ではfileIdを直接指定して動作確認する）
+- `PhotoIngestService`が以下の順でオーケストレーションを行う（`backend/src/photos/`）
+  1. `GoogleDriveAuthService`/`GoogleDriveApiClient`（`backend/src/google-drive/`、Issue #23で実装済み）でアクセストークンを取得し、指定fileIdのzip本体をダウンロードする
+  2. `extractTakeoutArchive`（`takeout-archive.util.ts`）が、`adm-zip`でzipをメモリ上に展開し、拡張子`.json`のJSONサイドカーとそれ以外の写真本体エントリへ分類する
+  3. `matchPhotosWithJsonSidecars`（`takeout-photo-matcher.util.ts`）が、各写真本体に対応するJSONサイドカーを紐付ける。Google Takeoutのファイル名対応の罠（サイドカーのファイル名が46文字制限で`.supplemental-metadata`部分が`.supple`等へ不規則に切り詰められる、拡張子有無の不一致等）に対応するため、単純な完全一致ではなく「写真パスとJSON側（`.json`拡張子を除いたベース名）のどちらか一方が他方の前方一致になっているか」で判定し、複数候補があれば最も長く一致するものを選ぶ緩やかなマッチングを行う。対応するJSONが見つからない場合は`json: null`を返す
+  4. `extractMetadataFromJson`/`extractMetadataFromExif`（`takeout-metadata.util.ts`）が、JSONサイドカー優先・見つからない（またはJSONの中身が不正・`photoTakenTime`欠落）場合は写真本体のEXIF直読み（`exifr`ライブラリ）へフォールバックし、撮影日時（`takenAt`）・位置情報（`location`、GeoJSON Point）を抽出する。Google Takeoutの位置情報無し写真は`latitude`/`longitude`が両方`0.0`になる仕様のため、その場合は`location: null`として扱う
+  5. 撮影日時が取得できた写真のみ`PhotoEntity`として`photos`テーブルへ保存する。EXIFも含めいずれからも撮影日時が取得できない写真はスキップし、`skippedCount`としてレスポンスに含める
+- `photos`テーブル（`backend/src/photos/entities/photo.entity.ts`、マイグレーション`1784369772129-CreatePhotos`）は、写真の実バイナリ自体は保存せず、`file_name`・`taken_at`・`location`（`geometry(Point, 4326)`、PostGIS）・`source_file_id`（取り込み元zipのGoogle Drive fileId）・`archive_path`（zip内でのエントリパス）のみを保持する。「マスターデータはDriveに置いたまま、実際に表示時に必要になった写真だけをローカルへ遅延キャッシュする」という設計方針（Issue #23コメント）に基づき、`source_file_id`+`archive_path`があれば将来必要になったタイミングでzipを再ダウンロードし該当エントリを取り出せる
+- 「アクティビティの開始・終了日時で写真を検索する」（Issue本文）は、この`photos`テーブルの`taken_at`に対するクエリとして実現する想定だが、検索API自体は未実装（次のステップ）

@@ -8,6 +8,7 @@ import { GoogleDriveFilesService } from './google-drive-files.service';
 @Module({
   imports: [HttpModule],
   controllers: [GoogleDriveController],
-  providers: [GoogleDriveApiClient, GoogleDriveAuthService, GoogleDriveFilesService]
+  providers: [GoogleDriveApiClient, GoogleDriveAuthService, GoogleDriveFilesService],
+  exports: [GoogleDriveApiClient, GoogleDriveAuthService]
 })
 export class GoogleDriveModule {}

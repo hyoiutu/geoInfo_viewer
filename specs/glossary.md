@@ -24,3 +24,5 @@
 | エラーダイアログ | APIエラー等が発生した際に、エラーメッセージとユーザーが取るべき対応（ヒント）を表示するダイアログ | `ErrorDialog`コンポーネント |
 | 行政区画 | 都道府県・市町村の境界線 + 都道府県名・市町村名のラベルをまとめた1つの切り替え可能なレイヤー。地名レイヤー（都道府県名・市町村名を除く地名）とは別カテゴリとして管理する | `admin-boundary`（レイヤーID）、`ADMIN_BOUNDARY_*`定数 |
 | 年代（行政区画の） | 行政区画データがどの時点のものかを表す識別子。「現在」または過去の基準日（例:「2000年」= 2000-10-01、平成の大合併前）。レイヤーダイアログのプルダウンで選択し、通過自治体の判定にも連動する | `MunicipalityEra`、`MUNICIPALITY_ERA_CURRENT`、`era`（`MunicipalityEntity`の列） |
+| Google Takeout（Takeout） | Googleアカウントのデータを一括エクスポートする公式機能。写真閲覧機能ではGoogle Photos APIの制約を回避するため、Googleフォトのみを対象にした増分エクスポート（2ヶ月おき自動）をGoogle Driveへ送信する方式を採用する（Issue #23） | 特定のコード上の識別子は無し（外部サービスの機能名） |
+| 取り込み（Ingest） | Google Drive上のTakeoutエクスポート（zip）から、写真の撮影日時・位置情報等のメタデータを読み取り`photos`テーブルへ保存する処理。写真の実バイナリ自体は保存しない | `PhotoIngestService`、`POST /photos/ingest` |
