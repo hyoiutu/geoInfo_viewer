@@ -2,11 +2,14 @@ import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { assertMunicipalityEra, MUNICIPALITY_ERA_CURRENT } from '../municipalities/era.constants';
 import { MunicipalitiesService, type PassedMunicipalityDto } from '../municipalities/municipalities.service';
+import { PhotosService } from '../photos/photos.service';
+import type { PhotoDto } from '../photos/types/photo.dto';
 import {
   ACTIVITIES_BACKFILL_FORCE_REFETCH_ROUTE,
   ACTIVITIES_BACKFILL_ROUTE,
   ACTIVITIES_BACKFILL_STATUS_ROUTE,
   ACTIVITIES_MUNICIPALITIES_ROUTE,
+  ACTIVITIES_PHOTOS_ROUTE,
   ACTIVITIES_ROUTE,
   ACTIVITIES_SYNC_ROUTE
 } from './activities.constants';
@@ -25,7 +28,8 @@ export class ActivitiesController {
   constructor(
     private readonly activitiesService: ActivitiesService,
     private readonly activitiesBackfillService: ActivitiesBackfillService,
-    private readonly municipalitiesService: MunicipalitiesService
+    private readonly municipalitiesService: MunicipalitiesService,
+    private readonly photosService: PhotosService
   ) {}
 
   /** GET /activities: DBに保存済みの全自転車ログを返す */
@@ -65,5 +69,11 @@ export class ActivitiesController {
     @Query('era') era: string = MUNICIPALITY_ERA_CURRENT
   ): Promise<PassedMunicipalityDto[]> {
     return this.municipalitiesService.findPassedMunicipalities(id, assertMunicipalityEra(era));
+  }
+
+  /** GET /activities/:id/photos: 指定したアクティビティの開始〜終了日時の間に撮影された写真一覧を返す */
+  @Get(ACTIVITIES_PHOTOS_ROUTE)
+  getPhotos(@Param('id') id: string): Promise<PhotoDto[]> {
+    return this.photosService.findByActivity(id);
   }
 }
