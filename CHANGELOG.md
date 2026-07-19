@@ -14,6 +14,25 @@
 
 ## 変更履歴
 
+### [2026-07-19] PR #69レビュー対応としてuseActivitySelectionのID→アクティビティ変換を一本化した
+* **修正の動機・概要**:
+  - PR #69のレビューコメントで、`useActivitySelection`の戻り値`selectedIds`/`focusedIndex`（ID・インデックス）が`MapWorkspace`・`MapView`・`ActivityDetailSidebar`のいずれでも最終的にアクティビティ本体へ変換されており、ID→アクティビティの変換ロジックが複数箇所に重複しているという指摘を受けた。
+  - `useActivitySelection`が`activities`・`filter`を引数に取るよう変更し、ID→アクティビティ変換・フィルタによる自動除外（旧`pruneToVisible`、外部から呼ぶ形だったものを内部の`useEffect`へ移した）を全てフック内部で完結させ、戻り値を`selectedActivities`/`focusedActivity`（アクティビティ本体）に変更した。
+  - これに伴い`MapView`の`selectedIds`/`focusedId`propsを`selectedActivities`/`focusedActivity`へ、`ActivityDetailSidebar`の`focusedIndex`propを`focusedActivity`へ変更した。`MapView`が地図描画用に内部で行っていたID引き当て（`findActivityById`、`applySelectionLayers`内の`activityById`Map構築）が不要になり削除した。
+  - 別コメントで指摘されたHooks記述順序（useState→カスタムフック→useMemo→useEffectの順、種類ごとに空行区切り）も併せて`MapWorkspace`に適用し、`react_rules.md`へ規約として明文化した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/hooks/useActivitySelection.ts`: シグネチャを`(activities, filter)`に変更し、`selectedActivities`/`focusedActivity`を返すよう書き換え。
+    - `frontend/src/components/MapWorkspace.tsx`: 新シグネチャの呼び出しへ変更、`visibleIds`計算・`pruneToVisible`呼び出しの`useEffect`を削除（フック内部へ移動したため）。Hooks記述順序も規約に合わせて整理。
+    - `frontend/src/components/MapView.tsx`: props`selectedIds`/`focusedId`を`selectedActivities`/`focusedActivity`に変更。`applySelectionLayers`・`applyStartGoalMarkers`・`registerBicycleLogClickHandler`から`findActivityById`によるID引き当てを除去し、受け取ったアクティビティ本体をそのまま使うよう簡略化。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: props`focusedIndex`を`focusedActivity`に変更。
+    - `frontend/src/utils/findActivityById.ts`（削除、他に利用箇所が無くなったため）。
+    - `react_rules.md`: 「複数の子孫が同じ状態を必要とする場合、状態取得フックは共通の親で呼ぶ」「React Hooksは種類ごとにまとまる順番で書く」を追加。
+    - 単体テスト（フロントエンド、影響を受けた4ファイルを書き換え）・lint・typecheck・E2Eテスト（4件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た挙動に変化のない内部構造のリファクタリングのため）。
+  * **設計書**: `designs/technical_design.md`の自転車ログフィルタリング機能の章、`designs/class_diagram.md`の該当箇所を更新。
+
 ### [2026-07-19] Issue #23対応として写真取り込みパイプラインを撮影年月別アーカイブ再構成方式に変更した
 * **修正の動機・概要**:
   - 実データ検証（1つのTakeout zip・約221枚に2009年〜2025年の14年分の撮影日時が分散していることを確認）により、当初の「実際に表示時に必要になった写真だけを元のTakeout zip単位で遅延キャッシュする」設計方針では、1回の表示のために複数の巨大zip（各最大2GB）をダウンロードする必要が生じ非現実的であることが判明した。
@@ -64,6 +83,25 @@
   * **README.md**: 変更なし。
   * **仕様書**: 変更なし（`POST /photos/ingest`は開発者向けの取り込みトリガーであり、Issue本文が要望するユーザー向け機能（地図上表示・サイドバー表示）はまだ実装していないため）。
   * **設計書**: `designs/technical_design.md`に「位置情報付きメディア表示機能（写真データ取り込み基盤）」章を新規追加。`specs/glossary.md`に「Google Takeout」「取り込み」を追加。
+
+### [2026-07-18] Issue #53対応としてMapWorkspaceの責務の広さを見直した
+* **修正の動機・概要**:
+  - Issue #53「MapWorkspaceの責務の広さを見直す」に自律モードで対応した。issue-reviewの観点2（大規模な再編・分割Issueは境界の判断基準を先に固める）に該当する懸念があったが、Issue本文のコメント2件で既に具体的な設計方針（ダイアログのdraft状態を内部化する、MapControlsが開閉状態・ダイアログ本体を持つ）が固められていたため、着手前の追加調整は不要と判断した。
+  - `LayerDialog`/`FilterDialog`が担っていなかった「入力中(draft)の内容」の保持先を、`MapWorkspace`（`useLayerVisibility`/`useActivityFilter`フック経由）から各ダイアログコンポーネント自身の内部stateへ移した。ダイアログを開くたびに`isOpen`の変化を検知する`useEffect`で、入力中の内容を現在適用中(applied)の内容へリセットする構成とした。
+  - `MapControls`が`LayerDialog`/`FilterDialog`/`StatisticsDialog`/`SettingsDialog`の開閉状態（`useState`）とダイアログ本体自体を保持するよう変更した。`MapWorkspace`はこれに伴い、確定済みの結果（表示状態・行政区画の年代・フィルタ条件）のみをシンプルな`useState`で保持し、各コンポーネントへ配る役目に絞られた。
+  - 上記により`useLayerVisibility`/`useActivityFilter`フックは不要になったため削除した。
+  - 実装中、ダイアログの開閉がChakra UI（Ark UI）の内部で非同期に反映されるため、`MapControls`の単体テストで開閉直後の同期的なアサーションが失敗する箇所があり、`waitFor`で待つよう修正した。また既存の`MapWorkspace.tests.tsx`のタイミング調整用モック遅延（100ms）が、コンポーネント構造の変化により不足するようになったため500msへ延長した（実装のバグではなくテスト側のタイミング調整）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/components/LayerDialog.tsx`/`FilterDialog.tsx`: propsを`appliedXxx`+`onApply(確定値)`形式に変更し、draft管理を内部化。
+    - `frontend/src/components/MapControls.tsx`: 開閉state・4ダイアログ本体を統合するpropsに変更。
+    - `frontend/src/components/MapWorkspace.tsx`: draft管理・個別ダイアログのレンダリングを削除し大幅に簡略化。
+    - `frontend/src/constants/layerDefinitions.ts`: `createDefaultVisibility`を`useLayerVisibility.ts`から移設し共通化。
+    - `frontend/src/hooks/useLayerVisibility.ts`・`useActivityFilter.ts`（削除、対応テストも削除）。
+    - 対応する単体テストを新API向けに全面書き換え。単体テスト（フロントエンド）・lint・typecheck・E2Eテストは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た挙動に変化はなく、内部構造のリファクタリングのみのため）。
+  * **設計書**: `designs/class_diagram.md`のコンポーネント依存関係・`designs/technical_design.md`の「自転車ログフィルタリング機能」「行政区画レイヤー（年代選択）」章を更新。`class_diagram.md`にIssue #33で追加された`StatisticsDialog`の記載漏れも合わせて追記した。
 
 ### [2026-07-18] Issue #33対応として統計データ表示機能を実装した
 * **修正の動機・概要**:

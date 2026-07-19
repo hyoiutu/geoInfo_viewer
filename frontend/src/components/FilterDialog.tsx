@@ -1,5 +1,6 @@
 import { Button, Flex, HStack, Input, NativeSelect, Text } from '@chakra-ui/react';
-import type { ActivityFilter } from '../types/activityFilter';
+import { useEffect, useState } from 'react';
+import { type ActivityFilter, DEFAULT_ACTIVITY_FILTER } from '../types/activityFilter';
 import { isActivityFilterValid } from '../utils/filterActivities';
 import { AppDialog } from './AppDialog';
 
@@ -110,24 +111,41 @@ const NumberFilterField = ({ label, unit, step, value, onChange }: NumberFilterF
 type FilterDialogProps = {
   /** ダイアログが開いているかどうか */
   isOpen: boolean;
-  /** ダイアログ内の入力中（未確定）のフィルタ条件 */
-  draftFilter: ActivityFilter;
-  /** 入力中のフィルタ条件の一部が変更されたときに呼ばれるコールバック */
-  onUpdateDraft: (partial: Partial<ActivityFilter>) => void;
-  /** リセットボタンが押されたときに呼ばれるコールバック */
-  onReset: () => void;
-  /** 実行ボタンが押されたときに呼ばれるコールバック */
-  onApply: () => void;
+  /** 現在適用中(地図に反映済み)のフィルタ条件。ダイアログを開くたびに入力中の内容の初期値として使う */
+  appliedFilter: ActivityFilter;
+  /** 実行ボタンが押されたときに、入力中のフィルタ条件を渡して呼ばれるコールバック */
+  onApply: (filter: ActivityFilter) => void;
   /** ダイアログを閉じる（閉じるボタン押下・背景クリック等）ときに呼ばれるコールバック */
   onClose: () => void;
 };
 
 /**
  * 自転車ログの表示絞り込み条件（年月範囲・獲得標高・平均時速・走行距離）を入力するダイアログ。
- * 入力内容は「実行」を押したときのみ確定し、閉じるボタン等で閉じた場合は破棄される
+ * 入力中(draft)のフィルタ条件はこのコンポーネント内部で保持し、「実行」を押したときのみonApplyで確定値を通知する。
+ * 閉じるボタン等で閉じた場合、入力中の内容は破棄される（Issue #53）
  */
-export const FilterDialog = ({ isOpen, draftFilter, onUpdateDraft, onReset, onApply, onClose }: FilterDialogProps) => {
+export const FilterDialog = ({ isOpen, appliedFilter, onApply, onClose }: FilterDialogProps) => {
+  const [draftFilter, setDraftFilter] = useState(appliedFilter);
   const isValid = isActivityFilterValid(draftFilter);
+
+  // ダイアログを開くたびに、入力中の内容を現在適用中の内容へリセットする
+  useEffect(() => {
+    if (isOpen) {
+      setDraftFilter(appliedFilter);
+    }
+  }, [isOpen, appliedFilter]);
+
+  const updateDraft = (partial: Partial<ActivityFilter>) => {
+    setDraftFilter((current) => ({ ...current, ...partial }));
+  };
+
+  const handleReset = () => {
+    setDraftFilter(DEFAULT_ACTIVITY_FILTER);
+  };
+
+  const handleApply = () => {
+    onApply(draftFilter);
+  };
 
   return (
     <AppDialog
@@ -136,10 +154,10 @@ export const FilterDialog = ({ isOpen, draftFilter, onUpdateDraft, onReset, onAp
       title="自転車ログのフィルタ"
       footer={
         <>
-          <Button onClick={onReset} variant="ghost" size="sm">
+          <Button onClick={handleReset} variant="ghost" size="sm">
             リセット
           </Button>
-          <Button onClick={onApply} disabled={!isValid} size="sm">
+          <Button onClick={handleApply} disabled={!isValid} size="sm">
             実行
           </Button>
         </>
@@ -150,15 +168,15 @@ export const FilterDialog = ({ isOpen, draftFilter, onUpdateDraft, onReset, onAp
           label="検索範囲始まり"
           year={draftFilter.startYear}
           month={draftFilter.startMonth}
-          onChangeYear={(year) => onUpdateDraft({ startYear: year })}
-          onChangeMonth={(month) => onUpdateDraft({ startMonth: month })}
+          onChangeYear={(year) => updateDraft({ startYear: year })}
+          onChangeMonth={(month) => updateDraft({ startMonth: month })}
         />
         <YearMonthField
           label="検索範囲終わり"
           year={draftFilter.endYear}
           month={draftFilter.endMonth}
-          onChangeYear={(year) => onUpdateDraft({ endYear: year })}
-          onChangeMonth={(month) => onUpdateDraft({ endMonth: month })}
+          onChangeYear={(year) => updateDraft({ endYear: year })}
+          onChangeMonth={(month) => updateDraft({ endMonth: month })}
         />
         {!isValid && (
           <Text fontSize="sm" color="fg.error">
@@ -170,21 +188,21 @@ export const FilterDialog = ({ isOpen, draftFilter, onUpdateDraft, onReset, onAp
           unit="m"
           step={1}
           value={draftFilter.minElevationGainMeters}
-          onChange={(value) => onUpdateDraft({ minElevationGainMeters: value })}
+          onChange={(value) => updateDraft({ minElevationGainMeters: value })}
         />
         <NumberFilterField
           label="平均時速"
           unit="km/h"
           step={0.1}
           value={draftFilter.minAverageSpeedKmh}
-          onChange={(value) => onUpdateDraft({ minAverageSpeedKmh: value })}
+          onChange={(value) => updateDraft({ minAverageSpeedKmh: value })}
         />
         <NumberFilterField
           label="走行距離"
           unit="km"
           step={0.1}
           value={draftFilter.minDistanceKm}
-          onChange={(value) => onUpdateDraft({ minDistanceKm: value })}
+          onChange={(value) => updateDraft({ minDistanceKm: value })}
         />
       </Flex>
     </AppDialog>

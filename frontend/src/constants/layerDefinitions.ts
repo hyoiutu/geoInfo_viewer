@@ -1,4 +1,5 @@
-import type { ToggleableLayerId } from '../types/layer';
+import type { LayerVisibility, ToggleableLayerId } from '../types/layer';
+import { typedFromEntries } from '../utils/typedObject';
 
 export type LayerDefinition = {
   id: ToggleableLayerId;
@@ -15,3 +16,7 @@ export const LAYER_DEFINITIONS: LayerDefinition[] = [
   { id: 'aerial-photo', name: '航空写真', defaultChecked: false },
   { id: 'bicycle-log', name: '自転車ログ', defaultChecked: false }
 ];
+
+/** @returns LAYER_DEFINITIONSのdefaultCheckedを反映したデフォルトの表示状態 */
+export const createDefaultVisibility = (): LayerVisibility =>
+  typedFromEntries(LAYER_DEFINITIONS.map((layerDefinition) => [layerDefinition.id, layerDefinition.defaultChecked]));

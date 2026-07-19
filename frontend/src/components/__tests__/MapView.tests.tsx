@@ -89,17 +89,29 @@ const ALL_ON_VISIBILITY: LayerVisibility = {
   'bicycle-log': false
 };
 
-const DEFAULT_SELECTED_IDS: string[] = [];
-const DEFAULT_FOCUSED_ID: string | null = null;
+const DEFAULT_SELECTED_ACTIVITIES: CyclingActivity[] = [];
+const DEFAULT_FOCUSED_ACTIVITY: CyclingActivity | null = null;
 
 const DEFAULT_SELECTION_PROPS = {
-  selectedIds: DEFAULT_SELECTED_IDS,
-  focusedId: DEFAULT_FOCUSED_ID,
+  selectedActivities: DEFAULT_SELECTED_ACTIVITIES,
+  focusedActivity: DEFAULT_FOCUSED_ACTIVITY,
   onSelectActivities: vi.fn(),
   onActivitiesLoaded: vi.fn(),
   filter: DEFAULT_ACTIVITY_FILTER,
   adminBoundaryEra: 'current' as const
 };
+
+const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity => ({
+  id: '1',
+  name: 'テストライド',
+  distanceMeters: 1000,
+  movingTimeSeconds: 600,
+  elapsedTimeSeconds: 650,
+  elevationGainMeters: 50,
+  startDate: '2026-07-01T00:00:00Z',
+  path: null,
+  ...overrides
+});
 
 // ソースIDごとに独立したsetDataスパイを返す（BICYCLE_LOG_SOURCE_ID等、複数ソースを区別して検証するため）
 const setDataMocksBySourceId: Record<string, ReturnType<typeof vi.fn>> = {};
@@ -689,8 +701,8 @@ describe('MapViewに関するテスト', () => {
       <MapView
         layerVisibility={ALL_ON_VISIBILITY}
         {...DEFAULT_SELECTION_PROPS}
-        selectedIds={['1']}
-        focusedId="1"
+        selectedActivities={[createActivity({ id: '1' })]}
+        focusedActivity={createActivity({ id: '1' })}
         onSelectActivities={onSelectActivities}
       />
     );
@@ -704,54 +716,53 @@ describe('MapViewに関するテスト', () => {
     expect(onSelectActivities).not.toHaveBeenCalled();
   });
 
-  test('selectedIds・focusedIdが変化すると、選択用レイヤーにフォーカス中を除いた選択中アクティビティが通し番号順で反映される', async () => {
-    vi.mocked(fetchCyclingActivities).mockResolvedValue([
-      {
-        id: '1',
-        name: 'ライド1',
-        distanceMeters: 1000,
-        movingTimeSeconds: 600,
-        elapsedTimeSeconds: 650,
-        elevationGainMeters: 50,
-        startDate: '2026-07-01T00:00:00Z',
-        path: [
-          [
-            [139.7, 35.6],
-            [139.8, 35.7]
-          ]
+  test('selectedActivities・focusedActivityが変化すると、選択用レイヤーにフォーカス中を除いた選択中アクティビティが通し番号順で反映される', async () => {
+    const activity1: CyclingActivity = {
+      id: '1',
+      name: 'ライド1',
+      distanceMeters: 1000,
+      movingTimeSeconds: 600,
+      elapsedTimeSeconds: 650,
+      elevationGainMeters: 50,
+      startDate: '2026-07-01T00:00:00Z',
+      path: [
+        [
+          [139.7, 35.6],
+          [139.8, 35.7]
         ]
-      },
-      {
-        id: '2',
-        name: 'ライド2',
-        distanceMeters: 2000,
-        movingTimeSeconds: 1200,
-        elapsedTimeSeconds: 1250,
-        elevationGainMeters: 80,
-        startDate: '2026-07-02T00:00:00Z',
-        path: [
-          [
-            [139.7, 35.6],
-            [139.9, 35.8]
-          ]
+      ]
+    };
+    const activity2: CyclingActivity = {
+      id: '2',
+      name: 'ライド2',
+      distanceMeters: 2000,
+      movingTimeSeconds: 1200,
+      elapsedTimeSeconds: 1250,
+      elevationGainMeters: 80,
+      startDate: '2026-07-02T00:00:00Z',
+      path: [
+        [
+          [139.7, 35.6],
+          [139.9, 35.8]
         ]
-      },
-      {
-        id: '3',
-        name: 'ライド3',
-        distanceMeters: 3000,
-        movingTimeSeconds: 1800,
-        elapsedTimeSeconds: 1850,
-        elevationGainMeters: 100,
-        startDate: '2026-07-03T00:00:00Z',
-        path: [
-          [
-            [139.7, 35.6],
-            [140.0, 35.9]
-          ]
+      ]
+    };
+    const activity3: CyclingActivity = {
+      id: '3',
+      name: 'ライド3',
+      distanceMeters: 3000,
+      movingTimeSeconds: 1800,
+      elapsedTimeSeconds: 1850,
+      elevationGainMeters: 100,
+      startDate: '2026-07-03T00:00:00Z',
+      path: [
+        [
+          [139.7, 35.6],
+          [140.0, 35.9]
         ]
-      }
-    ]);
+      ]
+    };
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([activity1, activity2, activity3]);
     const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
 
     rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
@@ -763,8 +774,8 @@ describe('MapViewに関するテスト', () => {
       <MapView
         layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
         {...DEFAULT_SELECTION_PROPS}
-        selectedIds={['2', '3']}
-        focusedId="3"
+        selectedActivities={[activity2, activity3]}
+        focusedActivity={activity3}
       />
     );
 
@@ -780,38 +791,37 @@ describe('MapViewに関するテスト', () => {
   });
 
   test('選択用レイヤーのfeatures配列は、通し番号の昇順（＝後からクリックしたものが配列末尾で最前面）で並ぶ', async () => {
-    vi.mocked(fetchCyclingActivities).mockResolvedValue([
-      {
-        id: '1',
-        name: 'ライド1',
-        distanceMeters: 1000,
-        movingTimeSeconds: 600,
-        elapsedTimeSeconds: 650,
-        elevationGainMeters: 50,
-        startDate: '2026-07-01T00:00:00Z',
-        path: [
-          [
-            [139.7, 35.6],
-            [139.8, 35.7]
-          ]
+    const activity1: CyclingActivity = {
+      id: '1',
+      name: 'ライド1',
+      distanceMeters: 1000,
+      movingTimeSeconds: 600,
+      elapsedTimeSeconds: 650,
+      elevationGainMeters: 50,
+      startDate: '2026-07-01T00:00:00Z',
+      path: [
+        [
+          [139.7, 35.6],
+          [139.8, 35.7]
         ]
-      },
-      {
-        id: '2',
-        name: 'ライド2',
-        distanceMeters: 2000,
-        movingTimeSeconds: 1200,
-        elapsedTimeSeconds: 1250,
-        elevationGainMeters: 80,
-        startDate: '2026-07-02T00:00:00Z',
-        path: [
-          [
-            [139.7, 35.6],
-            [139.9, 35.8]
-          ]
+      ]
+    };
+    const activity2: CyclingActivity = {
+      id: '2',
+      name: 'ライド2',
+      distanceMeters: 2000,
+      movingTimeSeconds: 1200,
+      elapsedTimeSeconds: 1250,
+      elevationGainMeters: 80,
+      startDate: '2026-07-02T00:00:00Z',
+      path: [
+        [
+          [139.7, 35.6],
+          [139.9, 35.8]
         ]
-      }
-    ]);
+      ]
+    };
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([activity1, activity2]);
     const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
     rerender(<MapView layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }} {...DEFAULT_SELECTION_PROPS} />);
     await waitFor(() => {
@@ -823,8 +833,8 @@ describe('MapViewに関するテスト', () => {
       <MapView
         layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
         {...DEFAULT_SELECTION_PROPS}
-        selectedIds={['2', '1']}
-        focusedId={null}
+        selectedActivities={[activity2, activity1]}
+        focusedActivity={null}
       />
     );
 
@@ -884,8 +894,8 @@ describe('MapViewに関するテスト', () => {
         <MapView
           layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
           {...DEFAULT_SELECTION_PROPS}
-          selectedIds={['1']}
-          focusedId="1"
+          selectedActivities={[activityWithPath]}
+          focusedActivity={activityWithPath}
         />
       );
 
@@ -904,8 +914,8 @@ describe('MapViewに関するテスト', () => {
         <MapView
           layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
           {...DEFAULT_SELECTION_PROPS}
-          selectedIds={['1']}
-          focusedId="1"
+          selectedActivities={[activityWithPath]}
+          focusedActivity={activityWithPath}
         />
       );
       await waitFor(() => expect(getMarkerInstances()).toHaveLength(2));
@@ -925,7 +935,8 @@ describe('MapViewに関するテスト', () => {
     });
 
     test('軌跡(path)を持たないアクティビティをフォーカスしても、マーカーは表示されない', async () => {
-      vi.mocked(fetchCyclingActivities).mockResolvedValue([{ ...activityWithPath, path: null }]);
+      const activityWithoutPath: CyclingActivity = { ...activityWithPath, path: null };
+      vi.mocked(fetchCyclingActivities).mockResolvedValue([activityWithoutPath]);
       const { rerender } = renderWithChakra(
         <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
       );
@@ -938,8 +949,8 @@ describe('MapViewに関するテスト', () => {
         <MapView
           layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
           {...DEFAULT_SELECTION_PROPS}
-          selectedIds={['1']}
-          focusedId="1"
+          selectedActivities={[activityWithoutPath]}
+          focusedActivity={activityWithoutPath}
         />
       );
 
@@ -971,8 +982,8 @@ describe('MapViewに関するテスト', () => {
         <MapView
           layerVisibility={{ ...ALL_ON_VISIBILITY, 'bicycle-log': true }}
           {...DEFAULT_SELECTION_PROPS}
-          selectedIds={['1']}
-          focusedId="1"
+          selectedActivities={[roundTripActivity]}
+          focusedActivity={roundTripActivity}
         />
       );
 

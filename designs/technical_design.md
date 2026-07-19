@@ -54,8 +54,8 @@ root/
 
 # 自転車ログフィルタリング機能
 - 仕様書記載のフィルタ条件（年月・獲得標高・平均時速・走行距離）はフロントエンドの純粋関数`filterActivities`・バリデーション関数`isActivityFilterValid`（`frontend/src/utils/filterActivities.ts`）で実現する
-- ダイアログの入力中（draft）状態と実際に地図へ適用される状態（applied）は`useActivityFilter`フックで分離管理し、「実行を押したときのみ確定し、閉じるボタンでは破棄され、再度開いたときは直近の適用内容を復元する」という挙動を実現する
-- フィルタで除外され地図上に表示されなくなったアクティビティの選択・フォーカス解除は、`useActivitySelection`の`pruneToVisible(visibleIds)`で実現する。`MapWorkspace`がフィルタ適用後の表示対象ID集合を`useMemo`で求め、変化のたびに`pruneToVisible`を呼ぶ
+- ダイアログの入力中（draft）状態は`FilterDialog`コンポーネント自身が内部stateとして保持し、実際に地図へ適用される状態（`MapWorkspace`が保持する`filter`）とは分離する。ダイアログを開くたびに入力中の内容を現在適用中の内容へリセットし（`isOpen`の変化を検知する`useEffect`）、「実行」を押したときのみ`onApply(draftFilter)`で確定値を通知する（Issue #53。以前は`useActivityFilter`フックが`MapWorkspace`側でこのdraft管理を担っていたが、ダイアログ自身の内部関心事として`FilterDialog`へ移した）
+- フィルタで除外され地図上に表示されなくなったアクティビティの選択・フォーカス解除は、`useActivitySelection(activities, filter)`が内部で完結させる。フックが`filter`を直接受け取り表示対象ID集合を`useMemo`で求め、変化のたびに内部の`useEffect`で選択・フォーカスから取り除く（`MapWorkspace`側からの明示的な呼び出しは不要。PR #69レビュー対応）
 
 # 自転車ログバックフィル機能
 - Stravaのレート制限は「非アップロード系エンドポイント: 15分あたり100リクエスト」を採用し、リクエスト間隔を9秒（15分 ÷ 100 = 9秒、`StravaRateLimiterService`）に固定してペーシングする
@@ -83,7 +83,7 @@ root/
 - 過去の行政区画（`era !== 'current'`）はベクトルタイルに存在しないため、`GET /municipalities/boundaries?era=...`（`MunicipalitiesController.getBoundaries`、新規）がDBの`municipalities`テーブルから該当年代のポリゴンをGeoJSON `FeatureCollection`として返す。フロントエンドはこれをMapLibreのGeoJSONソース（`admin-boundary-historical-source`）へ`setData`し、塗り（`fill`、視認性を優先し不透明度0.05の薄い塗り）・線（`line`、現行の市町村境界と同じ配色・破線パターン）・ラベル（`symbol`、`municipalityName`プロパティをテキストフィールドとし既存OSM地名ラベルと同じ配色）の3レイヤーとして描画する（`addAdminBoundaryHistoricalLayer`/`applyAdminBoundaryHistoricalData`、`frontend/src/utils/mapLayerSetup.ts`）
   - 塗り・線・ラベルの3レイヤーいずれにも、現行の市町村境界（`admin-boundary-municipality`）と同じ`ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM`（`minzoom`）を設定し、低ズームでの過密表示・不要な計算を避ける（PR #62レビュー対応。実機確認でズームアウトしても行政区画の計算が継続する点が指摘された）
 - 取得したGeoJSONは年代ごとに`MapView`内の`Map<MunicipalityEra, FeatureCollection>`（`historicalBoundariesCacheRef`）へキャッシュし、同じ年代へ再度切り替えた際の再取得を避ける
-- レイヤーダイアログの年代選択（プルダウン）は、レイヤーの表示/非表示と同じ`useLayerVisibility`フックが`draftEra`/`appliedEra`として管理し、同じ「実行」ボタンのタイミングで確定する（年代選択のためだけの別ダイアログ・別フックを設けていない）
+- レイヤーダイアログの年代選択（プルダウン）は、レイヤーの表示/非表示と同じ`LayerDialog`内部のdraft state（`draftEra`）が管理し、同じ「実行」ボタンのタイミングで確定する（年代選択のためだけの別ダイアログ・別コンポーネントを設けていない）
 - 選択中の年代は`MapWorkspace`から`MapView`（描画用）・`ActivityDetailSidebar`（通過自治体の判定用、`usePassedMunicipalities`経由）の両方へ`adminBoundaryEra`として渡される
 - 2026-07時点で投入済みの年代は`current`（2023-01-01）・`2000-10-01`（平成の大合併前）・`1950-10-01`（昭和の大合併前）・`1920-01-01`（大正時代）の4つで、Issue #34が要望する全年代の投入が完了している
 

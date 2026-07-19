@@ -211,7 +211,7 @@ describe('MapWorkspaceに関するテスト', () => {
     // ブロックされる前に完了できるようにする。
     const { getBackfillStatus, fetchCyclingActivities } = await import('../../api/activitiesApi');
     vi.mocked(getBackfillStatus).mockImplementation(
-      () => new Promise((_resolve, reject) => setTimeout(() => reject(new Error('status fetch failed')), 100))
+      () => new Promise((_resolve, reject) => setTimeout(() => reject(new Error('status fetch failed')), 500))
     );
     vi.mocked(fetchCyclingActivities).mockRejectedValue(new Error('fetch failed'));
     const { getByRole } = renderWithChakra(<MapWorkspace />);
