@@ -14,6 +14,105 @@
 
 ## 変更履歴
 
+### [2026-07-20] PR #72（Issue #67）とPR #71（mapLayerInteraction切り出し）のマージコンフリクトを解消した
+* **修正の動機・概要**:
+  - finish-reviewスキルでPR #72（Issue #67「行政区画レイヤーの年代切り替え時の重複表示バグ」修正、`MapView.tsx`内の`applyLayerVisibility`へ`resolveUnusedAdminBoundaryLayerIds`呼び出しを追加する内容）のブランチへ最新mainを取り込んだところ、PR #71のレビュー対応（`applyLayerVisibility`を`MapView.tsx`から`mapLayerInteraction.ts`へ切り出し）と同一関数を独立に変更していたため、`frontend/src/components/MapView.tsx`でコンフリクトが発生した。
+  - `applyLayerVisibility`の実体は`mapLayerInteraction.ts`側に既に移設済みだったため、PR #72の修正内容（`resolveUnusedAdminBoundaryLayerIds`の呼び出し）を`MapView.tsx`ではなく移設先の`mapLayerInteraction.ts`の`applyLayerVisibility`へ手動で統合した。既存の`mapLayerInteraction.tests.ts`にも同じ観点の単体テストを追加した（TDDでRed確認後、統合してGreen確認）。PR #72が`MapView.tests.tsx`へ追加していた2件の統合テストは自動マージで保持され、そのままGreenであることを確認した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/mapLayerInteraction.ts`: `applyLayerVisibility`に`resolveUnusedAdminBoundaryLayerIds`を使った非選択年代レイヤーの非表示化処理を追加。
+    - `frontend/src/utils/__tests__/mapLayerInteraction.tests.ts`: 上記の単体テストを2件追加。
+    - `frontend/src/components/MapView.tsx`: コンフリクト解消（`mapLayerInteraction.ts`からのimportを正としてローカル関数定義を除去）。
+    - 単体テスト（フロントエンド全30ファイル254件・バックエンド全36ファイル206件）・lint・typecheck・E2Eテスト（4件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし。
+  * **設計書**: `designs/technical_design.md`の「行政区画レイヤー（年代選択）」章の記述を、`applyLayerVisibility`の現在の所在（`mapLayerInteraction.ts`）に合わせて更新。
+
+### [2026-07-19] PR #71レビュー対応としてMapViewの地図操作関数をmapLayerInteraction.tsへ切り出した
+* **修正の動機・概要**:
+  - PR #71のレビューコメントで、(1) `MapView.tsx`のHooks記述順序がreact_rules.mdの規約（useState→useRef→カスタムフック→useEffectの順）に沿っていない、(2) `registerBicycleLogClickHandler`/`applySelectionLayers`/`applyStartGoalMarkers`/`applyLayerVisibility`という地図操作の純粋関数がコンポーネントファイルに残っており、design_principles.mdのSRP原則（コンポーネントファイルには表示に関する関数・TSXのみを置く）に照らして`mapLayerSetup.ts`と同様の受け皿へ切り出す余地がある、という2件の指摘を受けた。
+  - (1)は`MapView.tsx`のHooks呼び出し順を規約通りに並べ替えて対応した。
+  - (2)は新規ファイル`frontend/src/utils/mapLayerInteraction.ts`を作成し、上記4関数と関連型`StartGoalMarkerEntry`を移設した。既存の`mapLayerSetup.ts`（レイヤーの追加処理）と対になる、地図の状態反映を担うモジュールとして位置づけた。TDD（Red-Green-Refactor）で、新規ファイルへの単体テスト（`mapLayerInteraction.tests.ts`、`maplibregl.Map`の最小限モックを直接渡す形。`mapLayerSetup.tests.ts`と同じパターン）を先に追加しRed確認後、実装を移設してGreen確認した。`MapView.tsx`は残った4関数をimportして`useEffect`から呼び出すのみとなり、Reactのライフサイクルとの接続に責務が絞られた。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/mapLayerInteraction.ts`（新規）: `registerBicycleLogClickHandler`・`applySelectionLayers`・`applyStartGoalMarkers`・`applyLayerVisibility`・`StartGoalMarkerEntry`型を`MapView.tsx`から移設。
+    - `frontend/src/utils/__tests__/mapLayerInteraction.tests.ts`（新規、11件）。
+    - `frontend/src/components/MapView.tsx`: 上記4関数の定義を削除しimportに置き換え、Hooks記述順序（useState→useRef→カスタムフック→useEffect）を規約通りに整理。
+    - 単体テスト（フロントエンド、全30ファイル248件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た挙動に変化のない内部構造のリファクタリングのため）。
+  * **設計書**: `designs/technical_design.md`のアクティビティ詳細閲覧機能の章、`designs/class_diagram.md`の該当箇所を更新。
+
+### [2026-07-19] PR #69レビュー対応としてuseActivitySelectionのID→アクティビティ変換を一本化した
+* **修正の動機・概要**:
+  - PR #69のレビューコメントで、`useActivitySelection`の戻り値`selectedIds`/`focusedIndex`（ID・インデックス）が`MapWorkspace`・`MapView`・`ActivityDetailSidebar`のいずれでも最終的にアクティビティ本体へ変換されており、ID→アクティビティの変換ロジックが複数箇所に重複しているという指摘を受けた。
+  - `useActivitySelection`が`activities`・`filter`を引数に取るよう変更し、ID→アクティビティ変換・フィルタによる自動除外（旧`pruneToVisible`、外部から呼ぶ形だったものを内部の`useEffect`へ移した）を全てフック内部で完結させ、戻り値を`selectedActivities`/`focusedActivity`（アクティビティ本体）に変更した。
+  - これに伴い`MapView`の`selectedIds`/`focusedId`propsを`selectedActivities`/`focusedActivity`へ、`ActivityDetailSidebar`の`focusedIndex`propを`focusedActivity`へ変更した。`MapView`が地図描画用に内部で行っていたID引き当て（`findActivityById`、`applySelectionLayers`内の`activityById`Map構築）が不要になり削除した。
+  - 別コメントで指摘されたHooks記述順序（useState→カスタムフック→useMemo→useEffectの順、種類ごとに空行区切り）も併せて`MapWorkspace`に適用し、`react_rules.md`へ規約として明文化した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/hooks/useActivitySelection.ts`: シグネチャを`(activities, filter)`に変更し、`selectedActivities`/`focusedActivity`を返すよう書き換え。
+    - `frontend/src/components/MapWorkspace.tsx`: 新シグネチャの呼び出しへ変更、`visibleIds`計算・`pruneToVisible`呼び出しの`useEffect`を削除（フック内部へ移動したため）。Hooks記述順序も規約に合わせて整理。
+    - `frontend/src/components/MapView.tsx`: props`selectedIds`/`focusedId`を`selectedActivities`/`focusedActivity`に変更。`applySelectionLayers`・`applyStartGoalMarkers`・`registerBicycleLogClickHandler`から`findActivityById`によるID引き当てを除去し、受け取ったアクティビティ本体をそのまま使うよう簡略化。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: props`focusedIndex`を`focusedActivity`に変更。
+    - `frontend/src/utils/findActivityById.ts`（削除、他に利用箇所が無くなったため）。
+    - `react_rules.md`: 「複数の子孫が同じ状態を必要とする場合、状態取得フックは共通の親で呼ぶ」「React Hooksは種類ごとにまとまる順番で書く」を追加。
+    - 単体テスト（フロントエンド、影響を受けた4ファイルを書き換え）・lint・typecheck・E2Eテスト（4件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た挙動に変化のない内部構造のリファクタリングのため）。
+  * **設計書**: `designs/technical_design.md`の自転車ログフィルタリング機能の章、`designs/class_diagram.md`の該当箇所を更新。
+
+### [2026-07-19] Issue #23対応として写真取り込みパイプラインを撮影年月別アーカイブ再構成方式に変更した
+* **修正の動機・概要**:
+  - 実データ検証（1つのTakeout zip・約221枚に2009年〜2025年の14年分の撮影日時が分散していることを確認）により、当初の「実際に表示時に必要になった写真だけを元のTakeout zip単位で遅延キャッシュする」設計方針では、1回の表示のために複数の巨大zip（各最大2GB）をダウンロードする必要が生じ非現実的であることが判明した。
+  - ユーザーからの提案（「Google Driveの中のZipファイルをすべて展開し、撮影年月毎にZipファイルに圧縮し直す」）を受け、取り込み時にTakeout zip内の写真を撮影年月ごとに再構成した別zip（月別アーカイブ）へ振り分けてGoogle Drive上に保存し直す方式へ変更した。既存実装（認証・zip解析ロジック・DBスキーマの骨格）は軌道修正不要でそのまま活用でき、取り込みと月別再構成は1パイプライン（`PhotoIngestService.ingest`）として実装した。
+  - TDD（Red-Green-Refactor）で、`GoogleDriveApiClient`のアップロード関連メソッド追加→`MonthlyPhotoArchiveEntity`・マイグレーション追加→年月グルーピング／既存zipへのマージという純粋関数2件→`MonthlyPhotoArchiveService`（振り分けオーケストレーション）→`PhotoIngestService`書き換え→`PhotosModule`のDI登録、の順に段階的に実装した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/google-drive/google-drive-api.client.ts`: `createFileMetadata`（新規zipファイル作成）・`updateFileContent`（既存ファイルのコンテンツ更新）を追加。`google-drive.constants.ts`にアップロード専用エンドポイント`GOOGLE_DRIVE_UPLOAD_BASE_URL`を追加。
+    - `backend/src/photos/entities/monthly-photo-archive.entity.ts`（新規）・マイグレーション`1784388784983-CreateMonthlyPhotoArchives.ts`（新規、`monthly_photo_archives`テーブル・`year_month`一意制約）。`database.config.ts`にEntity登録。
+    - `backend/src/photos/group-photos-by-year-month.util.ts`（新規）: 写真を撮影日時（UTC基準）の年月ごとにグループ分けする純粋関数。
+    - `backend/src/photos/monthly-archive.util.ts`（新規）: 既存の月別アーカイブzip（無ければ新規）へ新規写真エントリをマージする純粋関数。異なる元zip由来の同名ファイル衝突は連番で回避する。
+    - `backend/src/photos/monthly-photo-archive.service.ts`（新規）: 年月グループごとに、対応する月別アーカイブの検索・ダウンロード・マージ・アップロード・DB登録を行うオーケストレーション。
+    - `backend/src/photos/photo-ingest.service.ts`: 保存先を元のTakeout zip直接参照から、`MonthlyPhotoArchiveService`による月別アーカイブ参照へ書き換え。
+    - `backend/src/photos/photos.module.ts`: `MonthlyPhotoArchiveEntity`・`MonthlyPhotoArchiveService`をDI登録。
+    - 単体テスト（バックエンド、新規追加分含め全206件）・lint・typecheck・マイグレーションup/down・実際のアプリ起動確認（全モジュール初期化・ルーティング登録）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（写真閲覧機能のユーザー向け挙動はまだ未実装であり、`system_specification.md`に記載された内容は無いため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章を、月別アーカイブ再構成方式に合わせて全面的に更新。`specs/glossary.md`に新用語「月別アーカイブ」を追加し、「取り込み」の定義に月別再構成を含める旨を追記。
+
+### [2026-07-18] Issue #23対応として写真取り込み時のEXIF解析エラーによるINTERNAL_ERRORを修正した
+* **修正の動機・概要**:
+  - 実際にユーザーがGoogle Takeoutでエクスポートしたzipで`POST /photos/ingest`を実行したところ、`INTERNAL_ERROR`が返るバグが発覚した。
+  - 原因: `extractMetadataFromExif`内の`exifr`の`parse()`呼び出しがtry/catchで囲まれておらず、Takeoutフォルダに含まれる動画ファイル等exifrが対応していない形式の写真本体エントリでパースが例外を投げると、そのまま`PhotoIngestService.ingest()`全体が失敗していた。
+  - `parse()`呼び出しをtry/catchで囲み、失敗時は`null`を返す（＝EXIFからのメタデータ抽出を諦め、当該写真は`skippedCount`としてスキップする）よう修正した。修正後、実際のGoogle Takeoutデータで取り込み成功・`photos`テーブルへの格納をユーザーが確認済み。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/takeout-metadata.util.ts`: `extractMetadataFromExif`の`parse()`呼び出しをtry/catchで囲む。
+    - `backend/src/photos/__tests__/takeout-metadata.util.tests.ts`: 「EXIF解析自体が例外を投げる場合、nullを返す」テストケースを追加（TDDでRed確認後に修正）。
+    - 単体テスト（バックエンド）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（「JSON欠落時はEXIF直読みへフォールバックする」という既存の設計方針自体は変わらず、実装上の見落としを修正したのみのため）。
+
+### [2026-07-18] Issue #23対応としてGoogle Takeoutの写真データ取り込みパイプラインを実装した
+* **修正の動機・概要**:
+  - Issue #23「写真閲覧機能」のうち、Issueコメントに記載された「今後の実装で必要になる要素」から「バックエンドのzip取り込みパイプライン」を対話モードで実装した。フロントエンドのGoogle Picker UI、写真閲覧機能本体（地図上の吹き出し表示・サイドバーのグリッド表示）は今回のスコープ外。
+  - 着手前に、実装スコープ（フロントエンドPicker UI/バックエンド取り込み/両方）と、写真の実バイナリ自体をキャッシュするかどうかをユーザーに確認し、「バックエンドの取り込みパイプラインのみ、メタデータ保存まで（バイナリキャッシュは表示機能実装時に別途行う）」というスコープで合意を得た。
+  - `PhotoIngestService`が、fileId指定でGoogle Driveからzipをダウンロード（既存の`GoogleDriveAuthService`/`GoogleDriveApiClient`を再利用）→zip展開（`adm-zip`）→写真とJSONサイドカーの紐付け→撮影日時・位置情報の抽出（JSON優先、EXIF直読みへフォールバック、`exifr`）→`photos`テーブルへの保存、という一連のパイプラインをオーケストレーションする。
+  - Google Takeoutのファイル名対応の罠（JSONサイドカー名が46文字制限で`.supplemental-metadata`部分が不規則に切り詰められる、拡張子有無の不一致等、Issue #23コメント記載）に対応するため、`matchPhotosWithJsonSidecars`は単純な完全一致ではなく「写真パスとJSON側（拡張子除去後）のどちらか一方が他方の前方一致になっているか」で判定する緩やかなマッチングとした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/`配下を新規追加: `entities/photo.entity.ts`・`takeout-archive.util.ts`・`takeout-photo-matcher.util.ts`・`takeout-metadata.util.ts`・`photo-ingest.service.ts`・`photos.controller.ts`・`photos.module.ts`・`types/photo-ingest-result.dto.ts`（各`__tests__`含む）。
+    - `backend/src/migrations/1784369772129-CreatePhotos.ts`（新規、`photos`テーブル・GiSTインデックス作成）。マイグレーション自動生成時に混入した無関係な既存差分（`municipalities`のインデックス削除等、Entity定義漏れによる技術的負債）は手動で除去した。
+    - `backend/src/database/database.config.ts`: `PhotoEntity`を登録。
+    - `backend/src/google-drive/google-drive.module.ts`: `GoogleDriveAuthService`/`GoogleDriveApiClient`を`exports`に追加（`PhotosModule`から利用するため）。
+    - `backend/src/app.module.ts`: `PhotosModule`を登録。
+    - `backend/package.json`: `adm-zip`・`exifr`を新規依存として追加（型定義同梱のため`@types/*`の追加は不要）。
+    - 単体テスト（バックエンド、新規25件）・lint・typecheck・実際のアプリ起動確認（全モジュール初期化・ルーティング登録）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（`POST /photos/ingest`は開発者向けの取り込みトリガーであり、Issue本文が要望するユーザー向け機能（地図上表示・サイドバー表示）はまだ実装していないため）。
+  * **設計書**: `designs/technical_design.md`に「位置情報付きメディア表示機能（写真データ取り込み基盤）」章を新規追加。`specs/glossary.md`に「Google Takeout」「取り込み」を追加。
+
 ### [2026-07-18] Issue #67対応として行政区画レイヤーの年代切り替え時の重複表示バグを修正した
 * **修正の動機・概要**:
   - Issue #67「現在以外の行政区画を表示しているとき、現在の行政区画が重複して表示されてしまう」に自律モードで対応した。issue-reviewの各観点には該当しない明確なバグ修正と判断し着手した。
@@ -97,6 +196,25 @@
   * **README.md**: 変更なし。
   * **仕様書**: `specs/system_specification.md`に「## 統計データ表示機能」章を新規追加。`specs/glossary.md`に「統計データ表示ダイアログ」を追加。
   * **設計書**: `designs/technical_design.md`に「# 統計データ表示機能」章を新規追加。
+
+### [2026-07-18] Issue #23対応としてGoogle Drive連携のGCP設定を検証するバックエンドモックを実装した
+* **修正の動機・概要**:
+  - Issue #23のコメントで固まった方針（Google Takeoutの増分エクスポート→Google Drive経由での取り込み、`drive.file`スコープ＋Google Picker API採用、GCP側の設定完了）を踏まえ、実際にバックエンドからDrive APIでファイルを取得できるか（GCP設定が機能しているか）を検証するためのモック実装。ユーザーからの直接依頼により対話モードで着手した。
+  - `StravaAuthService`/`StravaApiClient`（Issue #52でクライアント抽象化済み）と同型の構成（`GoogleDriveAuthService`: アクセストークンのキャッシュ・失効判定・リフレッシュ、`GoogleDriveApiClient`: 生のHTTPアクセスとエラー変換）を踏襲した。GoogleのトークンレスポンスはStravaの`expires_at`（epoch秒）と異なり`expires_in`（有効期間の秒数）を返すため、`GoogleDriveAuthService`側で現在時刻に加算して失効日時を算出する点のみ異なる。
+  - 検証用エンドポイント`GET /google-drive/files/:fileId`を用意し、指定したDriveファイルのメタデータ取得とバイナリダウンロードの両方を行い、メタデータの`size`と実際にダウンロードできたバイト数が一致するか（`sizeMatches`）を返すことで、GCP設定・OAuth・スコープが正しく機能しているかを確認できるようにした。
+  - issue-reviewスキルでのレビューにより「外部サービス連携の認証情報が未整備」という懸念（過去のIssue #23レビューで一度WIPスキップの理由になったもの）を検出。対話モードのため`AskUserQuestion`でユーザーに確認し、`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REFRESH_TOKEN`が必要である旨を提示した上で着手した（実際の値は本対応に含まず、ユーザーが別途`.env`へ設定する）。
+  - 対話モードでの確認により、今回のスコープはバックエンドのみとし、フロントエンドのGoogle Identity Services／Google Picker UIの組み込みは対象外とした。
+  - 実装中、`biome check --write`によるDIコンストラクタ注入importの`import type`誤変換の罠（typescript_rules.md記載、PR #64でも一度発生した既知の問題）が、`google-drive`配下の新規ファイルだけでなく、ディレクトリ全体に対する実行だったため既存の`strava`/`activities`/`municipalities`配下の複数ファイルにも再発した。各ファイルを個別に確認し通常の`import`へ戻すことで解消した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/google-drive/`配下を新規追加: `google-drive.constants.ts`・`google-drive-api.client.ts`・`google-drive-auth.service.ts`・`google-drive-files.service.ts`・`google-drive.controller.ts`・`google-drive.module.ts`・`types/google-drive.type.ts`・`types/google-drive-file-info.dto.ts`（各`__tests__`含む）。
+    - `backend/src/common/errors/google-drive-api.exception.ts`（新規）・`app-error-code.constants.ts`に`GOOGLE_DRIVE_AUTH_FAILED`/`GOOGLE_DRIVE_FILE_NOT_FOUND`/`GOOGLE_DRIVE_RATE_LIMITED`/`GOOGLE_DRIVE_API_ERROR`を追加。
+    - `backend/.env.example`に`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REFRESH_TOKEN`を追加。
+    - `backend/src/app.module.ts`に`GoogleDriveModule`を登録。
+    - 単体テスト（TDD、Red→Green、新規19件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た機能はまだ無く、GCP設定を検証するための内部実装のため）。
+  * **設計書**: 変更なし。フロントエンドのPicker UI・アクティビティ日時に基づく写真検索等を含む本実装が固まった段階で、「写真閲覧機能」の章としてまとめて`designs/technical_design.md`へ反映する方針とした。
 
 ### [2026-07-17] Issue #52対応としてStrava APIクライアントを抽象化した
 * **修正の動機・概要**:

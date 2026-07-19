@@ -1,6 +1,5 @@
 import { Box, Flex } from '@chakra-ui/react';
-import { useEffect, useMemo, useState } from 'react';
-import type { CyclingActivity } from '../api/activitiesApi';
+import { useMemo, useState } from 'react';
 import { createDefaultVisibility } from '../constants/layerDefinitions';
 import { useActivitySelection } from '../hooks/useActivitySelection';
 import { useBackfillProgressFooter } from '../hooks/useBackfillProgressFooter';
@@ -28,23 +27,15 @@ export const MapWorkspace = () => {
   const [visibility, setVisibility] = useState<LayerVisibility>(createDefaultVisibility);
   const [era, setEra] = useState<MunicipalityEra>(MUNICIPALITY_ERA_CURRENT);
   const [filter, setFilter] = useState<ActivityFilter>(DEFAULT_ACTIVITY_FILTER);
+
   const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus();
   const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =
     useBackfillProgressFooter(backfillStatus);
   const { activities } = useCyclingActivities(visibility['bicycle-log']);
+  const { selectedActivities, focusedActivity, selectActivities, focusActivity, clearFocus, clearSelection } =
+    useActivitySelection(activities, filter);
+
   const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
-  const { selectedIds, focusedIndex, selectActivities, focusActivity, clearFocus, clearSelection, pruneToVisible } =
-    useActivitySelection();
-  const visibleIds = useMemo(() => new Set(filteredActivities.map((activity) => activity.id)), [filteredActivities]);
-  // フィルタで除外され地図上に表示されなくなったアクティビティは、選択・フォーカス状態からも取り除く
-  useEffect(() => {
-    pruneToVisible(visibleIds);
-  }, [visibleIds, pruneToVisible]);
-  // selectedIds（クリック順・重複可）と1:1で対応するアクティビティ一覧をサイドバー表示用に組み立てる
-  const selectedActivities = selectedIds
-    .map((id) => activities.find((activity) => activity.id === id))
-    .filter((activity): activity is CyclingActivity => activity !== undefined);
-  const focusedId = focusedIndex === null ? null : (selectedIds[focusedIndex] ?? null);
 
   const handleApplyLayerSettings = (nextVisibility: LayerVisibility, nextEra: MunicipalityEra) => {
     setVisibility(nextVisibility);
@@ -57,8 +48,8 @@ export const MapWorkspace = () => {
         <Box position="relative" flex="1" minHeight="0">
           <MapView
             layerVisibility={visibility}
-            selectedIds={selectedIds}
-            focusedId={focusedId}
+            selectedActivities={selectedActivities}
+            focusedActivity={focusedActivity}
             onSelectActivities={selectActivities}
             filteredActivities={filteredActivities}
             adminBoundaryEra={era}
@@ -87,7 +78,7 @@ export const MapWorkspace = () => {
       </Flex>
       <ActivityDetailSidebar
         activities={selectedActivities}
-        focusedIndex={focusedIndex}
+        focusedActivity={focusedActivity}
         onFocus={focusActivity}
         onBackFromDetail={clearFocus}
         onBackFromList={clearSelection}

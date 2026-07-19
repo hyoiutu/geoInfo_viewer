@@ -56,7 +56,7 @@ root/
 # 自転車ログフィルタリング機能
 - 仕様書記載のフィルタ条件（年月・獲得標高・平均時速・走行距離）はフロントエンドの純粋関数`filterActivities`・バリデーション関数`isActivityFilterValid`（`frontend/src/utils/filterActivities.ts`）で実現する
 - ダイアログの入力中（draft）状態は`FilterDialog`コンポーネント自身が内部stateとして保持し、実際に地図へ適用される状態（`MapWorkspace`が保持する`filter`）とは分離する。ダイアログを開くたびに入力中の内容を現在適用中の内容へリセットし（`isOpen`の変化を検知する`useEffect`）、「実行」を押したときのみ`onApply(draftFilter)`で確定値を通知する（Issue #53。以前は`useActivityFilter`フックが`MapWorkspace`側でこのdraft管理を担っていたが、ダイアログ自身の内部関心事として`FilterDialog`へ移した）
-- フィルタで除外され地図上に表示されなくなったアクティビティの選択・フォーカス解除は、`useActivitySelection`の`pruneToVisible(visibleIds)`で実現する。`MapWorkspace`がフィルタ適用後の表示対象ID集合を`useMemo`で求め、変化のたびに`pruneToVisible`を呼ぶ
+- フィルタで除外され地図上に表示されなくなったアクティビティの選択・フォーカス解除は、`useActivitySelection(activities, filter)`が内部で完結させる。フックが`filter`を直接受け取り表示対象ID集合を`useMemo`で求め、変化のたびに内部の`useEffect`で選択・フォーカスから取り除く（`MapWorkspace`側からの明示的な呼び出しは不要。PR #69レビュー対応）
 - `filterActivities`の呼び出し（フィルタ計算そのもの）は`MapWorkspace`側で1回だけ行い、結果（`filteredActivities`）を`MapView`へpropsで渡す。以前は`MapView`（`filteredActivities`算出用）と`MapWorkspace`（`visibleIds`算出用）の双方が独立して`filterActivities`を呼んでいたが、Issue #58で一本化し、`MapView`は受け取った`filteredActivities`をそのまま地図描画・選択レイヤー反映・スタートゴールマーカーの算出に使うだけになった
 
 # 自転車ログバックフィル機能
@@ -66,8 +66,9 @@ root/
 - GPSルートの無い（手動記録等の）アクティビティを「未取得」と誤判定しないよう、詳細取得が完了した時刻（`detailFetchedAt`）を保持する列を設け、この列の有無で取得済みかどうかを判別する（軌跡データ自体の有無では判別しない）
 
 # アクティビティ詳細閲覧機能
-- 自転車ログの線は太さ3pxと細く正確なクリックが難しいため、クリック地点を中心とした10px四方（片側5px）のバウンディングボックス内に描画されているアクティビティをヒットテストで検出する（`registerBicycleLogClickHandler`、`MapView.tsx`）
+- 自転車ログの線は太さ3pxと細く正確なクリックが難しいため、クリック地点を中心とした10px四方（片側5px）のバウンディングボックス内に描画されているアクティビティをヒットテストで検出する（`registerBicycleLogClickHandler`、`frontend/src/utils/mapLayerInteraction.ts`）
 - 選択中・フォーカス中のアクティビティの描画は、通常・選択用・フォーカス用の3つの独立したGeoJSONソース・レイヤーを用意し、追加した順（＝描画順）で「通常 < 選択中 < フォーカス中」の手前関係を実現する（`applySelectionLayers`）
+- `registerBicycleLogClickHandler`・`applySelectionLayers`・`applyStartGoalMarkers`（スタート・ゴールマーカー算出）・`applyLayerVisibility`（レイヤー可視性反映）は、いずれも`maplibregl.Map`インスタンスを直接操作する地図操作の純粋関数（Reactの状態やJSXを持たない）であるため、`MapView.tsx`（コンポーネント本体）から`mapLayerInteraction.ts`（`addAerialPhotoLayer`等のレイヤー追加処理を持つ`mapLayerSetup.ts`と対になる、地図の状態反映を担う受け皿）へ切り出した。`MapView.tsx`にはReactのライフサイクル（`useEffect`での呼び出しタイミング制御）との接続のみを残す（PR #71レビュー対応）
 - スタート・ゴールマーカーは`lucide-react`のアイコン（スタート: `Play`、ゴール: `Flag`）を`react-dom/server`の`renderToStaticMarkup`で静的にレンダリングし、`maplibregl.Marker`のDOM要素として表示する（`createStartMarkerElement`/`createGoalMarkerElement`）
   - 開始地点と終了地点が同じ座標の場合に手前へ描画されるよう、ゴールのマーカーを先に、スタートのマーカーを後に地図へ追加する（MapLibreの`Marker`はDOM要素として描画されるため、後から追加した方がDOM上で後に来ることを利用している）
 
@@ -86,7 +87,7 @@ root/
 - 過去の行政区画（`era !== 'current'`）はベクトルタイルに存在しないため、`GET /municipalities/boundaries?era=...`（`MunicipalitiesController.getBoundaries`、新規）がDBの`municipalities`テーブルから該当年代のポリゴンをGeoJSON `FeatureCollection`として返す。フロントエンドはこれをMapLibreのGeoJSONソース（`admin-boundary-historical-source`）へ`setData`し、塗り（`fill`、視認性を優先し不透明度0.05の薄い塗り）・線（`line`、現行の市町村境界と同じ配色・破線パターン）・ラベル（`symbol`、`municipalityName`プロパティをテキストフィールドとし既存OSM地名ラベルと同じ配色）の3レイヤーとして描画する（`addAdminBoundaryHistoricalLayer`/`applyAdminBoundaryHistoricalData`、`frontend/src/utils/mapLayerSetup.ts`）
   - 塗り・線・ラベルの3レイヤーいずれにも、現行の市町村境界（`admin-boundary-municipality`）と同じ`ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM`（`minzoom`）を設定し、低ズームでの過密表示・不要な計算を避ける（PR #62レビュー対応。実機確認でズームアウトしても行政区画の計算が継続する点が指摘された）
 - 取得したGeoJSONは年代ごとに`MapView`内の`Map<MunicipalityEra, FeatureCollection>`（`historicalBoundariesCacheRef`）へキャッシュし、同じ年代へ再度切り替えた際の再取得を避ける
-- `resolveStyleLayerIds`（`frontend/src/utils/mapLayerCategory.ts`）はadmin-boundaryレイヤーがONのとき選択中の年代（現行/過去）に対応するレイヤー群のみを返す設計だが、これだけでは「選択されていない方の年代のレイヤー群」を非表示にする処理が無く、年代を切り替えると直前に表示していた方のレイヤーが残ってしまう不具合があった（Issue #67）。`resolveUnusedAdminBoundaryLayerIds`（同ファイル、選択中の年代の逆側のレイヤーID一覧を返す）を追加し、`MapView`の`applyLayerVisibility`が行政区画レイヤーのON/OFFに関わらず常にこれらを非表示にすることで解消した
+- `resolveStyleLayerIds`（`frontend/src/utils/mapLayerCategory.ts`）はadmin-boundaryレイヤーがONのとき選択中の年代（現行/過去）に対応するレイヤー群のみを返す設計だが、これだけでは「選択されていない方の年代のレイヤー群」を非表示にする処理が無く、年代を切り替えると直前に表示していた方のレイヤーが残ってしまう不具合があった（Issue #67）。`resolveUnusedAdminBoundaryLayerIds`（同ファイル、選択中の年代の逆側のレイヤーID一覧を返す）を追加し、`applyLayerVisibility`（`frontend/src/utils/mapLayerInteraction.ts`）が行政区画レイヤーのON/OFFに関わらず常にこれらを非表示にすることで解消した
 - レイヤーダイアログの年代選択（プルダウン）は、レイヤーの表示/非表示と同じ`LayerDialog`内部のdraft state（`draftEra`）が管理し、同じ「実行」ボタンのタイミングで確定する（年代選択のためだけの別ダイアログ・別コンポーネントを設けていない）
 - 選択中の年代は`MapWorkspace`から`MapView`（描画用）・`ActivityDetailSidebar`（通過自治体の判定用、`usePassedMunicipalities`経由）の両方へ`adminBoundaryEra`として渡される
 - 2026-07時点で投入済みの年代は`current`（2023-01-01）・`2000-10-01`（平成の大合併前）・`1950-10-01`（昭和の大合併前）・`1920-01-01`（大正時代）の4つで、Issue #34が要望する全年代の投入が完了している
@@ -111,3 +112,24 @@ root/
 - 集計対象は、`MapView`がバックエンドから取得した全アクティビティ一覧（`MapWorkspace`の`activities`state。フィルタ適用前）であり、地図上の表示フィルタ（`appliedFilter`）は適用しない。仕様書の「全アクティビティ数」「全アクティビティの総走行距離数」がフィルタに関わらず不変の集計値であるため
 - 集計・整形処理は純粋関数`toActivityStatisticsView`（`frontend/src/utils/activityStatistics.ts`）が担う。`toActivityDetailView`（アクティビティ詳細表示、`activityDetailView.ts`）と同じ「メートル→km変換・小数第1位フォーマット」のパターンを踏襲し、`distanceMeters`の合計を`reduce`で算出する
 - `MapControls`に4つ目のアイコンボタン（`lucide-react`の`ChartColumn`、aria-label「統計データ」）を追加する。既存のレイヤー・フィルタ・設定アイコンと同じ`IconButton`（`borderRadius="full" shadow="md"`）のスタイルを踏襲する
+
+# 位置情報付きメディア表示機能（写真データ取り込み基盤）
+Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの直接連携ではなくGoogle Takeout（増分エクスポート）＋Google Drive経由の取り込み方式を採用した（詳細な調査経緯・GCP設定はIssue #23のコメント参照）。以下は、写真閲覧機能そのもの（地図上の吹き出し表示・サイドバーのグリッド表示、いずれも未実装）の前段として、Google Drive上のTakeoutエクスポート（zip）から写真のメタデータをバックエンドのDBへ取り込むパイプラインの設計である。
+
+- 取り込みは`POST /photos/ingest`（`PhotosController`、リクエストボディ`{ fileId: string }`）で、ユーザーがブラウザ上のGoogle Picker UIで選択したTakeout zipのGoogle Drive上のfileIdをトリガーとして受け取る想定（Picker UI自体は未実装。現時点ではfileIdを直接指定して動作確認する）
+- 当初は「マスターデータ（Takeout zip）はDriveに置いたまま、表示時に必要になった写真だけをローカルへ遅延キャッシュする」設計方針だったが、実データ検証により1つのTakeout zip（最大2GB）に14年分の写真が撮影時期を問わず分散して含まれることが判明し、この方式では1回の表示のために複数の巨大zipをダウンロードする必要が生じ非現実的と判断した。そのため、取り込み時にTakeout zipの写真を撮影年月ごとに再構成した別zip（月別アーカイブ）へ振り分けてGoogle Drive上に保存し直す方式へ変更した（Issue #23）。取り込みと月別再構成は1つのパイプライン（`PhotoIngestService.ingest`）内で行う
+- `PhotoIngestService`が以下の順でオーケストレーションを行う（`backend/src/photos/`）
+  1. `GoogleDriveAuthService`/`GoogleDriveApiClient`（`backend/src/google-drive/`、Issue #23で実装済み）でアクセストークンを取得し、指定fileIdのTakeout zip本体をダウンロードする
+  2. `extractTakeoutArchive`（`takeout-archive.util.ts`）が、`adm-zip`でzipをメモリ上に展開し、拡張子`.json`のJSONサイドカーとそれ以外の写真本体エントリへ分類する
+  3. `matchPhotosWithJsonSidecars`（`takeout-photo-matcher.util.ts`）が、各写真本体に対応するJSONサイドカーを紐付ける。Google Takeoutのファイル名対応の罠（サイドカーのファイル名が46文字制限で`.supplemental-metadata`部分が`.supple`等へ不規則に切り詰められる、拡張子有無の不一致等）に対応するため、単純な完全一致ではなく「写真パスとJSON側（`.json`拡張子を除いたベース名）のどちらか一方が他方の前方一致になっているか」で判定し、複数候補があれば最も長く一致するものを選ぶ緩やかなマッチングを行う。対応するJSONが見つからない場合は`json: null`を返す
+  4. `extractMetadataFromJson`/`extractMetadataFromExif`（`takeout-metadata.util.ts`）が、JSONサイドカー優先・見つからない（またはJSONの中身が不正・`photoTakenTime`欠落）場合は写真本体のEXIF直読み（`exifr`ライブラリ）へフォールバックし、撮影日時（`takenAt`）・位置情報（`location`、GeoJSON Point）を抽出する。Google Takeoutの位置情報無し写真は`latitude`/`longitude`が両方`0.0`になる仕様のため、その場合は`location: null`として扱う。撮影日時が取得できない写真はこの時点でスキップし、`skippedCount`としてレスポンスに含める
+  5. `groupPhotosByYearMonth`（`group-photos-by-year-month.util.ts`）が、撮影日時が取得できた写真を`takenAt`（UTC基準）の年月（`YYYY-MM`）ごとにグループ分けする
+  6. `MonthlyPhotoArchiveService.reorganize`が、年月グループごとに以下を行う
+     - `monthly_photo_archives`テーブルを年月で検索し、対応する月別アーカイブが既存か確認する
+     - 既存の場合は`GoogleDriveApiClient.downloadFile`でその月別アーカイブzipをダウンロードし、無ければ新規（未作成）として扱う
+     - `mergeMonthlyArchive`（`monthly-archive.util.ts`）が、ダウンロードした（または空の）zipへ当該年月の新規写真を追記する。zip内の配置はTakeout側のディレクトリ構造を捨てファイル名（basename）のみを使い、異なる元zip由来で同名ファイルが衝突する場合は拡張子の直前へ連番（`-2`, `-3`, ...）を付けて回避する
+     - 既存アーカイブが無い場合は`GoogleDriveApiClient.createFileMetadata`で新規zipファイルを作成し、`monthly_photo_archives`テーブルへ`year_month`・`drive_file_id`の対応を保存する。既存・新規いずれの場合も`GoogleDriveApiClient.updateFileContent`でzip本体をアップロードする
+  7. 振り分け結果（各写真の月別アーカイブ上の`drive_file_id`・エントリパス）をもとに`PhotoEntity`を組み立て、`photos`テーブルへ保存する
+- `photos`テーブル（`backend/src/photos/entities/photo.entity.ts`、マイグレーション`1784369772129-CreatePhotos`）は、写真の実バイナリ自体は保存せず、`file_name`・`taken_at`・`location`（`geometry(Point, 4326)`、PostGIS）・`source_file_id`・`archive_path`のみを保持する。月別再構成後は`source_file_id`は元のTakeout zipではなく振り分け先の月別アーカイブzipのGoogle Drive fileIdを指し、`archive_path`はその月別アーカイブ内でのエントリパスを指す。実際に表示時に必要になった写真は、`source_file_id`が示す月別アーカイブ（元のTakeout zipより粒度が細かく、対象期間の写真のみを含む）を再ダウンロードして`archive_path`のエントリを取り出すことで遅延取得する想定
+- `monthly_photo_archives`テーブル（`backend/src/photos/entities/monthly-photo-archive.entity.ts`、マイグレーション`1784388784983-CreateMonthlyPhotoArchives`）は、撮影年月（`year_month`、`YYYY-MM`形式・一意制約あり）ごとに、対応する月別アーカイブzipのGoogle Drive fileId（`drive_file_id`）を保持する。取り込みパイプラインが、ある年月の写真を追記する際に既存アーカイブへ追記すべきか新規作成すべきかを判定するために参照する
+- 「アクティビティの開始・終了日時で写真を検索する」（Issue本文）は、この`photos`テーブルの`taken_at`に対するクエリとして実現する想定だが、検索API自体は未実装（次のステップ）

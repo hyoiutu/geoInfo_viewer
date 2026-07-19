@@ -31,7 +31,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     const { container } = renderWithChakra(
       <ActivityDetailSidebar
         activities={[]}
-        focusedIndex={null}
+        focusedActivity={null}
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
@@ -50,7 +50,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     renderWithChakra(
       <ActivityDetailSidebar
         activities={activities}
-        focusedIndex={null}
+        focusedActivity={null}
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
@@ -68,7 +68,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     renderWithChakra(
       <ActivityDetailSidebar
         activities={activities}
-        focusedIndex={null}
+        focusedActivity={null}
         onFocus={onFocus}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
@@ -85,7 +85,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     renderWithChakra(
       <ActivityDetailSidebar
         activities={[createActivity({})]}
-        focusedIndex={null}
+        focusedActivity={null}
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={onBackFromList}
@@ -109,7 +109,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     renderWithChakra(
       <ActivityDetailSidebar
         activities={[activity]}
-        focusedIndex={0}
+        focusedActivity={activity}
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
@@ -124,11 +124,12 @@ describe('ActivityDetailSidebarに関するテスト', () => {
 
   test('詳細画面の戻るボタンを押すと、onBackFromDetailが呼ばれる', () => {
     const onBackFromDetail = vi.fn();
+    const activity = createActivity({});
 
     renderWithChakra(
       <ActivityDetailSidebar
-        activities={[createActivity({})]}
-        focusedIndex={0}
+        activities={[activity]}
+        focusedActivity={activity}
         onFocus={vi.fn()}
         onBackFromDetail={onBackFromDetail}
         onBackFromList={vi.fn()}
@@ -149,7 +150,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     renderWithChakra(
       <ActivityDetailSidebar
         activities={[activity]}
-        focusedIndex={0}
+        focusedActivity={activity}
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
@@ -169,7 +170,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     renderWithChakra(
       <ActivityDetailSidebar
         activities={[activity]}
-        focusedIndex={0}
+        focusedActivity={activity}
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
@@ -182,11 +183,12 @@ describe('ActivityDetailSidebarに関するテスト', () => {
 
   test('通過自治体が無い場合、その旨を表示する', async () => {
     vi.mocked(fetchPassedMunicipalities).mockResolvedValue([]);
+    const activity = createActivity({});
 
     renderWithChakra(
       <ActivityDetailSidebar
-        activities={[createActivity({})]}
-        focusedIndex={0}
+        activities={[activity]}
+        focusedActivity={activity}
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
@@ -200,12 +202,13 @@ describe('ActivityDetailSidebarに関するテスト', () => {
 
   test('通過自治体の取得に失敗した場合、グローバルなエラースタックに追加される', async () => {
     vi.mocked(fetchPassedMunicipalities).mockRejectedValue(new Error('fetch failed'));
+    const activity = createActivity({});
 
     renderWithChakra(
       <>
         <ActivityDetailSidebar
-          activities={[createActivity({})]}
-          focusedIndex={0}
+          activities={[activity]}
+          focusedActivity={activity}
           onFocus={vi.fn()}
           onBackFromDetail={vi.fn()}
           onBackFromList={vi.fn()}
