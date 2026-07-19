@@ -14,7 +14,12 @@ import {
   BICYCLE_LOG_SELECTED_LAYER_ID
 } from '../../constants/bicycleLog';
 import type { CategorizedLayerIds } from '../../types/layer';
-import { categorizeStyleLayer, groupLayerIdsByCategory, resolveStyleLayerIds } from '../mapLayerCategory';
+import {
+  categorizeStyleLayer,
+  groupLayerIdsByCategory,
+  resolveStyleLayerIds,
+  resolveUnusedAdminBoundaryLayerIds
+} from '../mapLayerCategory';
 
 const createLayer = (id: string, type: LayerSpecification['type'], sourceLayer?: string): LayerSpecification => {
   // categorizeStyleLayerはid・type・source-layerのみ参照するため、LayerSpecification（type別の
@@ -250,5 +255,33 @@ describe('resolveStyleLayerIdsに関するテスト', () => {
     const result = resolveStyleLayerIds('osm-road', SampleCategorizedLayerIds, 'current');
 
     expect(result).toEqual(['road_motorway']);
+  });
+});
+
+describe('resolveUnusedAdminBoundaryLayerIdsに関するテスト', () => {
+  const SampleCategorizedLayerIds: CategorizedLayerIds = {
+    'osm-poi': ['poi_r1'],
+    'osm-road': ['road_motorway'],
+    'osm-building': ['building'],
+    'osm-place-name': ['label_country_1'],
+    'admin-boundary': ['boundary_3', 'label_city'],
+    'aerial-photo': [],
+    'bicycle-log': []
+  };
+
+  test('年代がcurrentのとき、過去年代用の塗り・線・ラベルレイヤーIDを返す', () => {
+    const result = resolveUnusedAdminBoundaryLayerIds(SampleCategorizedLayerIds, 'current');
+
+    expect(result).toEqual([
+      ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+      ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+      ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID
+    ]);
+  });
+
+  test('年代がcurrent以外のとき、現行の行政区画レイヤーIDを返す', () => {
+    const result = resolveUnusedAdminBoundaryLayerIds(SampleCategorizedLayerIds, '2000-10-01');
+
+    expect(result).toEqual(['boundary_3', 'label_city', ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID]);
   });
 });

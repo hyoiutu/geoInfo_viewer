@@ -14,6 +14,20 @@
 
 ## 変更履歴
 
+### [2026-07-20] PR #72（Issue #67）とPR #71（mapLayerInteraction切り出し）のマージコンフリクトを解消した
+* **修正の動機・概要**:
+  - finish-reviewスキルでPR #72（Issue #67「行政区画レイヤーの年代切り替え時の重複表示バグ」修正、`MapView.tsx`内の`applyLayerVisibility`へ`resolveUnusedAdminBoundaryLayerIds`呼び出しを追加する内容）のブランチへ最新mainを取り込んだところ、PR #71のレビュー対応（`applyLayerVisibility`を`MapView.tsx`から`mapLayerInteraction.ts`へ切り出し）と同一関数を独立に変更していたため、`frontend/src/components/MapView.tsx`でコンフリクトが発生した。
+  - `applyLayerVisibility`の実体は`mapLayerInteraction.ts`側に既に移設済みだったため、PR #72の修正内容（`resolveUnusedAdminBoundaryLayerIds`の呼び出し）を`MapView.tsx`ではなく移設先の`mapLayerInteraction.ts`の`applyLayerVisibility`へ手動で統合した。既存の`mapLayerInteraction.tests.ts`にも同じ観点の単体テストを追加した（TDDでRed確認後、統合してGreen確認）。PR #72が`MapView.tests.tsx`へ追加していた2件の統合テストは自動マージで保持され、そのままGreenであることを確認した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/mapLayerInteraction.ts`: `applyLayerVisibility`に`resolveUnusedAdminBoundaryLayerIds`を使った非選択年代レイヤーの非表示化処理を追加。
+    - `frontend/src/utils/__tests__/mapLayerInteraction.tests.ts`: 上記の単体テストを2件追加。
+    - `frontend/src/components/MapView.tsx`: コンフリクト解消（`mapLayerInteraction.ts`からのimportを正としてローカル関数定義を除去）。
+    - 単体テスト（フロントエンド全30ファイル254件・バックエンド全36ファイル206件）・lint・typecheck・E2Eテスト（4件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし。
+  * **設計書**: `designs/technical_design.md`の「行政区画レイヤー（年代選択）」章の記述を、`applyLayerVisibility`の現在の所在（`mapLayerInteraction.ts`）に合わせて更新。
+
 ### [2026-07-19] PR #71レビュー対応としてMapViewの地図操作関数をmapLayerInteraction.tsへ切り出した
 * **修正の動機・概要**:
   - PR #71のレビューコメントで、(1) `MapView.tsx`のHooks記述順序がreact_rules.mdの規約（useState→useRef→カスタムフック→useEffectの順）に沿っていない、(2) `registerBicycleLogClickHandler`/`applySelectionLayers`/`applyStartGoalMarkers`/`applyLayerVisibility`という地図操作の純粋関数がコンポーネントファイルに残っており、design_principles.mdのSRP原則（コンポーネントファイルには表示に関する関数・TSXのみを置く）に照らして`mapLayerSetup.ts`と同様の受け皿へ切り出す余地がある、という2件の指摘を受けた。
@@ -98,6 +112,20 @@
   * **README.md**: 変更なし。
   * **仕様書**: 変更なし（`POST /photos/ingest`は開発者向けの取り込みトリガーであり、Issue本文が要望するユーザー向け機能（地図上表示・サイドバー表示）はまだ実装していないため）。
   * **設計書**: `designs/technical_design.md`に「位置情報付きメディア表示機能（写真データ取り込み基盤）」章を新規追加。`specs/glossary.md`に「Google Takeout」「取り込み」を追加。
+
+### [2026-07-18] Issue #67対応として行政区画レイヤーの年代切り替え時の重複表示バグを修正した
+* **修正の動機・概要**:
+  - Issue #67「現在以外の行政区画を表示しているとき、現在の行政区画が重複して表示されてしまう」に自律モードで対応した。issue-reviewの各観点には該当しない明確なバグ修正と判断し着手した。
+  - 原因: `resolveStyleLayerIds`（`mapLayerCategory.ts`）はadmin-boundaryレイヤーがONのとき選択中の年代（現行/過去）に対応するレイヤー群のみを返す設計だったが、`MapView`の`applyLayerVisibility`はこの返り値だけを頼りにvisibilityを設定していたため、「選択されていない方の年代のレイヤー群」を非表示にする処理が無かった。年代を切り替えると、直前に表示していた方のレイヤーのvisibility状態がそのまま残り、現行と過去年代の行政区画が重複して表示されていた。
+  - `resolveUnusedAdminBoundaryLayerIds`（新規、選択中の年代の逆側のレイヤーID一覧を返す純粋関数）を追加し、`applyLayerVisibility`が行政区画レイヤーのON/OFFに関わらず常にこれらのレイヤーを非表示にするよう修正した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/mapLayerCategory.ts`: `resolveUnusedAdminBoundaryLayerIds`（新規）を追加。
+    - `frontend/src/components/MapView.tsx`: `applyLayerVisibility`に非選択年代レイヤーの非表示化処理を追加。
+    - 単体テスト（フロントエンド、新規4件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`のレイヤ一覧表示機能の行政区画項目に「選択した年代の行政区画のみが表示され、それ以外の年代（現在を含む）の行政区画は表示されない」を明記（従来は年代を選べることのみ記載され、排他的に表示されることは明記されていなかった）。
+  * **設計書**: `designs/technical_design.md`の「行政区画レイヤー（年代選択）」章に、バグの原因と`resolveUnusedAdminBoundaryLayerIds`追加の経緯を追記。
 
 ### [2026-07-18] Issue #58対応としてMapViewの責務の広さを見直した
 * **修正の動機・概要**:

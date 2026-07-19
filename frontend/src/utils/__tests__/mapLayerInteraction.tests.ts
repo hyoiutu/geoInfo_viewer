@@ -2,6 +2,12 @@ import type maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity } from '../../api/activitiesApi';
 import {
+  ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
+  ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+  ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID
+} from '../../constants/adminBoundary';
+import {
   BICYCLE_LOG_FOCUSED_LAYER_ID,
   BICYCLE_LOG_FOCUSED_SOURCE_ID,
   BICYCLE_LOG_LAYER_ID,
@@ -224,5 +230,35 @@ describe('applyLayerVisibilityに関するテスト', () => {
     applyLayerVisibility(asMap(mapMock), categorizedLayerIds, { ...AllOnVisibility, 'osm-poi': false }, 'current');
 
     expect(mapMock.setLayoutProperty).toHaveBeenCalledWith('poi_r1', 'visibility', 'none');
+  });
+
+  test('adminBoundaryEraがcurrentのとき、過去年代用のレイヤーが常に非表示になる', () => {
+    const mapMock = createMapMock();
+
+    applyLayerVisibility(asMap(mapMock), categorizedLayerIds, AllOnVisibility, 'current');
+
+    expect(mapMock.setLayoutProperty).toHaveBeenCalledWith(
+      ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+      'visibility',
+      'none'
+    );
+    expect(mapMock.setLayoutProperty).toHaveBeenCalledWith(
+      ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+      'visibility',
+      'none'
+    );
+    expect(mapMock.setLayoutProperty).toHaveBeenCalledWith(
+      ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
+      'visibility',
+      'none'
+    );
+  });
+
+  test('adminBoundaryEraが過去年代のとき、現行の行政区画レイヤーが常に非表示になる', () => {
+    const mapMock = createMapMock();
+
+    applyLayerVisibility(asMap(mapMock), categorizedLayerIds, AllOnVisibility, '2000-10-01');
+
+    expect(mapMock.setLayoutProperty).toHaveBeenCalledWith(ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID, 'visibility', 'none');
   });
 });

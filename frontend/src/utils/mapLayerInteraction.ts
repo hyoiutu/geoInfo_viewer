@@ -11,7 +11,7 @@ import {
 import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
 import { cyclingActivityToGeoJson } from './cyclingActivityToGeoJson';
-import { resolveStyleLayerIds } from './mapLayerCategory';
+import { resolveStyleLayerIds, resolveUnusedAdminBoundaryLayerIds } from './mapLayerCategory';
 import { createGoalMarkerElement, createStartMarkerElement } from './startGoalMarkerElement';
 import { typedEntries } from './typedObject';
 
@@ -147,5 +147,12 @@ export const applyLayerVisibility = (
     for (const styleLayerId of styleLayerIds) {
       map.setLayoutProperty(styleLayerId, 'visibility', visibility);
     }
+  }
+
+  // admin-boundaryは選択中の年代（current/過去）によって現行・過去年代いずれかのレイヤー群のみを使うため、
+  // 選択されていない方の年代のレイヤー群は行政区画レイヤーのON/OFFに関わらず常に非表示にする（Issue #67）
+  const unusedAdminBoundaryLayerIds = resolveUnusedAdminBoundaryLayerIds(categorizedLayerIds, adminBoundaryEra);
+  for (const styleLayerId of unusedAdminBoundaryLayerIds) {
+    map.setLayoutProperty(styleLayerId, 'visibility', HIDDEN_VALUE);
   }
 };

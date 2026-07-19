@@ -130,3 +130,25 @@ export const resolveStyleLayerIds = (
   }
   return categorizedLayerIds[layerId];
 };
+
+/**
+ * 選択中の行政区画の年代では使用しない（表示に使わない）方のレイヤーID一覧を求める。
+ * admin-boundaryは選択中の年代によって現行/過去年代のいずれかのレイヤー群のみを使うため、
+ * 使わない方は行政区画レイヤーのON/OFFに関わらず常に非表示にする必要がある（Issue #67）
+ * @param categorizedLayerIds カテゴリごとに分類されたスタイルレイヤーIDの一覧
+ * @param adminBoundaryEra 選択中の行政区画の年代識別子
+ * @returns 選択中の年代では使用しない方のスタイルレイヤーIDの配列
+ */
+export const resolveUnusedAdminBoundaryLayerIds = (
+  categorizedLayerIds: CategorizedLayerIds,
+  adminBoundaryEra: MunicipalityEra
+): string[] => {
+  if (adminBoundaryEra === MUNICIPALITY_ERA_CURRENT) {
+    return [
+      ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
+      ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+      ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID
+    ];
+  }
+  return [...categorizedLayerIds['admin-boundary'], ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID];
+};

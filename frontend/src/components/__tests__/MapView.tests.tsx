@@ -314,6 +314,38 @@ describe('MapViewに関するテスト', () => {
     expect(fetchMunicipalityBoundaries).not.toHaveBeenCalled();
   });
 
+  test('adminBoundaryEraがcurrentから過去年代に変化したとき、現行の行政区画レイヤーが非表示になる', () => {
+    const { rerender } = renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
+    const mapInstance = getMapInstance();
+    mapInstance.setLayoutProperty.mockClear();
+
+    rerender(
+      <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} adminBoundaryEra="2000-10-01" />
+    );
+
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('boundary_3', 'visibility', 'none');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('label_city', 'visibility', 'none');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith(
+      ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
+      'visibility',
+      'none'
+    );
+  });
+
+  test('adminBoundaryEraが過去年代からcurrentに変化したとき、過去年代用のレイヤーが非表示になる', () => {
+    const { rerender } = renderWithChakra(
+      <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} adminBoundaryEra="2000-10-01" />
+    );
+    const mapInstance = getMapInstance();
+    mapInstance.setLayoutProperty.mockClear();
+
+    rerender(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} adminBoundaryEra="current" />);
+
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('admin-boundary-historical-fill', 'visibility', 'none');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('admin-boundary-historical-line', 'visibility', 'none');
+    expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('admin-boundary-historical-label', 'visibility', 'none');
+  });
+
   test('スタイルロード時、OFFのカテゴリに属するレイヤーはvisibility:noneになる', () => {
     renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
     const mapInstance = getMapInstance();
