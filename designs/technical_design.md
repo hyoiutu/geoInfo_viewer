@@ -66,8 +66,9 @@ root/
 - GPSルートの無い（手動記録等の）アクティビティを「未取得」と誤判定しないよう、詳細取得が完了した時刻（`detailFetchedAt`）を保持する列を設け、この列の有無で取得済みかどうかを判別する（軌跡データ自体の有無では判別しない）
 
 # アクティビティ詳細閲覧機能
-- 自転車ログの線は太さ3pxと細く正確なクリックが難しいため、クリック地点を中心とした10px四方（片側5px）のバウンディングボックス内に描画されているアクティビティをヒットテストで検出する（`registerBicycleLogClickHandler`、`MapView.tsx`）
+- 自転車ログの線は太さ3pxと細く正確なクリックが難しいため、クリック地点を中心とした10px四方（片側5px）のバウンディングボックス内に描画されているアクティビティをヒットテストで検出する（`registerBicycleLogClickHandler`、`frontend/src/utils/mapLayerInteraction.ts`）
 - 選択中・フォーカス中のアクティビティの描画は、通常・選択用・フォーカス用の3つの独立したGeoJSONソース・レイヤーを用意し、追加した順（＝描画順）で「通常 < 選択中 < フォーカス中」の手前関係を実現する（`applySelectionLayers`）
+- `registerBicycleLogClickHandler`・`applySelectionLayers`・`applyStartGoalMarkers`（スタート・ゴールマーカー算出）・`applyLayerVisibility`（レイヤー可視性反映）は、いずれも`maplibregl.Map`インスタンスを直接操作する地図操作の純粋関数（Reactの状態やJSXを持たない）であるため、`MapView.tsx`（コンポーネント本体）から`mapLayerInteraction.ts`（`addAerialPhotoLayer`等のレイヤー追加処理を持つ`mapLayerSetup.ts`と対になる、地図の状態反映を担う受け皿）へ切り出した。`MapView.tsx`にはReactのライフサイクル（`useEffect`での呼び出しタイミング制御）との接続のみを残す（PR #71レビュー対応）
 - スタート・ゴールマーカーは`lucide-react`のアイコン（スタート: `Play`、ゴール: `Flag`）を`react-dom/server`の`renderToStaticMarkup`で静的にレンダリングし、`maplibregl.Marker`のDOM要素として表示する（`createStartMarkerElement`/`createGoalMarkerElement`）
   - 開始地点と終了地点が同じ座標の場合に手前へ描画されるよう、ゴールのマーカーを先に、スタートのマーカーを後に地図へ追加する（MapLibreの`Marker`はDOM要素として描画されるため、後から追加した方がDOM上で後に来ることを利用している）
 

@@ -224,6 +224,7 @@ classDiagram
 - PR #55のレビュー対応として、`LayerDialog`・`SettingsDialog`・`FilterDialog`・`ErrorDialog`が共通して持っていたChakra UIの`Dialog.Root`/`Backdrop`/`Positioner`/`Content`等のラッパー構造を`AppDialog`（新規）へ切り出した。各ダイアログはJSXのネスト深さが1階層に集約され、`check-file-size.mjs`（design_principles.md参照）が検出していた`LayerDialog`のネスト深さ超過も解消された。
 - `layerVisibility`・`selectedActivities`/`focusedActivity`・`filter`は、現時点では`MapWorkspace`から直接の子コンポーネントへ渡されるのみで、深いバケツリレーは発生していない。
 - `useActivitySelection`は`activities`・`filter`を引数に取り、選択中IDからアクティビティ本体への変換をフック内部で完結させる。これにより`MapWorkspace`・`MapView`・`ActivityDetailSidebar`がそれぞれ個別にID→アクティビティの変換を行う重複が無くなり、各コンポーネントは`selectedActivities`/`focusedActivity`（アクティビティ本体）を直接受け取る（PR #69レビュー対応。ID解決を各所で重複させず1箇所に集約する設計判断は[react_rules.md](../react_rules.md)の「複数の子孫が同じ状態を必要とする場合、状態取得フックは共通の親で呼ぶ」の応用）。`MapView`が地図描画用に保持する`findActivityById`によるID引き当ても不要になり削除した。
+- `MapView`が持っていた地図操作の純粋関数（`registerBicycleLogClickHandler`・`applySelectionLayers`・`applyStartGoalMarkers`・`applyLayerVisibility`）は、design_principles.mdのSRP原則（コンポーネントファイルには表示に関する関数・TSXのみを置く）に照らし`frontend/src/utils/mapLayerInteraction.ts`（新規）へ切り出した。既存の`mapLayerSetup.ts`（レイヤーの追加処理）と対になる、地図の状態反映を担うモジュールである（PR #71レビュー対応）。
 
 ## 設計上の改善提案
 

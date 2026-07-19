@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-07-19] PR #71レビュー対応としてMapViewの地図操作関数をmapLayerInteraction.tsへ切り出した
+* **修正の動機・概要**:
+  - PR #71のレビューコメントで、(1) `MapView.tsx`のHooks記述順序がreact_rules.mdの規約（useState→useRef→カスタムフック→useEffectの順）に沿っていない、(2) `registerBicycleLogClickHandler`/`applySelectionLayers`/`applyStartGoalMarkers`/`applyLayerVisibility`という地図操作の純粋関数がコンポーネントファイルに残っており、design_principles.mdのSRP原則（コンポーネントファイルには表示に関する関数・TSXのみを置く）に照らして`mapLayerSetup.ts`と同様の受け皿へ切り出す余地がある、という2件の指摘を受けた。
+  - (1)は`MapView.tsx`のHooks呼び出し順を規約通りに並べ替えて対応した。
+  - (2)は新規ファイル`frontend/src/utils/mapLayerInteraction.ts`を作成し、上記4関数と関連型`StartGoalMarkerEntry`を移設した。既存の`mapLayerSetup.ts`（レイヤーの追加処理）と対になる、地図の状態反映を担うモジュールとして位置づけた。TDD（Red-Green-Refactor）で、新規ファイルへの単体テスト（`mapLayerInteraction.tests.ts`、`maplibregl.Map`の最小限モックを直接渡す形。`mapLayerSetup.tests.ts`と同じパターン）を先に追加しRed確認後、実装を移設してGreen確認した。`MapView.tsx`は残った4関数をimportして`useEffect`から呼び出すのみとなり、Reactのライフサイクルとの接続に責務が絞られた。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/mapLayerInteraction.ts`（新規）: `registerBicycleLogClickHandler`・`applySelectionLayers`・`applyStartGoalMarkers`・`applyLayerVisibility`・`StartGoalMarkerEntry`型を`MapView.tsx`から移設。
+    - `frontend/src/utils/__tests__/mapLayerInteraction.tests.ts`（新規、11件）。
+    - `frontend/src/components/MapView.tsx`: 上記4関数の定義を削除しimportに置き換え、Hooks記述順序（useState→useRef→カスタムフック→useEffect）を規約通りに整理。
+    - 単体テスト（フロントエンド、全30ファイル248件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た挙動に変化のない内部構造のリファクタリングのため）。
+  * **設計書**: `designs/technical_design.md`のアクティビティ詳細閲覧機能の章、`designs/class_diagram.md`の該当箇所を更新。
+
 ### [2026-07-19] PR #69レビュー対応としてuseActivitySelectionのID→アクティビティ変換を一本化した
 * **修正の動機・概要**:
   - PR #69のレビューコメントで、`useActivitySelection`の戻り値`selectedIds`/`focusedIndex`（ID・インデックス）が`MapWorkspace`・`MapView`・`ActivityDetailSidebar`のいずれでも最終的にアクティビティ本体へ変換されており、ID→アクティビティの変換ロジックが複数箇所に重複しているという指摘を受けた。
