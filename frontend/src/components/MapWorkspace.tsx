@@ -25,16 +25,19 @@ export const MapWorkspace = () => {
   const [visibility, setVisibility] = useState<LayerVisibility>(createDefaultVisibility);
   const [era, setEra] = useState<MunicipalityEra>(MUNICIPALITY_ERA_CURRENT);
   const [filter, setFilter] = useState<ActivityFilter>(DEFAULT_ACTIVITY_FILTER);
+  const [activities, setActivities] = useState<CyclingActivity[]>([]);
+
   const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus();
   const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =
     useBackfillProgressFooter(backfillStatus);
-  const [activities, setActivities] = useState<CyclingActivity[]>([]);
   const { selectedIds, focusedIndex, selectActivities, focusActivity, clearFocus, clearSelection, pruneToVisible } =
     useActivitySelection();
+
   const visibleIds = useMemo(
     () => new Set(filterActivities(activities, filter).map((activity) => activity.id)),
     [activities, filter]
   );
+
   // フィルタで除外され地図上に表示されなくなったアクティビティは、選択・フォーカス状態からも取り除く
   useEffect(() => {
     pruneToVisible(visibleIds);

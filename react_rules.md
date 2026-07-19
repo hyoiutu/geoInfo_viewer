@@ -4,6 +4,19 @@
 
 ---
 
+# React Hooksは種類ごとにまとまる順番で書く
+
+コンポーネント本体の先頭で呼び出すHooksは、以下の順番でグルーピングし、種類が変わるごとに1行あける。
+
+1. `useContext`、`useAtom`
+2. `useState`
+3. `useRef`
+4. カスタムフック
+5. `useMemo`、`useCallback`
+6. `useEffect`
+
+同じ種類のHooks呼び出しが複数ある場合はグループ内でまとめる（間に別の種類を挟まない）。カスタムフック同士に依存関係がある場合（例: Aの戻り値をBの引数に渡す）は、その依存順を優先してよい（PR #69レビュー対応）。
+
 # React Hooksの依存配列を無視しない
 
 Biomeの`useExhaustiveDependencies`が自動検出する。依存配列を意図的に省略する場合は、[comment_rules.md](./comment_rules.md)の「biome-ignoreを使用する場合は理由を明記する」に従うこと。
