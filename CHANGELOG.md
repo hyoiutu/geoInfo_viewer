@@ -32,6 +32,25 @@
   * **仕様書**: `specs/system_specification.md`に「## 統計データ表示機能」章を新規追加。`specs/glossary.md`に「統計データ表示ダイアログ」を追加。
   * **設計書**: `designs/technical_design.md`に「# 統計データ表示機能」章を新規追加。
 
+### [2026-07-18] Issue #23対応としてGoogle Drive連携のGCP設定を検証するバックエンドモックを実装した
+* **修正の動機・概要**:
+  - Issue #23のコメントで固まった方針（Google Takeoutの増分エクスポート→Google Drive経由での取り込み、`drive.file`スコープ＋Google Picker API採用、GCP側の設定完了）を踏まえ、実際にバックエンドからDrive APIでファイルを取得できるか（GCP設定が機能しているか）を検証するためのモック実装。ユーザーからの直接依頼により対話モードで着手した。
+  - `StravaAuthService`/`StravaApiClient`（Issue #52でクライアント抽象化済み）と同型の構成（`GoogleDriveAuthService`: アクセストークンのキャッシュ・失効判定・リフレッシュ、`GoogleDriveApiClient`: 生のHTTPアクセスとエラー変換）を踏襲した。GoogleのトークンレスポンスはStravaの`expires_at`（epoch秒）と異なり`expires_in`（有効期間の秒数）を返すため、`GoogleDriveAuthService`側で現在時刻に加算して失効日時を算出する点のみ異なる。
+  - 検証用エンドポイント`GET /google-drive/files/:fileId`を用意し、指定したDriveファイルのメタデータ取得とバイナリダウンロードの両方を行い、メタデータの`size`と実際にダウンロードできたバイト数が一致するか（`sizeMatches`）を返すことで、GCP設定・OAuth・スコープが正しく機能しているかを確認できるようにした。
+  - issue-reviewスキルでのレビューにより「外部サービス連携の認証情報が未整備」という懸念（過去のIssue #23レビューで一度WIPスキップの理由になったもの）を検出。対話モードのため`AskUserQuestion`でユーザーに確認し、`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REFRESH_TOKEN`が必要である旨を提示した上で着手した（実際の値は本対応に含まず、ユーザーが別途`.env`へ設定する）。
+  - 対話モードでの確認により、今回のスコープはバックエンドのみとし、フロントエンドのGoogle Identity Services／Google Picker UIの組み込みは対象外とした。
+  - 実装中、`biome check --write`によるDIコンストラクタ注入importの`import type`誤変換の罠（typescript_rules.md記載、PR #64でも一度発生した既知の問題）が、`google-drive`配下の新規ファイルだけでなく、ディレクトリ全体に対する実行だったため既存の`strava`/`activities`/`municipalities`配下の複数ファイルにも再発した。各ファイルを個別に確認し通常の`import`へ戻すことで解消した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/google-drive/`配下を新規追加: `google-drive.constants.ts`・`google-drive-api.client.ts`・`google-drive-auth.service.ts`・`google-drive-files.service.ts`・`google-drive.controller.ts`・`google-drive.module.ts`・`types/google-drive.type.ts`・`types/google-drive-file-info.dto.ts`（各`__tests__`含む）。
+    - `backend/src/common/errors/google-drive-api.exception.ts`（新規）・`app-error-code.constants.ts`に`GOOGLE_DRIVE_AUTH_FAILED`/`GOOGLE_DRIVE_FILE_NOT_FOUND`/`GOOGLE_DRIVE_RATE_LIMITED`/`GOOGLE_DRIVE_API_ERROR`を追加。
+    - `backend/.env.example`に`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`GOOGLE_REFRESH_TOKEN`を追加。
+    - `backend/src/app.module.ts`に`GoogleDriveModule`を登録。
+    - 単体テスト（TDD、Red→Green、新規19件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た機能はまだ無く、GCP設定を検証するための内部実装のため）。
+  * **設計書**: 変更なし。フロントエンドのPicker UI・アクティビティ日時に基づく写真検索等を含む本実装が固まった段階で、「写真閲覧機能」の章としてまとめて`designs/technical_design.md`へ反映する方針とした。
+
 ### [2026-07-17] Issue #52対応としてStrava APIクライアントを抽象化した
 * **修正の動機・概要**:
   - `designs/class_diagram.md`（Issue #29対応）の設計上の改善提案3件目として指摘されていた、`StravaActivitiesService`/`StravaAuthService`が`HttpService`（axiosの薄いラッパー）に直接依存している問題を解消した（Issue #52）。自律モードで対応した。
