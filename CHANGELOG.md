@@ -14,6 +14,25 @@
 
 ## 変更履歴
 
+### [2026-07-19] Issue #23対応として写真取り込みパイプラインを撮影年月別アーカイブ再構成方式に変更した
+* **修正の動機・概要**:
+  - 実データ検証（1つのTakeout zip・約221枚に2009年〜2025年の14年分の撮影日時が分散していることを確認）により、当初の「実際に表示時に必要になった写真だけを元のTakeout zip単位で遅延キャッシュする」設計方針では、1回の表示のために複数の巨大zip（各最大2GB）をダウンロードする必要が生じ非現実的であることが判明した。
+  - ユーザーからの提案（「Google Driveの中のZipファイルをすべて展開し、撮影年月毎にZipファイルに圧縮し直す」）を受け、取り込み時にTakeout zip内の写真を撮影年月ごとに再構成した別zip（月別アーカイブ）へ振り分けてGoogle Drive上に保存し直す方式へ変更した。既存実装（認証・zip解析ロジック・DBスキーマの骨格）は軌道修正不要でそのまま活用でき、取り込みと月別再構成は1パイプライン（`PhotoIngestService.ingest`）として実装した。
+  - TDD（Red-Green-Refactor）で、`GoogleDriveApiClient`のアップロード関連メソッド追加→`MonthlyPhotoArchiveEntity`・マイグレーション追加→年月グルーピング／既存zipへのマージという純粋関数2件→`MonthlyPhotoArchiveService`（振り分けオーケストレーション）→`PhotoIngestService`書き換え→`PhotosModule`のDI登録、の順に段階的に実装した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/google-drive/google-drive-api.client.ts`: `createFileMetadata`（新規zipファイル作成）・`updateFileContent`（既存ファイルのコンテンツ更新）を追加。`google-drive.constants.ts`にアップロード専用エンドポイント`GOOGLE_DRIVE_UPLOAD_BASE_URL`を追加。
+    - `backend/src/photos/entities/monthly-photo-archive.entity.ts`（新規）・マイグレーション`1784388784983-CreateMonthlyPhotoArchives.ts`（新規、`monthly_photo_archives`テーブル・`year_month`一意制約）。`database.config.ts`にEntity登録。
+    - `backend/src/photos/group-photos-by-year-month.util.ts`（新規）: 写真を撮影日時（UTC基準）の年月ごとにグループ分けする純粋関数。
+    - `backend/src/photos/monthly-archive.util.ts`（新規）: 既存の月別アーカイブzip（無ければ新規）へ新規写真エントリをマージする純粋関数。異なる元zip由来の同名ファイル衝突は連番で回避する。
+    - `backend/src/photos/monthly-photo-archive.service.ts`（新規）: 年月グループごとに、対応する月別アーカイブの検索・ダウンロード・マージ・アップロード・DB登録を行うオーケストレーション。
+    - `backend/src/photos/photo-ingest.service.ts`: 保存先を元のTakeout zip直接参照から、`MonthlyPhotoArchiveService`による月別アーカイブ参照へ書き換え。
+    - `backend/src/photos/photos.module.ts`: `MonthlyPhotoArchiveEntity`・`MonthlyPhotoArchiveService`をDI登録。
+    - 単体テスト（バックエンド、新規追加分含め全206件）・lint・typecheck・マイグレーションup/down・実際のアプリ起動確認（全モジュール初期化・ルーティング登録）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（写真閲覧機能のユーザー向け挙動はまだ未実装であり、`system_specification.md`に記載された内容は無いため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章を、月別アーカイブ再構成方式に合わせて全面的に更新。`specs/glossary.md`に新用語「月別アーカイブ」を追加し、「取り込み」の定義に月別再構成を含める旨を追記。
+
 ### [2026-07-18] Issue #23対応として写真取り込み時のEXIF解析エラーによるINTERNAL_ERRORを修正した
 * **修正の動機・概要**:
   - 実際にユーザーがGoogle Takeoutでエクスポートしたzipで`POST /photos/ingest`を実行したところ、`INTERNAL_ERROR`が返るバグが発覚した。

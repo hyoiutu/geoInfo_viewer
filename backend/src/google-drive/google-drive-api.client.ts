@@ -5,6 +5,7 @@ import { toGoogleDriveApiException } from '../common/errors/google-drive-api.exc
 import {
   GOOGLE_DRIVE_API_BASE_URL,
   GOOGLE_DRIVE_FILE_METADATA_FIELDS,
+  GOOGLE_DRIVE_UPLOAD_BASE_URL,
   GOOGLE_GRANT_TYPE_REFRESH_TOKEN,
   GOOGLE_OAUTH_TOKEN_URL
 } from './google-drive.constants';
@@ -66,6 +67,50 @@ export class GoogleDriveApiClient {
       );
 
       return response.data;
+    } catch (error) {
+      throw toGoogleDriveApiException(error);
+    }
+  }
+
+  /**
+   * 空のファイルメタデータ（ファイル名のみ）を新規作成する。コンテンツ本体は
+   * updateFileContentで別途アップロードする（Google Drive APIの仕様上、作成とアップロードが分離しているため）
+   * @param accessToken Google Driveのアクセストークン
+   * @param name 作成するファイルの名前
+   * @returns 作成したファイルのID
+   */
+  async createFileMetadata(accessToken: string, name: string): Promise<string> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<GoogleDriveFileMetadata>(
+          `${GOOGLE_DRIVE_API_BASE_URL}/files`,
+          { name },
+          // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        )
+      );
+
+      return response.data.id;
+    } catch (error) {
+      throw toGoogleDriveApiException(error);
+    }
+  }
+
+  /**
+   * 既存ファイルのコンテンツ（バイナリ本体）を更新する
+   * @param accessToken Google Driveのアクセストークン
+   * @param fileId 更新対象のDriveファイルID
+   * @param content アップロードするバイナリ本体
+   */
+  async updateFileContent(accessToken: string, fileId: string, content: Buffer): Promise<void> {
+    try {
+      await firstValueFrom(
+        this.httpService.patch(`${GOOGLE_DRIVE_UPLOAD_BASE_URL}/files/${fileId}`, content, {
+          // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization/Content-Type)に合わせる
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/zip' },
+          params: { uploadType: 'media' }
+        })
+      );
     } catch (error) {
       throw toGoogleDriveApiException(error);
     }

@@ -1,6 +1,7 @@
 import { CyclingActivityEntity } from '../activities/entities/cycling-activity.entity';
 import { SyncStateEntity } from '../activities/entities/sync-state.entity';
 import { MunicipalityEntity } from '../municipalities/entities/municipality.entity';
+import { MonthlyPhotoArchiveEntity } from '../photos/entities/monthly-photo-archive.entity';
 import { PhotoEntity } from '../photos/entities/photo.entity';
 
 const DEFAULT_DATABASE_PORT = 5432;
@@ -21,7 +22,13 @@ type DataSourceOptions = {
   /** 接続先DB名 */
   database: string | undefined;
   /** TypeORMに登録するEntity一覧 */
-  entities: [typeof CyclingActivityEntity, typeof SyncStateEntity, typeof MunicipalityEntity, typeof PhotoEntity];
+  entities: [
+    typeof CyclingActivityEntity,
+    typeof SyncStateEntity,
+    typeof MunicipalityEntity,
+    typeof PhotoEntity,
+    typeof MonthlyPhotoArchiveEntity
+  ];
   /** マイグレーションファイルの探索パス */
   migrations: string[];
 };
@@ -38,6 +45,6 @@ export const createDataSourceOptions = (env: NodeJS.ProcessEnv): DataSourceOptio
   username: env.DATABASE_USERNAME,
   password: env.DATABASE_PASSWORD,
   database: env.DATABASE_NAME,
-  entities: [CyclingActivityEntity, SyncStateEntity, MunicipalityEntity, PhotoEntity],
+  entities: [CyclingActivityEntity, SyncStateEntity, MunicipalityEntity, PhotoEntity, MonthlyPhotoArchiveEntity],
   migrations: ['dist/migrations/*.js']
 });

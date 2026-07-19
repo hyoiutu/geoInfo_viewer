@@ -17,11 +17,15 @@ const createFileMetadata = (overrides: Partial<GoogleDriveFileMetadata>): Google
 });
 
 describe('GoogleDriveApiClientに関するテスト', () => {
-  const createClient = async (httpServiceGet: ReturnType<typeof vi.fn>, httpServicePost: ReturnType<typeof vi.fn>) => {
+  const createClient = async (
+    httpServiceGet: ReturnType<typeof vi.fn>,
+    httpServicePost: ReturnType<typeof vi.fn>,
+    httpServicePatch: ReturnType<typeof vi.fn> = vi.fn()
+  ) => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         GoogleDriveApiClient,
-        { provide: HttpService, useValue: { get: httpServiceGet, post: httpServicePost } }
+        { provide: HttpService, useValue: { get: httpServiceGet, post: httpServicePost, patch: httpServicePatch } }
       ]
     }).compile();
 
@@ -101,6 +105,67 @@ describe('GoogleDriveApiClientに関するテスト', () => {
 
       try {
         await client.downloadFile('token-xyz', 'file-1');
+        expect.unreachable('例外が投げられるはず');
+      } catch (error) {
+        assertIsAppException(error);
+        expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
+      }
+    });
+  });
+
+  describe('createFileMetadata', () => {
+    test('アクセストークンをAuthorizationヘッダーに含め、ファイル名をボディに指定してPOSTし、作成したファイルのIDを返す', async () => {
+      const httpServicePost = vi.fn().mockReturnValue(of({ data: createFileMetadata({ id: 'new-file-1' }) }));
+      const client = await createClient(vi.fn(), httpServicePost);
+
+      const result = await client.createFileMetadata('token-xyz', '2026-07.zip');
+
+      expect(result).toBe('new-file-1');
+      expect(httpServicePost).toHaveBeenCalledWith(
+        expect.any(String),
+        { name: '2026-07.zip' },
+        expect.objectContaining({ headers: { Authorization: 'Bearer token-xyz' } })
+      );
+    });
+
+    test('失敗した場合、errorCode: GOOGLE_DRIVE_API_ERRORのAppExceptionを投げる', async () => {
+      const httpServicePost = vi
+        .fn()
+        .mockReturnValue(throwError(() => ({ isAxiosError: true, response: { status: 500 } })));
+      const client = await createClient(vi.fn(), httpServicePost);
+
+      try {
+        await client.createFileMetadata('token-xyz', '2026-07.zip');
+        expect.unreachable('例外が投げられるはず');
+      } catch (error) {
+        assertIsAppException(error);
+        expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
+      }
+    });
+  });
+
+  describe('updateFileContent', () => {
+    test('アクセストークンをAuthorizationヘッダーに含め、指定したファイルIDのコンテンツをPATCHで更新する', async () => {
+      const httpServicePatch = vi.fn().mockReturnValue(of({ data: createFileMetadata({ id: 'file-1' }) }));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch);
+      const content = Buffer.from('zip-content');
+
+      await client.updateFileContent('token-xyz', 'file-1', content);
+
+      expect(httpServicePatch).toHaveBeenCalledWith(expect.stringContaining('/files/file-1'), content, {
+        headers: { Authorization: 'Bearer token-xyz', 'Content-Type': 'application/zip' },
+        params: { uploadType: 'media' }
+      });
+    });
+
+    test('失敗した場合、errorCode: GOOGLE_DRIVE_API_ERRORのAppExceptionを投げる', async () => {
+      const httpServicePatch = vi
+        .fn()
+        .mockReturnValue(throwError(() => ({ isAxiosError: true, response: { status: 500 } })));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch);
+
+      try {
+        await client.updateFileContent('token-xyz', 'file-1', Buffer.from('zip-content'));
         expect.unreachable('例外が投げられるはず');
       } catch (error) {
         assertIsAppException(error);
