@@ -84,6 +84,20 @@
   * **仕様書**: 変更なし（`POST /photos/ingest`は開発者向けの取り込みトリガーであり、Issue本文が要望するユーザー向け機能（地図上表示・サイドバー表示）はまだ実装していないため）。
   * **設計書**: `designs/technical_design.md`に「位置情報付きメディア表示機能（写真データ取り込み基盤）」章を新規追加。`specs/glossary.md`に「Google Takeout」「取り込み」を追加。
 
+### [2026-07-18] Issue #57対応として通過自治体の並び順のバグを修正した
+* **修正の動機・概要**:
+  - Issue #57「通過自治体の順番が逆になっている」に自律モードで対応した。issue-reviewの各観点には該当しないシンプルなバグ修正と判断し着手した。
+  - `MunicipalitiesService.findPassedMunicipalities`のSQLで、通過順のソートキーに`ST_DumpPoints`が返す`(dp).path[1]`（`integer[]`型`path`の1要素目）のみを使っていたのが原因と判明した。`cycling_activities.path`は`MultiLineString`型（10km以上のジャンプ区間で分割済み）のため、`path`は`[区間インデックス, 区間内の点インデックス]`の2要素配列であり、`path[1]`（区間インデックス）は大半のアクティビティのように区間が1つしか無い場合は全サンプリング点で同一値になる。その結果ソートが実質的に機能せず、`DISTINCT ON`後の行選択・最終的な並び順がPostgreSQLの内部的な実行順（自治体名の五十音順に近い挙動）に依存していた。
+  - `docker-compose`のPostGIS DBに接続し、実データ（8自治体を通過するアクティビティ）で修正前後のSQLを直接実行して確認した（`commit_rules.md`が求める、PostGIS空間クエリの実DB確認）。修正前は都道府県名→市区町村名の五十音順、修正後は地理的に連続したルート順（小田原市→二宮町→大磯町→…→相模原市緑区）になることを確認した。
+  - 修正は`path[1]`（区間インデックスのみ）を`path`（配列全体）に変更する1行。PostgreSQLの配列型は要素ごとの辞書式順序で比較されるため、区間をまたぐ場合も正しく「区間順→区間内の点順」でソートされる。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/municipalities/municipalities.service.ts`: `findPassedMunicipalities`のSQLを1行修正。
+    - 既存の単体テスト（Repositoryモック）はSQL文字列の中身を検証しない構成のため変更不要、Green確認済み。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（`specs/system_specification.md`の「通過自治体表示機能」は元々「通過した順」を仕様として明記済みで、今回はその仕様を満たしていなかった実装側の不具合を修正したのみ）。
+  * **設計書**: `designs/technical_design.md`の「通過自治体表示機能」章に、`path`配列の構造とバグの技術的背景を追記。
+
 ### [2026-07-18] Issue #53対応としてMapWorkspaceの責務の広さを見直した
 * **修正の動機・概要**:
   - Issue #53「MapWorkspaceの責務の広さを見直す」に自律モードで対応した。issue-reviewの観点2（大規模な再編・分割Issueは境界の判断基準を先に固める）に該当する懸念があったが、Issue本文のコメント2件で既に具体的な設計方針（ダイアログのdraft状態を内部化する、MapControlsが開閉状態・ダイアログ本体を持つ）が固められていたため、着手前の追加調整は不要と判断した。

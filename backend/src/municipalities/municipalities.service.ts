@@ -52,7 +52,7 @@ export class MunicipalitiesService {
             sampled_points.point_order AS point_order
           FROM (
             SELECT
-              (dp).path[1] AS point_order,
+              (dp).path AS point_order,
               (dp).geom AS pt
             FROM (
               SELECT ST_DumpPoints(
