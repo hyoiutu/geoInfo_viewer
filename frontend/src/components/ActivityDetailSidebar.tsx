@@ -14,10 +14,10 @@ const MUNICIPALITIES_EMPTY_LABEL = '該当する自治体はありません';
 
 /** ActivityDetailSidebarのprops */
 type ActivityDetailSidebarProps = {
-  /** 選択中のアクティビティ一覧（クリックした順。selectedIdsと1:1で対応する） */
+  /** 選択中のアクティビティ一覧（クリックした順） */
   activities: CyclingActivity[];
-  /** フォーカス中のアクティビティを指す、activities内のインデックス。未フォーカスの場合はnull */
-  focusedIndex: number | null;
+  /** フォーカス中のアクティビティ。未フォーカスの場合はnull */
+  focusedActivity: CyclingActivity | null;
   /** 一覧の項目がクリックされたときに呼ばれるコールバック */
   onFocus: (index: number) => void;
   /** 詳細画面の戻るボタンが押されたときに呼ばれるコールバック */
@@ -119,7 +119,7 @@ const ActivityDetail = ({ activity, onBackFromDetail, adminBoundaryEra }: Activi
  */
 export const ActivityDetailSidebar = ({
   activities,
-  focusedIndex,
+  focusedActivity,
   onFocus,
   onBackFromDetail,
   onBackFromList,
@@ -128,8 +128,6 @@ export const ActivityDetailSidebar = ({
   if (activities.length === NO_ACTIVITIES) {
     return null;
   }
-
-  const focusedActivity = focusedIndex === null ? null : activities[focusedIndex];
 
   return (
     <Box
