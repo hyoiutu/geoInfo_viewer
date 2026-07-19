@@ -14,6 +14,25 @@
 
 ## 変更履歴
 
+### [2026-07-19] PR #69レビュー対応としてuseActivitySelectionのID→アクティビティ変換を一本化した
+* **修正の動機・概要**:
+  - PR #69のレビューコメントで、`useActivitySelection`の戻り値`selectedIds`/`focusedIndex`（ID・インデックス）が`MapWorkspace`・`MapView`・`ActivityDetailSidebar`のいずれでも最終的にアクティビティ本体へ変換されており、ID→アクティビティの変換ロジックが複数箇所に重複しているという指摘を受けた。
+  - `useActivitySelection`が`activities`・`filter`を引数に取るよう変更し、ID→アクティビティ変換・フィルタによる自動除外（旧`pruneToVisible`、外部から呼ぶ形だったものを内部の`useEffect`へ移した）を全てフック内部で完結させ、戻り値を`selectedActivities`/`focusedActivity`（アクティビティ本体）に変更した。
+  - これに伴い`MapView`の`selectedIds`/`focusedId`propsを`selectedActivities`/`focusedActivity`へ、`ActivityDetailSidebar`の`focusedIndex`propを`focusedActivity`へ変更した。`MapView`が地図描画用に内部で行っていたID引き当て（`findActivityById`、`applySelectionLayers`内の`activityById`Map構築）が不要になり削除した。
+  - 別コメントで指摘されたHooks記述順序（useState→カスタムフック→useMemo→useEffectの順、種類ごとに空行区切り）も併せて`MapWorkspace`に適用し、`react_rules.md`へ規約として明文化した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/hooks/useActivitySelection.ts`: シグネチャを`(activities, filter)`に変更し、`selectedActivities`/`focusedActivity`を返すよう書き換え。
+    - `frontend/src/components/MapWorkspace.tsx`: 新シグネチャの呼び出しへ変更、`visibleIds`計算・`pruneToVisible`呼び出しの`useEffect`を削除（フック内部へ移動したため）。Hooks記述順序も規約に合わせて整理。
+    - `frontend/src/components/MapView.tsx`: props`selectedIds`/`focusedId`を`selectedActivities`/`focusedActivity`に変更。`applySelectionLayers`・`applyStartGoalMarkers`・`registerBicycleLogClickHandler`から`findActivityById`によるID引き当てを除去し、受け取ったアクティビティ本体をそのまま使うよう簡略化。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: props`focusedIndex`を`focusedActivity`に変更。
+    - `frontend/src/utils/findActivityById.ts`（削除、他に利用箇所が無くなったため）。
+    - `react_rules.md`: 「複数の子孫が同じ状態を必要とする場合、状態取得フックは共通の親で呼ぶ」「React Hooksは種類ごとにまとまる順番で書く」を追加。
+    - 単体テスト（フロントエンド、影響を受けた4ファイルを書き換え）・lint・typecheck・E2Eテスト（4件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た挙動に変化のない内部構造のリファクタリングのため）。
+  * **設計書**: `designs/technical_design.md`の自転車ログフィルタリング機能の章、`designs/class_diagram.md`の該当箇所を更新。
+
 ### [2026-07-18] Issue #53対応としてMapWorkspaceの責務の広さを見直した
 * **修正の動機・概要**:
   - Issue #53「MapWorkspaceの責務の広さを見直す」に自律モードで対応した。issue-reviewの観点2（大規模な再編・分割Issueは境界の判断基準を先に固める）に該当する懸念があったが、Issue本文のコメント2件で既に具体的な設計方針（ダイアログのdraft状態を内部化する、MapControlsが開閉状態・ダイアログ本体を持つ）が固められていたため、着手前の追加調整は不要と判断した。

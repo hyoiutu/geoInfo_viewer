@@ -27,7 +27,6 @@ import type { MunicipalityEra } from '../types/municipalityEra';
 import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
 import { filterActivities } from '../utils/filterActivities';
-import { findActivityById } from '../utils/findActivityById';
 import { groupLayerIdsByCategory, resolveStyleLayerIds } from '../utils/mapLayerCategory';
 import {
   addAdminBoundaryHistoricalLayer,
@@ -52,10 +51,10 @@ const HIT_TEST_RADIUS_PX = 5;
 type MapViewProps = {
   /** レイヤーIDごとの表示/非表示状態 */
   layerVisibility: LayerVisibility;
-  /** 選択中のアクティビティID一覧 */
-  selectedIds: string[];
-  /** フォーカス中のアクティビティID。未フォーカスの場合はnull */
-  focusedId: string | null;
+  /** 選択中のアクティビティ一覧 */
+  selectedActivities: CyclingActivity[];
+  /** フォーカス中のアクティビティ。未フォーカスの場合はnull */
+  focusedActivity: CyclingActivity | null;
   /** 地図クリックでアクティビティが検出されたときに呼ばれるコールバック */
   onSelectActivities: (ids: string[]) => void;
   /** 自転車ログのデータ取得・更新のたびに、取得済みアクティビティ一覧を渡すコールバック */
@@ -136,33 +135,24 @@ const registerBicycleLogClickHandler = (
 
 /**
  * 選択・フォーカス状態を、自転車ログの選択用・フォーカス用レイヤーのGeoJSONデータへ反映する。
- * selectedIdsの並び順（通し番号の昇順）をそのままfeatures配列の並びとして使う。MapLibreは
+ * selectedActivitiesの並び順（通し番号の昇順）をそのままfeatures配列の並びとして使う。MapLibreは
  * 単一ソース内で後の要素ほど手前に描画するため、これにより「通し番号が大きいものほど手前」というdraw順が実現される
  * @param map 反映先のMapLibre地図インスタンス
- * @param activities 現在地図に描画されているアクティビティ一覧
- * @param selectedIds 選択中のアクティビティID一覧（通し番号の昇順）
- * @param focusedId フォーカス中のアクティビティID。未フォーカスの場合はnull
+ * @param selectedActivities 選択中のアクティビティ一覧（通し番号の昇順）
+ * @param focusedActivity フォーカス中のアクティビティ。未フォーカスの場合はnull
  */
 const applySelectionLayers = (
   map: maplibregl.Map,
-  activities: CyclingActivity[],
-  selectedIds: string[],
-  focusedId: string | null
+  selectedActivities: CyclingActivity[],
+  focusedActivity: CyclingActivity | null
 ) => {
-  const focusedActivity = findActivityById(activities, focusedId);
-  const activityById = new Map(activities.map((activity) => [activity.id, activity]));
-
-  const selectedActivities = selectedIds
-    .filter((id) => id !== focusedId)
-    .map((id) => activityById.get(id))
-    .filter((activity): activity is CyclingActivity => activity !== undefined);
-
   const selectedSource = map.getSource<maplibregl.GeoJSONSource>(BICYCLE_LOG_SELECTED_SOURCE_ID);
   const focusedSource = map.getSource<maplibregl.GeoJSONSource>(BICYCLE_LOG_FOCUSED_SOURCE_ID);
   if (!selectedSource || !focusedSource) {
     return;
   }
-  selectedSource.setData(cyclingActivityToGeoJson(selectedActivities));
+  const selectedExcludingFocused = selectedActivities.filter((activity) => activity.id !== focusedActivity?.id);
+  selectedSource.setData(cyclingActivityToGeoJson(selectedExcludingFocused));
   focusedSource.setData(cyclingActivityToGeoJson(focusedActivity ? [focusedActivity] : []));
 };
 
@@ -242,8 +232,8 @@ const applyLayerVisibility = (
 /** MapLibreの地図本体を表示し、レイヤーの表示/非表示・自転車ログの新規アクティビティ取得・選択状態の描画を行うコンポーネント */
 export const MapView = ({
   layerVisibility,
-  selectedIds,
-  focusedId,
+  selectedActivities,
+  focusedActivity,
   onSelectActivities,
   onActivitiesLoaded,
   filter,
@@ -262,8 +252,8 @@ export const MapView = ({
   // クリックハンドラはマウント時に一度だけ登録するため、最新の値をrefで参照する（クロージャの陳腐化対策）
   const onSelectActivitiesRef = useRef(onSelectActivities);
   onSelectActivitiesRef.current = onSelectActivities;
-  const focusedIdRef = useRef(focusedId);
-  focusedIdRef.current = focusedId;
+  const focusedActivityRef = useRef(focusedActivity);
+  focusedActivityRef.current = focusedActivity;
 
   // マウント時に一度だけMapLibreの地図を生成し、スタイル読み込み完了後に航空写真・自転車ログレイヤーを追加する
   useEffect(() => {
@@ -293,7 +283,7 @@ export const MapView = ({
       registerBicycleLogClickHandler(
         map,
         (ids) => onSelectActivitiesRef.current(ids),
-        () => focusedIdRef.current !== null
+        () => focusedActivityRef.current !== null
       );
       setIsStyleLoaded(true);
     });
@@ -325,8 +315,8 @@ export const MapView = ({
       return;
     }
 
-    applySelectionLayers(map, filteredActivities, selectedIds, focusedId);
-  }, [filteredActivities, selectedIds, focusedId, isStyleLoaded]);
+    applySelectionLayers(map, selectedActivities, focusedActivity);
+  }, [selectedActivities, focusedActivity, isStyleLoaded]);
 
   // フォーカス中のアクティビティが変化するたびに、スタート・ゴールマーカーの表示を更新する
   useEffect(() => {
@@ -335,9 +325,8 @@ export const MapView = ({
       return;
     }
 
-    const focusedActivity = findActivityById(filteredActivities, focusedId);
     applyStartGoalMarkers(map, startGoalMarkersRef, focusedActivity);
-  }, [filteredActivities, focusedId, isStyleLoaded]);
+  }, [focusedActivity, isStyleLoaded]);
 
   // layerVisibility・選択中の行政区画年代が変化するたびに各レイヤーの表示/非表示を反映し、
   // 自転車ログレイヤーがOFF→ONに変化した場合はStrava新規アクティビティ取得・データ取得を行う
