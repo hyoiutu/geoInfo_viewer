@@ -18,6 +18,7 @@ import {
   applyStartGoalMarkers,
   registerAdminBoundaryClickHandler,
   registerBicycleLogClickHandler,
+  registerFocusedActivityHoverHandler,
   type StartGoalMarkerEntry
 } from '../utils/mapLayerInteraction';
 import {
@@ -33,6 +34,8 @@ const OSM_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const DEFAULT_ZOOM = 12;
 const DEFAULT_CENTER: [number, number] = [139.1798829, 35.2756364];
 const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] };
+const METERS_PER_KILOMETER = 1000;
+const HOVER_DISTANCE_DECIMAL_PLACES = 1;
 
 /** MapViewのprops */
 type MapViewProps = {
@@ -78,6 +81,7 @@ export const MapView = ({
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
   const startGoalMarkersRef = useRef<StartGoalMarkerEntry[]>([]);
   const historicalBoundariesCacheRef = useRef<Map<MunicipalityEra, FeatureCollection>>(new Map());
+  const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
   // クリックハンドラはマウント時に一度だけ登録するため、最新の値をrefで参照する（クロージャの陳腐化対策）
   const onSelectActivitiesRef = useRef(onSelectActivities);
   onSelectActivitiesRef.current = onSelectActivities;
@@ -120,6 +124,20 @@ export const MapView = ({
         () => focusedActivityRef.current !== null
       );
       registerAdminBoundaryClickHandler(map, (municipality) => onFocusMunicipalityRef.current(municipality));
+      registerFocusedActivityHoverHandler(
+        map,
+        () => focusedActivityRef.current,
+        (point, distanceMeters) => {
+          const distanceKm = (distanceMeters / METERS_PER_KILOMETER).toFixed(HOVER_DISTANCE_DECIMAL_PLACES);
+          if (!hoverPopupRef.current) {
+            hoverPopupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, anchor: 'bottom' });
+          }
+          hoverPopupRef.current.setLngLat(point).setText(`${distanceKm} km地点`).addTo(map);
+        },
+        () => {
+          hoverPopupRef.current?.remove();
+        }
+      );
       setIsStyleLoaded(true);
     });
 
