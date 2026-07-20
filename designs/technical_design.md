@@ -101,6 +101,8 @@ root/
 - フォーカス対象（都道府県名+市区町村名）から実際のfeature（ジオメトリ）を求める処理は`applyFocusedMunicipalityLayer`（`frontend/src/utils/mapLayerInteraction.ts`）が担い、hit-test用にキャッシュ済みのFeatureCollectionを`prefectureName`/`municipalityName`で線形探索する
 - 状態管理は既存の選択・フォーカス機構（`useActivitySelection`）とは独立させ、`MapWorkspace`が`focusedMunicipality: PassedMunicipality | null`を単純な`useState`で保持する。フォーカス中のアクティビティが変わる・行政区画の年代が切り替わるタイミングでの解除は、`useEffect`ではなく該当する操作（`focusActivity`/`clearFocus`/`handleApplyLayerSettings`）を呼ぶハンドラ内で直接`setFocusedMunicipality(null)`する方式にした（`useEffect`だと依存配列に含めた`focusedActivity`/`era`をエフェクト本体で参照しないためBiomeの`useExhaustiveDependencies`に抵触するため）
 - hit-test・フォーカス表示の2レイヤーは、`resolveStyleLayerIds`の`admin-boundary`カテゴリ（現行・過去いずれの分岐にも）に含め、行政区画レイヤーのON/OFFトグルに連動して表示/非表示が切り替わるようにした
+- **パフォーマンス対策（動作確認時の指摘を受けて修正）**: 当初、「境界データ(hit-test用含む)の取得・反映」と「フォーカス対象の反映」を1つの`useEffect`（依存配列に`focusedMunicipality`を含む）にまとめていたため、フォーカス対象が変わる（＝クリックする）たびに`applyAdminBoundaryData`が呼ばれ、変化していないはずの全国分の境界データを毎回hit-test用・表示用ソースへ`setData`し直しており、クリックのたびに顕著な遅延・カクつきが発生していた。`MapView.tsx`のeffectを「境界データの取得・反映（`adminBoundaryEra`のみに依存）」と「フォーカス対象の反映（`focusedMunicipality`に依存）」の2つへ分割し、後者はキャッシュ済みデータの取得のみを行い表示・hit-test用ソースへは`setData`しない専用の経路（`getOrFetchMunicipalityBoundaries`、`frontend/src/utils/mapLayerSetup.ts`。`applyAdminBoundaryData`もこれを内部で使うよう変更）を新設することで解消した
+- **地図の中心合わせ**: フォーカス対象のfeatureが見つかった場合、そのジオメトリ（Polygon/MultiPolygon）の重心へ`map.panTo`（ズームレベルは変更しない）で地図の中心を合わせる（`panToMunicipalityCentroid`、`frontend/src/utils/mapLayerInteraction.ts`）。重心の算出はシューレース公式による面積重み付き重心（`calculatePolygonCentroid`、`frontend/src/utils/polygonCentroid.ts`）で、穴（内側のリング）は無視し外側のリングのみで計算する簡略版。既存のIssue #77（線上の距離算出）と同様、緯度経度をそのまま平面座標とみなす近似計算とし、新規ジオメトリライブラリ（turf等）への依存は追加していない
 
 # エラーハンドリング機構
 ## バックエンド

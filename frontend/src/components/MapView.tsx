@@ -16,6 +16,7 @@ import {
   applyLayerVisibility,
   applySelectionLayers,
   applyStartGoalMarkers,
+  panToMunicipalityCentroid,
   registerAdminBoundaryClickHandler,
   registerBicycleLogClickHandler,
   type StartGoalMarkerEntry
@@ -188,7 +189,8 @@ export const MapView = ({
     });
   }, [adminBoundaryEra, isStyleLoaded, addError]);
 
-  // フォーカス中の自治体が変化するたびに、フォーカス用オーバーレイのデータのみを更新する（Issue #76）。
+  // フォーカス中の自治体が変化するたびに、フォーカス用オーバーレイのデータを更新し、地図の中心を
+  // フォーカスした行政区画の重心へ合わせる（ズームレベルは変更しない）。
   // 表示・hit-test用ソースへのsetDataは伴わない取得専用の経路を使う（Issue #80フォローアップ）
   useEffect(() => {
     const map = mapRef.current;
@@ -198,7 +200,10 @@ export const MapView = ({
 
     void getOrFetchMunicipalityBoundaries(adminBoundaryEra, historicalBoundariesCacheRef.current)
       .then((featureCollection) => {
-        applyFocusedMunicipalityLayer(map, featureCollection, focusedMunicipality);
+        const feature = applyFocusedMunicipalityLayer(map, featureCollection, focusedMunicipality);
+        if (feature) {
+          panToMunicipalityCentroid(map, feature);
+        }
       })
       .catch((error: unknown) => {
         addError(toAppErrorInfo(error));

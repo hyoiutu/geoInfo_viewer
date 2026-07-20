@@ -135,6 +135,7 @@ vi.mock('maplibre-gl', () => {
   const on = vi.fn();
   const queryRenderedFeatures = vi.fn(() => []);
   const addControl = vi.fn();
+  const panTo = vi.fn();
   const MapMock = vi.fn().mockImplementation(function MockMap() {
     return {
       remove,
@@ -146,7 +147,8 @@ vi.mock('maplibre-gl', () => {
       getSource,
       on,
       queryRenderedFeatures,
-      addControl
+      addControl,
+      panTo
     };
   });
   const MarkerMock = vi.fn().mockImplementation(function MockMarker(options: { element: HTMLElement }) {
@@ -884,6 +886,46 @@ describe('MapViewに関するテスト', () => {
           features: [shibuyaFeature]
         });
       });
+    });
+
+    test('focusedMunicipalityが指定されたとき、フォーカスした行政区画の重心へ地図の中心を合わせる', async () => {
+      const shibuyaFeature = {
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [0, 0],
+              [2, 0],
+              [2, 2],
+              [0, 2],
+              [0, 0]
+            ]
+          ]
+        },
+        properties: { prefectureName: '東京都', municipalityName: '渋谷区' }
+      };
+      const featureCollection = { type: 'FeatureCollection' as const, features: [shibuyaFeature] };
+      vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue(featureCollection);
+      const { rerender } = renderWithChakra(
+        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
+      );
+      const mapInstance = getMapInstance();
+
+      rerender(
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          focusedMunicipality={{ prefectureName: '東京都', municipalityName: '渋谷区' }}
+        />
+      );
+
+      await waitFor(() => {
+        expect(mapInstance.panTo).toHaveBeenCalledTimes(1);
+      });
+      const [center] = mapInstance.panTo.mock.calls[0];
+      expect(center[0]).toBeCloseTo(1, 6);
+      expect(center[1]).toBeCloseTo(1, 6);
     });
 
     test('focusedMunicipalityが変化しても、hit-test用ソースへは再度setDataされない（パフォーマンス対策）', async () => {

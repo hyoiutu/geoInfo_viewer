@@ -22,6 +22,7 @@ import {
   applyLayerVisibility,
   applySelectionLayers,
   applyStartGoalMarkers,
+  panToMunicipalityCentroid,
   registerAdminBoundaryClickHandler,
   registerBicycleLogClickHandler
 } from '../mapLayerInteraction';
@@ -342,29 +343,78 @@ describe('applyFocusedMunicipalityLayerに関するテスト', () => {
   };
   const featureCollection: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [shibuya, shinjuku] };
 
-  test('focusedMunicipalityに一致するfeatureをフォーカス用ソースへ反映する', () => {
+  test('focusedMunicipalityに一致するfeatureをフォーカス用ソースへ反映し、そのfeatureを返す', () => {
     const mapMock = createMapMock();
     const focusedMunicipality: PassedMunicipality = { prefectureName: '東京都', municipalityName: '渋谷区' };
 
-    applyFocusedMunicipalityLayer(asMap(mapMock), featureCollection, focusedMunicipality);
+    const result = applyFocusedMunicipalityLayer(asMap(mapMock), featureCollection, focusedMunicipality);
 
     expect(mapMock.setData).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [shibuya] });
+    expect(result).toBe(shibuya);
   });
 
-  test('focusedMunicipalityがnullの場合、フォーカス用ソースを空にする', () => {
+  test('focusedMunicipalityがnullの場合、フォーカス用ソースを空にしundefinedを返す', () => {
     const mapMock = createMapMock();
 
-    applyFocusedMunicipalityLayer(asMap(mapMock), featureCollection, null);
+    const result = applyFocusedMunicipalityLayer(asMap(mapMock), featureCollection, null);
 
     expect(mapMock.setData).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [] });
+    expect(result).toBeUndefined();
   });
 
-  test('focusedMunicipalityに一致するfeatureが無い場合、フォーカス用ソースを空にする', () => {
+  test('focusedMunicipalityに一致するfeatureが無い場合、フォーカス用ソースを空にしundefinedを返す', () => {
     const mapMock = createMapMock();
     const focusedMunicipality: PassedMunicipality = { prefectureName: '大阪府', municipalityName: '中央区' };
 
-    applyFocusedMunicipalityLayer(asMap(mapMock), featureCollection, focusedMunicipality);
+    const result = applyFocusedMunicipalityLayer(asMap(mapMock), featureCollection, focusedMunicipality);
 
     expect(mapMock.setData).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [] });
+    expect(result).toBeUndefined();
+  });
+});
+
+describe('panToMunicipalityCentroidに関するテスト', () => {
+  const createMapMock = () => ({ panTo: vi.fn() });
+  // テスト対象はmap.panToのみ呼ぶため、必要最小限のモックへキャストする
+  const asMap = (mock: ReturnType<typeof createMapMock>): maplibregl.Map => mock as never;
+
+  test('Polygon/MultiPolygonのfeatureの場合、重心へpanToする', () => {
+    const mapMock = createMapMock();
+    const feature: GeoJSON.Feature = {
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0, 0],
+            [2, 0],
+            [2, 2],
+            [0, 2],
+            [0, 0]
+          ]
+        ]
+      },
+      properties: {}
+    };
+
+    panToMunicipalityCentroid(asMap(mapMock), feature);
+
+    expect(mapMock.panTo).toHaveBeenCalledTimes(1);
+    const [center] = mapMock.panTo.mock.calls[0];
+    expect(center[0]).toBeCloseTo(1, 6);
+    expect(center[1]).toBeCloseTo(1, 6);
+  });
+
+  test('Polygon/MultiPolygon以外のジオメトリの場合、panToは呼ばれない', () => {
+    const mapMock = createMapMock();
+    const feature: GeoJSON.Feature = {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [139.7, 35.6] },
+      properties: {}
+    };
+
+    panToMunicipalityCentroid(asMap(mapMock), feature);
+
+    expect(mapMock.panTo).not.toHaveBeenCalled();
   });
 });

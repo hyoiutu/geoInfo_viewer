@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-07-20] PR #80の動作確認・レビュー対応として、行政区画フォーカス機能のパフォーマンス改善と地図中心合わせを行った
+* **修正の動機・概要**:
+  - PR #80の動作確認で、行政区画をクリックしてからフォーカス表示されるまでの遅延・操作中のカクつきについて指摘を受けた。原因を調査したところ、`MapView.tsx`の1つの`useEffect`が「境界データ(hit-test用含む)の取得・反映」と「フォーカス対象の反映」を兼ねており、依存配列に`focusedMunicipality`を含んでいたため、クリックのたびに変化していないはずの全国分の境界データを毎回`setData`し直していたことが判明した。effectを「境界データの取得・反映（年代のみに依存）」「フォーカス対象の反映（フォーカス対象のみに依存、setDataを伴わない取得専用経路を使用）」の2つへ分割して解消した。
+  - 続けて、「行政区画または通過自治体をクリックしたとき、その行政区画の中心点（重心）へ地図の中心をジャンプさせてほしい（ズームレベルは維持）」という仕様追加の要望を受けた。フォーカス対象のジオメトリ（Polygon/MultiPolygon）からシューレース公式による面積重み付き重心を算出し、`map.panTo`で中心を合わせる処理を追加した。既存のIssue #77（線上の距離算出）と同様の方針で、新規ジオメトリライブラリ（turf等）は導入せず自前実装とした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/mapLayerSetup.ts`: `getOrFetchMunicipalityBoundaries`（新規、setDataを伴わない取得専用経路）を追加し、`applyAdminBoundaryData`が内部で使うよう変更。
+    - `frontend/src/components/MapView.tsx`: 行政区画データ取得・反映のeffectと、フォーカス対象反映のeffectを分割。後者で`panToMunicipalityCentroid`を呼び出すよう追加。
+    - `frontend/src/utils/polygonCentroid.ts`（新規）: `calculatePolygonCentroid`（Polygon/MultiPolygonの面積重み付き重心を算出）。
+    - `frontend/src/utils/mapLayerInteraction.ts`: `applyFocusedMunicipalityLayer`が発見したfeatureを返すよう変更。`panToMunicipalityCentroid`（新規）を追加。
+    - 対応する単体テストを各ファイルへ追加・更新（TDD、Red-Green）。単体テスト（フロントエンド全31ファイル280件・バックエンド全38ファイル211件）・lint・typecheck・型キャストチェックは全てGreen。E2Eテストは既知の環境依存フレーキーテスト（並列実行時のバックフィル完了待ちタイムアウト、既存メモ`e2e_backfill_flakiness_aerial_photo_sequence.md`と同一事象）を除き全てGreenで、修正前のコード（stash）でも同じ失敗が再現することを確認し回帰でないことを確認済み。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「行政区画フォーカス機能」章に、地図の中心合わせに関する記述を追加。
+  * **設計書**: `designs/technical_design.md`の「行政区画フォーカス機能（Issue #76）」章に、パフォーマンス対策・地図中心合わせの設計内容を追記。
+
 ### [2026-07-20] Issue #76対応として行政区画クリック・通過自治体一覧クリックによる範囲フォーカス機能を実装した
 * **修正の動機・概要**:
   - Issue #76「行政区画をクリックすると範囲表示できるようにする」に、自律モード（issue-implementスキル）で対応した。issue_review_notes.mdの観点3（ユーザーの一次案の色指定も設計原則で裏取りする）に照らし、Issue本文が指定した「赤色の太い点線」を調査したところ、赤`#e53e3e`は既に自転車ログの「フォーカス中アクティビティ」を表す専用色として使われており（ゴールマーカー・エラー表示も赤系）、そのまま採用すると状態エンコーディングが衝突すると判断した。行政区画のフォーカスにはオレンジ`#dd6b20`を新たに割り当てた。
