@@ -124,6 +124,7 @@ const PhotoGrid = ({ photos, isLoading }: PhotoGridProps) => {
           key={photo.id}
           src={resolvePhotoImageUrl(photo.id)}
           alt={photo.fileName}
+          width="100%"
           aspectRatio="1"
           objectFit="cover"
           borderRadius="md"
