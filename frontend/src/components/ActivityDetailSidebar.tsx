@@ -26,6 +26,8 @@ type ActivityDetailSidebarProps = {
   onBackFromList: () => void;
   /** 通過自治体の判定に使う行政区画の年代（省略時は現行） */
   adminBoundaryEra?: MunicipalityEra;
+  /** 通過自治体一覧の項目がクリックされたときに呼ばれるコールバック */
+  onMunicipalityFocus: (municipality: PassedMunicipality) => void;
 };
 
 /** ActivityListのprops */
@@ -59,10 +61,16 @@ type PassedMunicipalitiesListProps = {
   municipalities: PassedMunicipality[];
   /** 取得中かどうか */
   isLoading: boolean;
+  /** 一覧の項目がクリックされたときに呼ばれるコールバック */
+  onMunicipalityFocus: (municipality: PassedMunicipality) => void;
 };
 
-/** 通過自治体一覧を、取得中・0件・複数件の状態に応じて表示する */
-const PassedMunicipalitiesList = ({ municipalities, isLoading }: PassedMunicipalitiesListProps) => {
+/** 通過自治体一覧を、取得中・0件・複数件の状態に応じて表示する。項目クリックで地図上の該当行政区画をフォーカスできる（Issue #76） */
+const PassedMunicipalitiesList = ({
+  municipalities,
+  isLoading,
+  onMunicipalityFocus
+}: PassedMunicipalitiesListProps) => {
   if (isLoading) {
     return <Text>{MUNICIPALITIES_LOADING_LABEL}</Text>;
   }
@@ -72,7 +80,11 @@ const PassedMunicipalitiesList = ({ municipalities, isLoading }: PassedMunicipal
   return (
     <Flex direction="column">
       {municipalities.map((municipality) => (
-        <Text key={`${municipality.prefectureName}-${municipality.municipalityName}`}>
+        <Text
+          key={`${municipality.prefectureName}-${municipality.municipalityName}`}
+          onClick={() => onMunicipalityFocus(municipality)}
+          cursor="pointer"
+        >
           {`${municipality.prefectureName}${municipality.municipalityName}`}
         </Text>
       ))}
@@ -88,10 +100,12 @@ type ActivityDetailProps = {
   onBackFromDetail: () => void;
   /** 通過自治体の判定に使う行政区画の年代 */
   adminBoundaryEra: MunicipalityEra;
+  /** 通過自治体一覧の項目がクリックされたときに呼ばれるコールバック */
+  onMunicipalityFocus: (municipality: PassedMunicipality) => void;
 };
 
 /** フォーカス中のアクティビティの詳細（詳細画面）を表示する。フォーカス中のアクティビティ・行政区画の年代が変わるたびに通過自治体を取得する */
-const ActivityDetail = ({ activity, onBackFromDetail, adminBoundaryEra }: ActivityDetailProps) => {
+const ActivityDetail = ({ activity, onBackFromDetail, adminBoundaryEra, onMunicipalityFocus }: ActivityDetailProps) => {
   const view = toActivityDetailView(activity);
   const { municipalities, isLoading } = usePassedMunicipalities(activity.id, adminBoundaryEra);
 
@@ -107,7 +121,11 @@ const ActivityDetail = ({ activity, onBackFromDetail, adminBoundaryEra }: Activi
       <Text>{`走行終了日時: ${view.endDate}`}</Text>
       <Text>{`平均時速: ${view.averageSpeedKmh}`}</Text>
       <Text fontWeight="bold">通過自治体</Text>
-      <PassedMunicipalitiesList municipalities={municipalities} isLoading={isLoading} />
+      <PassedMunicipalitiesList
+        municipalities={municipalities}
+        isLoading={isLoading}
+        onMunicipalityFocus={onMunicipalityFocus}
+      />
     </Flex>
   );
 };
@@ -123,7 +141,8 @@ export const ActivityDetailSidebar = ({
   onFocus,
   onBackFromDetail,
   onBackFromList,
-  adminBoundaryEra = MUNICIPALITY_ERA_CURRENT
+  adminBoundaryEra = MUNICIPALITY_ERA_CURRENT,
+  onMunicipalityFocus
 }: ActivityDetailSidebarProps) => {
   if (activities.length === NO_ACTIVITIES) {
     return null;
@@ -145,6 +164,7 @@ export const ActivityDetailSidebar = ({
           activity={focusedActivity}
           onBackFromDetail={onBackFromDetail}
           adminBoundaryEra={adminBoundaryEra}
+          onMunicipalityFocus={onMunicipalityFocus}
         />
       ) : (
         <ActivityList activities={activities} onFocus={onFocus} onBackFromList={onBackFromList} />

@@ -25,6 +25,7 @@
 | エラーダイアログ | APIエラー等が発生した際に、エラーメッセージとユーザーが取るべき対応（ヒント）を表示するダイアログ | `ErrorDialog`コンポーネント |
 | 行政区画 | 都道府県・市町村の境界線 + 都道府県名・市町村名のラベルをまとめた1つの切り替え可能なレイヤー。地名レイヤー（都道府県名・市町村名を除く地名）とは別カテゴリとして管理する | `admin-boundary`（レイヤーID）、`ADMIN_BOUNDARY_*`定数 |
 | 年代（行政区画の） | 行政区画データがどの時点のものかを表す識別子。「現在」または過去の基準日（例:「2000年」= 2000-10-01、平成の大合併前）。レイヤーダイアログのプルダウンで選択し、通過自治体の判定にも連動する | `MunicipalityEra`、`MUNICIPALITY_ERA_CURRENT`、`era`（`MunicipalityEntity`の列） |
+| フォーカス（行政区画の） | 地図上の行政区画クリック、または通過自治体一覧の項目クリックにより、特定の行政区画1件をオレンジ色の太い破線で強調表示している状態（Issue #76）。アクティビティの「フォーカス（フォーカス中）」とは別概念であり、用語は共通だが対象・状態管理は独立している | `PassedMunicipality`（フォーカス対象の型）、`ADMIN_BOUNDARY_FOCUSED_*`定数、`applyFocusedMunicipalityLayer` |
 | Google Takeout（Takeout） | Googleアカウントのデータを一括エクスポートする公式機能。写真閲覧機能ではGoogle Photos APIの制約を回避するため、Googleフォトのみを対象にした増分エクスポート（2ヶ月おき自動）をGoogle Driveへ送信する方式を採用する（Issue #23） | 特定のコード上の識別子は無し（外部サービスの機能名） |
 | 取り込み（Ingest） | Google Drive上のTakeoutエクスポート（zip）から、写真の撮影日時・位置情報等のメタデータを読み取り`photos`テーブルへ保存する処理。写真の実バイナリ自体は保存しない。あわせて月別アーカイブへの再構成も同一パイプライン内で行う | `PhotoIngestService`、`POST /photos/ingest` |
 | 月別アーカイブ | 取り込み時にTakeoutエクスポート（zip）内の写真を撮影年月（`YYYY-MM`）ごとに振り分けて再構成し、Google Drive上に保存し直すzipファイル。元のTakeoutエクスポートは撮影時期が数年〜十数年分混在しうるため、写真閲覧機能が表示に必要な期間の写真だけを効率よく遅延取得できるようにするための単位 | `MonthlyPhotoArchiveEntity`、`MonthlyPhotoArchiveService`、`monthly_photo_archives`テーブル |

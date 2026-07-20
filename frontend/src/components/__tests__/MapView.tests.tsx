@@ -1,9 +1,12 @@
 import { waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import type { CyclingActivity } from '../../api/activitiesApi';
+import type { CyclingActivity, PassedMunicipality } from '../../api/activitiesApi';
 import { fetchMunicipalityBoundaries } from '../../api/municipalitiesApi';
 import {
+  ADMIN_BOUNDARY_FOCUSED_SOURCE_ID,
+  ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
+  ADMIN_BOUNDARY_HITTEST_SOURCE_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_FILTER,
   ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR,
@@ -71,12 +74,16 @@ const DEFAULT_SELECTED_ACTIVITIES: CyclingActivity[] = [];
 const DEFAULT_FOCUSED_ACTIVITY: CyclingActivity | null = null;
 const DEFAULT_FILTERED_ACTIVITIES: CyclingActivity[] = [];
 
+const DEFAULT_FOCUSED_MUNICIPALITY: PassedMunicipality | null = null;
+
 const DEFAULT_SELECTION_PROPS = {
   selectedActivities: DEFAULT_SELECTED_ACTIVITIES,
   focusedActivity: DEFAULT_FOCUSED_ACTIVITY,
   onSelectActivities: vi.fn(),
   filteredActivities: DEFAULT_FILTERED_ACTIVITIES,
-  adminBoundaryEra: 'current' as const
+  adminBoundaryEra: 'current' as const,
+  focusedMunicipality: DEFAULT_FOCUSED_MUNICIPALITY,
+  onFocusMunicipality: vi.fn()
 };
 
 const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity => ({
@@ -166,10 +173,20 @@ const getMapInstance = () => vi.mocked(maplibregl.Map).mock.results[0].value;
 /** テスト中に生成された全てのMarkerモックインスタンスを取得する */
 const getMarkerInstances = () => vi.mocked(maplibregl.Marker).mock.results.map((result) => result.value);
 
-/** mapInstance.onで登録された'click'ハンドラを取り出す */
+/** mapInstance.onで登録された、自転車ログ用の'click'ハンドラ(map.on('click', handler)形式)を取り出す */
 const getClickHandler = (mapInstance: ReturnType<typeof getMapInstance>) => {
-  const call = mapInstance.on.mock.calls.find(([event]: [string]) => event === 'click');
+  const call = mapInstance.on.mock.calls.find(
+    ([event, second]: [string, unknown]) => event === 'click' && typeof second === 'function'
+  );
   return call?.[1];
+};
+
+/** mapInstance.onで登録された、行政区画hit-test用の'click'ハンドラ(map.on('click', layerId, handler)形式)を取り出す */
+const getAdminBoundaryClickHandler = (mapInstance: ReturnType<typeof getMapInstance>) => {
+  const call = mapInstance.on.mock.calls.find(
+    ([event, layerId]: [string, unknown]) => event === 'click' && layerId === ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID
+  );
+  return call?.[2];
 };
 
 const getSetDataMock = (sourceId: string) => setDataMocksBySourceId[sourceId];
@@ -308,10 +325,18 @@ describe('MapViewに関するテスト', () => {
     });
   });
 
-  test('adminBoundaryEraがcurrentのままのとき、過去年代の境界取得は行わない', () => {
+  test('adminBoundaryEraがcurrentのままのとき、hit-test用には境界データを取得するが過去年代用の表示ソースへは反映しない', async () => {
+    const featureCollection = { type: 'FeatureCollection' as const, features: [] };
+    vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue(featureCollection);
     renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
 
-    expect(fetchMunicipalityBoundaries).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(fetchMunicipalityBoundaries).toHaveBeenCalledWith('current');
+    });
+    await waitFor(() => {
+      expect(getSetDataMock(ADMIN_BOUNDARY_HITTEST_SOURCE_ID)).toHaveBeenCalledWith(featureCollection);
+    });
+    expect(getSetDataMock('admin-boundary-historical-source')).not.toHaveBeenCalled();
   });
 
   test('adminBoundaryEraがcurrentから過去年代に変化したとき、現行の行政区画レイヤーが非表示になる', () => {
@@ -797,6 +822,89 @@ describe('MapViewに関するテスト', () => {
       // 後から地図に追加された方（配列の末尾）がスタートのマーカーであり、DOM上で手前に描画される
       const lastMarker = getMarkerInstances()[getMarkerInstances().length - 1];
       expect(lastMarker.element.innerHTML).toEqual(createStartMarkerElement().element.innerHTML);
+    });
+  });
+
+  describe('行政区画のクリックによる範囲フォーカスに関するテスト（Issue #76）', () => {
+    test('スタイルロード時、hit-test用・フォーカス表示用の空のGeoJSONソースが追加される', () => {
+      renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
+      const mapInstance = getMapInstance();
+      const emptyData = { type: 'FeatureCollection', features: [] };
+
+      expect(mapInstance.addSource).toHaveBeenCalledWith(ADMIN_BOUNDARY_HITTEST_SOURCE_ID, {
+        type: 'geojson',
+        data: emptyData
+      });
+      expect(mapInstance.addSource).toHaveBeenCalledWith(ADMIN_BOUNDARY_FOCUSED_SOURCE_ID, {
+        type: 'geojson',
+        data: emptyData
+      });
+    });
+
+    test('行政区画hit-testレイヤーをクリックすると、検出した自治体でonFocusMunicipalityが呼ばれる', () => {
+      const onFocusMunicipality = vi.fn();
+      renderWithChakra(
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          onFocusMunicipality={onFocusMunicipality}
+        />
+      );
+      const mapInstance = getMapInstance();
+      const handleClick = getAdminBoundaryClickHandler(mapInstance);
+
+      handleClick({ features: [{ properties: { prefectureName: '東京都', municipalityName: '渋谷区' } }] });
+
+      expect(onFocusMunicipality).toHaveBeenCalledWith({ prefectureName: '東京都', municipalityName: '渋谷区' });
+    });
+
+    test('focusedMunicipalityが指定されたとき、行政区画データを取得し一致するfeatureをフォーカス用オーバーレイへ反映する', async () => {
+      const shibuyaFeature = {
+        type: 'Feature' as const,
+        geometry: { type: 'Point' as const, coordinates: [139.7, 35.6] },
+        properties: { prefectureName: '東京都', municipalityName: '渋谷区' }
+      };
+      const featureCollection = { type: 'FeatureCollection' as const, features: [shibuyaFeature] };
+      vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue(featureCollection);
+      const { rerender } = renderWithChakra(
+        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
+      );
+
+      rerender(
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          focusedMunicipality={{ prefectureName: '東京都', municipalityName: '渋谷区' }}
+        />
+      );
+
+      await waitFor(() => {
+        expect(getSetDataMock(ADMIN_BOUNDARY_FOCUSED_SOURCE_ID)).toHaveBeenCalledWith({
+          type: 'FeatureCollection',
+          features: [shibuyaFeature]
+        });
+      });
+    });
+
+    test('focusedMunicipalityがnullに戻ったとき、フォーカス用オーバーレイが空になる', async () => {
+      const featureCollection = { type: 'FeatureCollection' as const, features: [] };
+      vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue(featureCollection);
+      const { rerender } = renderWithChakra(
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          focusedMunicipality={{ prefectureName: '東京都', municipalityName: '渋谷区' }}
+        />
+      );
+
+      rerender(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} focusedMunicipality={null} />);
+
+      await waitFor(() => {
+        expect(getSetDataMock(ADMIN_BOUNDARY_FOCUSED_SOURCE_ID)).toHaveBeenCalledWith({
+          type: 'FeatureCollection',
+          features: []
+        });
+      });
     });
   });
 });

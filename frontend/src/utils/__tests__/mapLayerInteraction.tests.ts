@@ -1,10 +1,12 @@
 import type maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import type { CyclingActivity } from '../../api/activitiesApi';
+import type { CyclingActivity, PassedMunicipality } from '../../api/activitiesApi';
 import {
+  ADMIN_BOUNDARY_FOCUSED_SOURCE_ID,
   ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+  ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID
 } from '../../constants/adminBoundary';
 import {
@@ -16,9 +18,11 @@ import {
 } from '../../constants/bicycleLog';
 import type { CategorizedLayerIds, LayerVisibility } from '../../types/layer';
 import {
+  applyFocusedMunicipalityLayer,
   applyLayerVisibility,
   applySelectionLayers,
   applyStartGoalMarkers,
+  registerAdminBoundaryClickHandler,
   registerBicycleLogClickHandler
 } from '../mapLayerInteraction';
 
@@ -260,5 +264,107 @@ describe('applyLayerVisibilityに関するテスト', () => {
     applyLayerVisibility(asMap(mapMock), categorizedLayerIds, AllOnVisibility, '2000-10-01');
 
     expect(mapMock.setLayoutProperty).toHaveBeenCalledWith(ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID, 'visibility', 'none');
+  });
+});
+
+describe('registerAdminBoundaryClickHandlerに関するテスト', () => {
+  type AdminBoundaryClickHandler = (event: { features?: { properties?: Record<string, unknown> }[] }) => void;
+
+  /** map.onのみを呼び出す最小限のMapLibre地図モック */
+  const createMapMock = () => ({
+    on: vi.fn<(event: string, layerId: string, handler: AdminBoundaryClickHandler) => void>()
+  });
+  // テスト対象はmap.onのみ呼ぶため、必要最小限のモックへキャストする
+  const asMap = (mock: ReturnType<typeof createMapMock>): maplibregl.Map => mock as never;
+
+  const getClickHandler = (mock: ReturnType<typeof createMapMock>) => {
+    const call = mock.on.mock.calls.find(
+      ([event, layerId]) => event === 'click' && layerId === ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID
+    );
+    // mock.onの型はハンドラの型を保持しないため、呼び出し時の実引数の型へキャストする
+    return call?.[2] as AdminBoundaryClickHandler;
+  };
+
+  test('hit-testレイヤーのクリックで検出したfeatureのprefectureName・municipalityNameでonFocusMunicipalityが呼ばれる', () => {
+    const mapMock = createMapMock();
+    const onFocusMunicipality = vi.fn();
+    registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality);
+
+    getClickHandler(mapMock)({
+      features: [{ properties: { prefectureName: '東京都', municipalityName: '渋谷区' } }]
+    });
+
+    expect(mapMock.on).toHaveBeenCalledWith('click', ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID, expect.any(Function));
+    expect(onFocusMunicipality).toHaveBeenCalledWith({ prefectureName: '東京都', municipalityName: '渋谷区' });
+  });
+
+  test('検出したfeatureが無い場合、onFocusMunicipalityは呼ばれない', () => {
+    const mapMock = createMapMock();
+    const onFocusMunicipality = vi.fn();
+    registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality);
+
+    getClickHandler(mapMock)({ features: [] });
+
+    expect(onFocusMunicipality).not.toHaveBeenCalled();
+  });
+
+  test('featureのプロパティが不正な形式の場合、onFocusMunicipalityは呼ばれない', () => {
+    const mapMock = createMapMock();
+    const onFocusMunicipality = vi.fn();
+    registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality);
+
+    getClickHandler(mapMock)({ features: [{ properties: { prefectureName: 123, municipalityName: '渋谷区' } }] });
+
+    expect(onFocusMunicipality).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyFocusedMunicipalityLayerに関するテスト', () => {
+  const createMapMock = () => {
+    const setData = vi.fn();
+    const getSource = vi.fn((sourceId: string) =>
+      sourceId === ADMIN_BOUNDARY_FOCUSED_SOURCE_ID ? { setData } : undefined
+    );
+    return { getSource, setData };
+  };
+  // テスト対象はmap.getSourceのみ呼ぶため、必要最小限のモックへキャストする
+  const asMap = (mock: ReturnType<typeof createMapMock>): maplibregl.Map => mock as never;
+
+  const shibuya: GeoJSON.Feature = {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [139.7, 35.6] },
+    properties: { prefectureName: '東京都', municipalityName: '渋谷区' }
+  };
+  const shinjuku: GeoJSON.Feature = {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [139.7, 35.7] },
+    properties: { prefectureName: '東京都', municipalityName: '新宿区' }
+  };
+  const featureCollection: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [shibuya, shinjuku] };
+
+  test('focusedMunicipalityに一致するfeatureをフォーカス用ソースへ反映する', () => {
+    const mapMock = createMapMock();
+    const focusedMunicipality: PassedMunicipality = { prefectureName: '東京都', municipalityName: '渋谷区' };
+
+    applyFocusedMunicipalityLayer(asMap(mapMock), featureCollection, focusedMunicipality);
+
+    expect(mapMock.setData).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [shibuya] });
+  });
+
+  test('focusedMunicipalityがnullの場合、フォーカス用ソースを空にする', () => {
+    const mapMock = createMapMock();
+
+    applyFocusedMunicipalityLayer(asMap(mapMock), featureCollection, null);
+
+    expect(mapMock.setData).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [] });
+  });
+
+  test('focusedMunicipalityに一致するfeatureが無い場合、フォーカス用ソースを空にする', () => {
+    const mapMock = createMapMock();
+    const focusedMunicipality: PassedMunicipality = { prefectureName: '大阪府', municipalityName: '中央区' };
+
+    applyFocusedMunicipalityLayer(asMap(mapMock), featureCollection, focusedMunicipality);
+
+    expect(mapMock.setData).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [] });
   });
 });

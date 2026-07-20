@@ -84,13 +84,23 @@ root/
 
 # 行政区画レイヤー（年代選択）
 - 現行（`era === 'current'`）の行政区画は、既存のOSMベクトルタイル（`boundary_3`＝都道府県境界＋新規追加の市町村境界レイヤー、`place`ソースレイヤーの都道府県名・市町村名ラベル）をそのまま可視性トグルの対象とする（Issue #34フェーズ1）
-- 過去の行政区画（`era !== 'current'`）はベクトルタイルに存在しないため、`GET /municipalities/boundaries?era=...`（`MunicipalitiesController.getBoundaries`、新規）がDBの`municipalities`テーブルから該当年代のポリゴンをGeoJSON `FeatureCollection`として返す。フロントエンドはこれをMapLibreのGeoJSONソース（`admin-boundary-historical-source`）へ`setData`し、塗り（`fill`、視認性を優先し不透明度0.05の薄い塗り）・線（`line`、現行の市町村境界と同じ配色・破線パターン）・ラベル（`symbol`、`municipalityName`プロパティをテキストフィールドとし既存OSM地名ラベルと同じ配色）の3レイヤーとして描画する（`addAdminBoundaryHistoricalLayer`/`applyAdminBoundaryHistoricalData`、`frontend/src/utils/mapLayerSetup.ts`）
+- 過去の行政区画（`era !== 'current'`）はベクトルタイルに存在しないため、`GET /municipalities/boundaries?era=...`（`MunicipalitiesController.getBoundaries`、新規）がDBの`municipalities`テーブルから該当年代のポリゴンをGeoJSON `FeatureCollection`として返す。フロントエンドはこれをMapLibreのGeoJSONソース（`admin-boundary-historical-source`）へ`setData`し、塗り（`fill`、視認性を優先し不透明度0.05の薄い塗り）・線（`line`、現行の市町村境界と同じ配色・破線パターン）・ラベル（`symbol`、`municipalityName`プロパティをテキストフィールドとし既存OSM地名ラベルと同じ配色）の3レイヤーとして描画する（`addAdminBoundaryHistoricalLayer`/`applyAdminBoundaryData`、`frontend/src/utils/mapLayerSetup.ts`。`applyAdminBoundaryData`は元々`applyAdminBoundaryHistoricalData`という名前だったが、Issue #76対応でcurrentも含めた全年代のhit-test用データ取得を担うようになったため改名した）
   - 塗り・線・ラベルの3レイヤーいずれにも、現行の市町村境界（`admin-boundary-municipality`）と同じ`ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM`（`minzoom`）を設定し、低ズームでの過密表示・不要な計算を避ける（PR #62レビュー対応。実機確認でズームアウトしても行政区画の計算が継続する点が指摘された）
 - 取得したGeoJSONは年代ごとに`MapView`内の`Map<MunicipalityEra, FeatureCollection>`（`historicalBoundariesCacheRef`）へキャッシュし、同じ年代へ再度切り替えた際の再取得を避ける
 - `resolveStyleLayerIds`（`frontend/src/utils/mapLayerCategory.ts`）はadmin-boundaryレイヤーがONのとき選択中の年代（現行/過去）に対応するレイヤー群のみを返す設計だが、これだけでは「選択されていない方の年代のレイヤー群」を非表示にする処理が無く、年代を切り替えると直前に表示していた方のレイヤーが残ってしまう不具合があった（Issue #67）。`resolveUnusedAdminBoundaryLayerIds`（同ファイル、選択中の年代の逆側のレイヤーID一覧を返す）を追加し、`applyLayerVisibility`（`frontend/src/utils/mapLayerInteraction.ts`）が行政区画レイヤーのON/OFFに関わらず常にこれらを非表示にすることで解消した
 - レイヤーダイアログの年代選択（プルダウン）は、レイヤーの表示/非表示と同じ`LayerDialog`内部のdraft state（`draftEra`）が管理し、同じ「実行」ボタンのタイミングで確定する（年代選択のためだけの別ダイアログ・別コンポーネントを設けていない）
 - 選択中の年代は`MapWorkspace`から`MapView`（描画用）・`ActivityDetailSidebar`（通過自治体の判定用、`usePassedMunicipalities`経由）の両方へ`adminBoundaryEra`として渡される
 - 2026-07時点で投入済みの年代は`current`（2023-01-01）・`2000-10-01`（平成の大合併前）・`1950-10-01`（昭和の大合併前）・`1920-01-01`（大正時代）の4つで、Issue #34が要望する全年代の投入が完了している
+
+# 行政区画フォーカス機能（Issue #76）
+- 「地図上の行政区画クリック」「通過自治体一覧の項目クリック」いずれからも同じ行政区画をフォーカス表示できるようにするため、クリックした地点から自治体を特定する経路として、OSMベクトルタイルの`place`ラベル（現行の行政区画表示に使っている）ではなく、`municipalities`テーブル由来のGeoJSON（`GET /municipalities/boundaries?era=...`、通過自治体表示機能・過去年代表示機能が既に使っているものと同一のAPI）を採用した
+  - 理由: OSMベクトルタイルの`boundary`ソースレイヤー（境界ポリゴン）自体は名前プロパティを持たず、名前は別レイヤー（`place`、地点ラベル）にしか無いため、クリック地点から直接「どの自治体か」を機械的に特定できない。また`place`ラベルの表記（例: 政令指定都市の区の扱い）が`municipalities`テーブル（`PassedMunicipality`が使うものと同一）の`prefectureName`/`municipalityName`と一致する保証が無く、通過自治体一覧の項目とのマッチングに使うには不整合が起きうる。`municipalities`テーブルのGeoJSONを両方の入口で共通の検索対象にすることで、この不整合を避けている
+- 地図クリックでの自治体特定は、`municipalities`テーブルのGeoJSONを参照する不可視（`fill-opacity: 0`）のfillレイヤー（hit-testレイヤー、`admin-boundary-hittest-fill`、ソース`admin-boundary-hittest-source`）を追加し、MapLibreの`map.on('click', レイヤーID, handler)`にクリック地点のfeature検出を委ねる方式にした（`registerAdminBoundaryClickHandler`、`frontend/src/utils/mapLayerInteraction.ts`）。GeoJSONベースのfillレイヤーはMapLibreが内部でクリック地点のポイントインポリゴン判定を行うため、フロントエンド側で別途ジオメトリライブラリ（turf等）を導入する必要が無い
+  - hit-test用のGeoJSONは、currentも含む全年代について`applyAdminBoundaryData`が取得・キャッシュする（`historicalBoundariesCacheRef`を流用）。ただし現行(`current`)の可視表示は従来通りベクトルタイル（`admin-boundary-municipality`等）が担うため、hit-test用ソースへの反映のみ行い、過去年代用の可視表示ソース（`admin-boundary-historical-source`）へは反映しない
+- フォーカス表示は、フォーカス中の自治体1件分のfeatureのみを保持する専用のGeoJSONソース・ラインレイヤー（`admin-boundary-focused-source`/`admin-boundary-focused-line`、オレンジ`#dd6b20`・太さ4px・粗い破線）として追加した。自転車ログのフォーカス色（赤`#e53e3e`）・ゴールマーカー（赤系）と意味が異なるため、別の色相（オレンジ）を割り当てている
+- フォーカス対象（都道府県名+市区町村名）から実際のfeature（ジオメトリ）を求める処理は`applyFocusedMunicipalityLayer`（`frontend/src/utils/mapLayerInteraction.ts`）が担い、hit-test用にキャッシュ済みのFeatureCollectionを`prefectureName`/`municipalityName`で線形探索する
+- 状態管理は既存の選択・フォーカス機構（`useActivitySelection`）とは独立させ、`MapWorkspace`が`focusedMunicipality: PassedMunicipality | null`を単純な`useState`で保持する。フォーカス中のアクティビティが変わる・行政区画の年代が切り替わるタイミングでの解除は、`useEffect`ではなく該当する操作（`focusActivity`/`clearFocus`/`handleApplyLayerSettings`）を呼ぶハンドラ内で直接`setFocusedMunicipality(null)`する方式にした（`useEffect`だと依存配列に含めた`focusedActivity`/`era`をエフェクト本体で参照しないためBiomeの`useExhaustiveDependencies`に抵触するため）
+- hit-test・フォーカス表示の2レイヤーは、`resolveStyleLayerIds`の`admin-boundary`カテゴリ（現行・過去いずれの分岐にも）に含め、行政区画レイヤーのON/OFFトグルに連動して表示/非表示が切り替わるようにした
 
 # エラーハンドリング機構
 ## バックエンド

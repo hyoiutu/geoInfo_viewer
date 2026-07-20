@@ -14,6 +14,25 @@
 
 ## 変更履歴
 
+### [2026-07-20] Issue #76対応として行政区画クリック・通過自治体一覧クリックによる範囲フォーカス機能を実装した
+* **修正の動機・概要**:
+  - Issue #76「行政区画をクリックすると範囲表示できるようにする」に、自律モード（issue-implementスキル）で対応した。issue_review_notes.mdの観点3（ユーザーの一次案の色指定も設計原則で裏取りする）に照らし、Issue本文が指定した「赤色の太い点線」を調査したところ、赤`#e53e3e`は既に自転車ログの「フォーカス中アクティビティ」を表す専用色として使われており（ゴールマーカー・エラー表示も赤系）、そのまま採用すると状態エンコーディングが衝突すると判断した。行政区画のフォーカスにはオレンジ`#dd6b20`を新たに割り当てた。
+  - 「地図クリック」「通過自治体一覧クリック」どちらからも自治体を特定できるようにするため、OSMベクトルタイルの`place`ラベル（名前の表記がPassedMunicipalityと一致する保証が無い）ではなく、両者が共通で参照できる`municipalities`テーブル由来のGeoJSON（既存の`GET /municipalities/boundaries?era=...`）を検索対象に採用した。地図クリックでの自治体特定は、同GeoJSONを参照する不可視のhit-test用fillレイヤーを追加し、MapLibreの`queryRenderedFeatures`相当のクリックイベントに判定を委ねることで、新規ジオメトリライブラリの追加を避けた。
+  - 上記の設計判断（配色・hit-test方式の詳細）はPR説明文・GitHubインラインコメントに記載し、ユーザーが後から確認・修正できるようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/constants/adminBoundary.ts`: hit-test用・フォーカス表示用のソース/レイヤーID、フォーカス色・線幅・破線パターンの定数を追加。
+    - `frontend/src/utils/mapLayerSetup.ts`: `addAdminBoundaryFocusLayer`（新規、hit-test用の透明fillレイヤー・フォーカス表示用のラインレイヤーを追加）、`applyAdminBoundaryHistoricalData`を`applyAdminBoundaryData`へ改名しcurrent eraでもhit-test用ソースへは反映するよう変更。
+    - `frontend/src/utils/mapLayerInteraction.ts`: `registerAdminBoundaryClickHandler`（hit-testレイヤーのクリックから自治体を検出）、`applyFocusedMunicipalityLayer`（フォーカス対象のfeatureをフォーカス用ソースへ反映）を追加。
+    - `frontend/src/utils/mapLayerCategory.ts`: `resolveStyleLayerIds`のadmin-boundaryカテゴリに新レイヤーIDを追加し、行政区画レイヤーのON/OFFトグルに連動させた。
+    - `frontend/src/components/MapView.tsx`: `focusedMunicipality`/`onFocusMunicipality` propsを追加し、上記関数群を配線。
+    - `frontend/src/components/MapWorkspace.tsx`: `focusedMunicipality`状態を追加。フォーカス中アクティビティの変更・行政区画年代の切り替え時に`useEffect`ではなく各操作ハンドラ内で直接解除するよう実装（Biomeの`useExhaustiveDependencies`回避、詳細は設計書参照）。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: 通過自治体一覧の項目クリックで`onMunicipalityFocus`を呼ぶよう変更。
+    - 対応する単体テストを各ファイルへ追加（TDD、Red-Green）。単体テスト（フロントエンド全30ファイル269件・バックエンド全36ファイル206件）・lint・typecheck・型キャストチェック・E2Eテスト（4件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`に「行政区画フォーカス機能」の章を新設。`specs/glossary.md`に「フォーカス（行政区画の）」を追加（既存の「フォーカス（フォーカス中）」＝アクティビティ用と別概念であることを明記）。
+  * **設計書**: `designs/technical_design.md`の「行政区画レイヤー（年代選択）」章を関数改名に合わせて更新し、「行政区画フォーカス機能（Issue #76）」章を新設。
+
 ### [2026-07-20] PR #72（Issue #67）とPR #71（mapLayerInteraction切り出し）のマージコンフリクトを解消した
 * **修正の動機・概要**:
   - finish-reviewスキルでPR #72（Issue #67「行政区画レイヤーの年代切り替え時の重複表示バグ」修正、`MapView.tsx`内の`applyLayerVisibility`へ`resolveUnusedAdminBoundaryLayerIds`呼び出しを追加する内容）のブランチへ最新mainを取り込んだところ、PR #71のレビュー対応（`applyLayerVisibility`を`MapView.tsx`から`mapLayerInteraction.ts`へ切り出し）と同一関数を独立に変更していたため、`frontend/src/components/MapView.tsx`でコンフリクトが発生した。

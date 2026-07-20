@@ -1,10 +1,17 @@
 import type maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import {
+  ADMIN_BOUNDARY_FOCUSED_LINE_COLOR,
+  ADMIN_BOUNDARY_FOCUSED_LINE_DASHARRAY,
+  ADMIN_BOUNDARY_FOCUSED_LINE_LAYER_ID,
+  ADMIN_BOUNDARY_FOCUSED_LINE_WIDTH,
+  ADMIN_BOUNDARY_FOCUSED_SOURCE_ID,
   ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
+  ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
+  ADMIN_BOUNDARY_HITTEST_SOURCE_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_FILTER,
   ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR,
@@ -40,11 +47,12 @@ import {
 import type { CategorizedLayerIds } from '../../types/layer';
 import type { MunicipalityEra } from '../../types/municipalityEra';
 import {
+  addAdminBoundaryFocusLayer,
   addAdminBoundaryHistoricalLayer,
   addAdminBoundaryLayer,
   addAerialPhotoLayer,
   addBicycleLogLayer,
-  applyAdminBoundaryHistoricalData
+  applyAdminBoundaryData
 } from '../mapLayerSetup';
 
 vi.mock('../../api/municipalitiesApi', () => ({
@@ -229,7 +237,55 @@ describe('addAdminBoundaryHistoricalLayerに関するテスト', () => {
   });
 });
 
-describe('applyAdminBoundaryHistoricalDataに関するテスト', () => {
+describe('addAdminBoundaryFocusLayerに関するテスト', () => {
+  test('hit-test用・フォーカス表示用の空のGeoJSONソースを追加する', () => {
+    const map = createMapMock();
+    const emptyData = { type: 'FeatureCollection', features: [] };
+
+    addAdminBoundaryFocusLayer(asMap(map));
+
+    expect(map.addSource).toHaveBeenCalledWith(ADMIN_BOUNDARY_HITTEST_SOURCE_ID, { type: 'geojson', data: emptyData });
+    expect(map.addSource).toHaveBeenCalledWith(ADMIN_BOUNDARY_FOCUSED_SOURCE_ID, { type: 'geojson', data: emptyData });
+  });
+
+  test('hit-testレイヤーは完全に透明なfillレイヤーとして追加する', () => {
+    const map = createMapMock();
+
+    addAdminBoundaryFocusLayer(asMap(map));
+
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
+        type: 'fill',
+        source: ADMIN_BOUNDARY_HITTEST_SOURCE_ID,
+        minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM,
+        paint: { 'fill-opacity': 0 }
+      })
+    );
+  });
+
+  test('フォーカス表示レイヤーはオレンジの太い破線で追加する', () => {
+    const map = createMapMock();
+
+    addAdminBoundaryFocusLayer(asMap(map));
+
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: ADMIN_BOUNDARY_FOCUSED_LINE_LAYER_ID,
+        type: 'line',
+        source: ADMIN_BOUNDARY_FOCUSED_SOURCE_ID,
+        minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM,
+        paint: {
+          'line-color': ADMIN_BOUNDARY_FOCUSED_LINE_COLOR,
+          'line-width': ADMIN_BOUNDARY_FOCUSED_LINE_WIDTH,
+          'line-dasharray': ADMIN_BOUNDARY_FOCUSED_LINE_DASHARRAY
+        }
+      })
+    );
+  });
+});
+
+describe('applyAdminBoundaryDataに関するテスト', () => {
   let setData: ReturnType<typeof vi.fn>;
   let fetchMunicipalityBoundaries: ReturnType<typeof vi.fn>;
 
@@ -239,19 +295,27 @@ describe('applyAdminBoundaryHistoricalDataに関するテスト', () => {
     fetchMunicipalityBoundaries.mockReset();
   });
 
-  test('eraがcurrentの場合、何もしない（取得もsetDataも行わない）', async () => {
+  test('eraがcurrentの場合、hit-testソースへは反映するが過去年代用の表示ソースへは反映しない', async () => {
+    const featureCollection = { type: 'FeatureCollection' as const, features: [] };
+    fetchMunicipalityBoundaries.mockResolvedValue(featureCollection);
     const mapMock = createMapMock();
-    mapMock.getSource.mockReturnValue({ setData });
+    const getSourceCalls: string[] = [];
+    mapMock.getSource.mockImplementation((sourceId: string) => {
+      getSourceCalls.push(sourceId);
+      return { setData };
+    });
     const map = asMap(mapMock);
     const cache = new Map<MunicipalityEra, GeoJSON.FeatureCollection>();
 
-    await applyAdminBoundaryHistoricalData(map, 'current', cache);
+    await applyAdminBoundaryData(map, 'current', cache);
 
-    expect(fetchMunicipalityBoundaries).not.toHaveBeenCalled();
-    expect(setData).not.toHaveBeenCalled();
+    expect(fetchMunicipalityBoundaries).toHaveBeenCalledWith('current');
+    expect(getSourceCalls).toEqual([ADMIN_BOUNDARY_HITTEST_SOURCE_ID]);
+    expect(setData).toHaveBeenCalledTimes(1);
+    expect(setData).toHaveBeenCalledWith(featureCollection);
   });
 
-  test('eraがcurrent以外かつキャッシュが無い場合、取得しキャッシュへ保存した上でsetDataへ渡す', async () => {
+  test('eraがcurrent以外かつキャッシュが無い場合、取得しキャッシュへ保存した上でhit-test・表示両方のソースへsetDataする', async () => {
     const featureCollection = { type: 'FeatureCollection' as const, features: [] };
     fetchMunicipalityBoundaries.mockResolvedValue(featureCollection);
     const mapMock = createMapMock();
@@ -259,9 +323,11 @@ describe('applyAdminBoundaryHistoricalDataに関するテスト', () => {
     const map = asMap(mapMock);
     const cache = new Map<MunicipalityEra, GeoJSON.FeatureCollection>();
 
-    await applyAdminBoundaryHistoricalData(map, '2000-10-01', cache);
+    await applyAdminBoundaryData(map, '2000-10-01', cache);
 
     expect(fetchMunicipalityBoundaries).toHaveBeenCalledWith('2000-10-01');
+    expect(mapMock.getSource).toHaveBeenCalledWith(ADMIN_BOUNDARY_HITTEST_SOURCE_ID);
+    expect(mapMock.getSource).toHaveBeenCalledWith(ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID);
     expect(setData).toHaveBeenCalledWith(featureCollection);
     expect(cache.get('2000-10-01')).toBe(featureCollection);
   });
@@ -273,7 +339,7 @@ describe('applyAdminBoundaryHistoricalDataに関するテスト', () => {
     const map = asMap(mapMock);
     const cache = new Map<MunicipalityEra, GeoJSON.FeatureCollection>([['2000-10-01', cachedFeatureCollection]]);
 
-    await applyAdminBoundaryHistoricalData(map, '2000-10-01', cache);
+    await applyAdminBoundaryData(map, '2000-10-01', cache);
 
     expect(fetchMunicipalityBoundaries).not.toHaveBeenCalled();
     expect(setData).toHaveBeenCalledWith(cachedFeatureCollection);
