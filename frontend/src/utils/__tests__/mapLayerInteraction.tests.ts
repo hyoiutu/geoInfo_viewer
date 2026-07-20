@@ -24,7 +24,8 @@ import {
   applyStartGoalMarkers,
   panToMunicipalityCentroid,
   registerAdminBoundaryClickHandler,
-  registerBicycleLogClickHandler
+  registerBicycleLogClickHandler,
+  registerFocusedActivityHoverHandler
 } from '../mapLayerInteraction';
 
 const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity => ({
@@ -109,6 +110,91 @@ describe('registerBicycleLogClickHandlerに関するテスト', () => {
 
     expect(mapMock.queryRenderedFeatures).not.toHaveBeenCalled();
     expect(onSelectActivities).not.toHaveBeenCalled();
+  });
+});
+
+describe('registerFocusedActivityHoverHandlerに関するテスト', () => {
+  type MouseMoveHandler = (event: { point: { x: number; y: number }; lngLat: { lng: number; lat: number } }) => void;
+
+  /** map.on/map.queryRenderedFeaturesのみを呼び出す最小限のMapLibre地図モック */
+  const createMapMock = () => ({
+    on: vi.fn<(event: string, handler: MouseMoveHandler) => void>(),
+    queryRenderedFeatures: vi.fn<() => unknown[]>(() => [])
+  });
+  // テスト対象はmap.on/map.queryRenderedFeaturesのみ呼ぶため、必要最小限のモックへキャストする
+  const asMap = (mock: ReturnType<typeof createMapMock>): maplibregl.Map => mock as never;
+
+  const getMouseMoveHandler = (mock: ReturnType<typeof createMapMock>) => {
+    const call = mock.on.mock.calls.find(([event]) => event === 'mousemove');
+    // mock.onの型はハンドラの型を保持しないため、呼び出し時の実引数の型へキャストする
+    return call?.[1] as MouseMoveHandler;
+  };
+
+  const activityWithPath = createActivity({
+    path: [
+      [
+        [139.0, 35.0],
+        [139.0, 35.01]
+      ]
+    ]
+  });
+
+  test('フォーカス中のアクティビティの線上をホバーすると、始点からの距離でonHoverが呼ばれる', () => {
+    const mapMock = createMapMock();
+    mapMock.queryRenderedFeatures.mockReturnValue([{ properties: { id: '1' } }]);
+    const onHover = vi.fn();
+    const onHoverEnd = vi.fn();
+    registerFocusedActivityHoverHandler(asMap(mapMock), () => activityWithPath, onHover, onHoverEnd);
+
+    getMouseMoveHandler(mapMock)({ point: { x: 100, y: 200 }, lngLat: { lng: 139.0, lat: 35.0 } });
+
+    expect(mapMock.queryRenderedFeatures).toHaveBeenCalledWith(
+      [
+        [95, 195],
+        [105, 205]
+      ],
+      { layers: [BICYCLE_LOG_FOCUSED_LAYER_ID] }
+    );
+    expect(onHover).toHaveBeenCalledWith([139.0, 35.0], expect.any(Number));
+    expect(onHoverEnd).not.toHaveBeenCalled();
+  });
+
+  test('フォーカス中のアクティビティが無い場合、ヒットテストは行われずonHoverEndが呼ばれる', () => {
+    const mapMock = createMapMock();
+    const onHover = vi.fn();
+    const onHoverEnd = vi.fn();
+    registerFocusedActivityHoverHandler(asMap(mapMock), () => null, onHover, onHoverEnd);
+
+    getMouseMoveHandler(mapMock)({ point: { x: 100, y: 200 }, lngLat: { lng: 139.0, lat: 35.0 } });
+
+    expect(mapMock.queryRenderedFeatures).not.toHaveBeenCalled();
+    expect(onHover).not.toHaveBeenCalled();
+    expect(onHoverEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test('軌跡(path)を持たないアクティビティがフォーカス中の場合、onHoverEndが呼ばれる', () => {
+    const mapMock = createMapMock();
+    const onHover = vi.fn();
+    const onHoverEnd = vi.fn();
+    registerFocusedActivityHoverHandler(asMap(mapMock), () => createActivity({ path: null }), onHover, onHoverEnd);
+
+    getMouseMoveHandler(mapMock)({ point: { x: 100, y: 200 }, lngLat: { lng: 139.0, lat: 35.0 } });
+
+    expect(onHover).not.toHaveBeenCalled();
+    expect(onHoverEnd).toHaveBeenCalledTimes(1);
+  });
+
+  test('カーソル周辺にフォーカス中の線が無い場合、onHoverEndが呼ばれる', () => {
+    const mapMock = createMapMock();
+    mapMock.queryRenderedFeatures.mockReturnValue([]);
+    const onHover = vi.fn();
+    const onHoverEnd = vi.fn();
+    registerFocusedActivityHoverHandler(asMap(mapMock), () => activityWithPath, onHover, onHoverEnd);
+
+    getMouseMoveHandler(mapMock)({ point: { x: 100, y: 200 }, lngLat: { lng: 139.0, lat: 35.0 } });
+
+    expect(onHover).not.toHaveBeenCalled();
+    expect(onHoverEnd).toHaveBeenCalledTimes(1);
   });
 });
 

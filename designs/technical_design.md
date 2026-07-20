@@ -72,6 +72,14 @@ root/
 - スタート・ゴールマーカーは`lucide-react`のアイコン（スタート: `Play`、ゴール: `Flag`）を`react-dom/server`の`renderToStaticMarkup`で静的にレンダリングし、`maplibregl.Marker`のDOM要素として表示する（`createStartMarkerElement`/`createGoalMarkerElement`）
   - 開始地点と終了地点が同じ座標の場合に手前へ描画されるよう、ゴールのマーカーを先に、スタートのマーカーを後に地図へ追加する（MapLibreの`Marker`はDOM要素として描画されるため、後から追加した方がDOM上で後に来ることを利用している）
 
+# 走行距離表示機能（マウスオーバー、Issue #77）
+- フォーカス中の線上のマウス位置から、始点（走行開始地点）までの軌跡に沿った距離を求める処理は、クリック検出と同じ理由（線が細く正確なホバーが難しい）でカーソル位置を中心としたバウンディングボックスでヒットテストした上で、実際の距離計算は取得済みの`focusedActivity.path`（既にフロントエンドが保持しているデータ）に対して行う（`registerFocusedActivityHoverHandler`、`frontend/src/utils/mapLayerInteraction.ts`）
+- 「軌跡上でカーソルに最も近い点」は、区間（2点間の線分）ごとにベクトル射影で最近点を求め、全区間中で最小のもの（Haversine距離で比較）を採用する。経度・緯度をそのまま平面座標とみなす近似計算であり、正確な測地線上の最近点計算は行わない（ホバー表示の精度としては十分なため。`findDistanceAlongPathAtPoint`、`frontend/src/utils/findDistanceAlongPathAtPoint.ts`）
+  - 2点間の距離算出（Haversine公式）は、バックエンドの`splitPathAtJumps`（`backend/src/activities/split-path-at-jumps.util.ts`）と同じ計算式だが、フロントエンド・バックエンド間でコードを共有する仕組みがこのプロジェクトに無いため個別に持つ
+- 始点からの累積距離は、区間グループ（位置飛びで分割済み、[自転車ログ表示機能](#自転車ログ表示機能)参照）内の区間を順に積算して求める。区間グループ間（位置飛びの箇所）の距離は実際には走行していない区間のため累積距離に含めない
+- 吹き出し表示は`maplibregl.Popup`（`closeButton: false`、`closeOnClick: false`、`anchor: 'bottom'`でカーソル上部に表示）を1つだけ使い回し、ホバー地点ごとに`setLngLat`/`setText`で内容を更新する。線から外れると`Popup.remove()`で非表示にする
+- スタート・ゴールマーカーとは異なり、この吹き出しはReact管理下の状態（props）と紐付かない純粋にイベント駆動のUIのため、`MapView`内で直接（`useRef`で保持する`maplibregl.Popup`インスタンス1つを介して）管理する。地図操作としての「カーソル位置からの検出」ロジックのみを`registerFocusedActivityHoverHandler`として`mapLayerInteraction.ts`へ切り出している
+
 # 通過自治体表示機能
 - 全国の市区町村境界データ（[政府統計の総合窓口(e-Stat)地図で見る統計(統計GIS)提供の市区町村界データ、GeoShapeリポジトリ、高解像度版、政令指定都市統合版ではない方](https://geoshape.ex.nii.ac.jp/city/choropleth/)）をバックエンドのDB（`municipalities`テーブル、PostGIS）へ投入しておく（`pnpm --filter backend run seed:municipalities`、詳細はREADME.md参照）
   - `municipalities`テーブルは`era`列（年代識別子。現行データは`'current'`、過去データはGeoShapeの基準日をそのまま文字列で保持。例:`'2000-10-01'`）を持ち、複数年代分のデータを同じテーブルに格納する（Issue #34）。現行データは`'20230101'`（国土数値情報(N03)の最新基準日）、`2000-10-01`は`'20001001'`（平成の大合併前）をそれぞれGeoShapeのtopojson基準日として使う。`scripts/seed-municipalities.ts`（`backend/src/municipalities/era.constants.ts`の`MUNICIPALITY_ERAS`で定義された年代分）が、年代ごとに既存行のみを洗い替えて投入する
