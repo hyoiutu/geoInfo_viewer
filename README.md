@@ -85,6 +85,19 @@ pnpm --filter backend run seed:municipalities
 
 データは[政府統計の総合窓口(e-Stat)地図で見る統計(統計GIS)提供の市区町村界データ（GeoShapeリポジトリ、高解像度版）](https://geoshape.ex.nii.ac.jp/city/choropleth/)を使用しています。現行（最新）データに加え、2000-10-01（平成の大合併前）・1950-10-01（昭和の大合併前）・1920-01-01（大正時代）時点のデータも投入します（`backend/src/municipalities/era.constants.ts`の`MUNICIPALITY_ERAS`で年代を追加可能）。再実行すると年代ごとに全件洗い替えします（他の年代のデータには影響しません）。
 
+### 既存写真の一括取り込み（写真ローカルバックフィル、任意）
+
+Google Takeoutのエクスポートzipが数十GB規模で`POST /photos/ingest`（zipをそのままGoogle Driveからダウンロードして処理する方式）では扱えない場合、以下の手順でまとめて取り込めます。
+
+1. 手元でTakeoutのzipをすべて展開し、写真本体とJSONサイドカーファイル（`*.json`）をサブディレクトリを作らず1つのフラットなローカルディレクトリへ集約する
+2. 以下を実行する（撮影年月ごとに月別アーカイブzipへ再構成してGoogle Driveへアップロードし、`photos`テーブルへメタデータを保存します）
+
+```bash
+pnpm --filter backend run backfill:photos-local -- <展開した写真ディレクトリの絶対パス>
+```
+
+写真本体の実バイナリは、撮影年月ごとの処理単位でのみメモリへ読み込むため、対象件数が多くてもメモリ使用量は増え続けません。
+
 ### バックエンドAPIの仕様確認（Swagger）
 
 バックエンドを起動した状態（`pnpm --filter backend run dev`等）で、ブラウザから以下へアクセスするとSwagger UIが開き、各APIのエンドポイント・リクエスト/レスポンス形式を確認できます。

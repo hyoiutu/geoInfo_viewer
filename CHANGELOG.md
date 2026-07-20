@@ -14,6 +14,23 @@
 
 ## 変更履歴
 
+### [2026-07-20] Issue #23対応として既存写真の一括取り込み用の写真ローカルバックフィルスクリプトを実装した
+* **修正の動機・概要**:
+  - サイドバーのグリッド表示の動作確認中、既存のPicker UI経由の取り込み方式（`POST /photos/ingest`、Takeout zip全体を一度にメモリへ展開する方式）では、実際のエクスポート規模（最大50GB・複数ファイル）を扱えないことが判明した。Node.jsの`Buffer`には約2〜4GBの上限があり、zip全体をメモリへ展開する現行方式ではこの規模のファイルを扱うとクラッシュする。
+  - Google Driveをまたぐ再構成（Drive上でzipを解凍・振り分け）を伴う案も検討したが、API呼び出し回数・レート制限の観点からユーザー側で「事前にローカルへ展開・フラットな1ディレクトリへ集約」した上で、それ以降の年月ごとの振り分け・DB投入のみを自動化するスクリプト方式を採用することにした（ユーザーとの協議の結果、複数の代替案の中から選定）。
+  - 既存の取り込みパイプライン（`PhotoIngestService.ingest`）とロジックを重複させないよう、`resolvePhotoMetadata`（JSON優先・EXIFフォールバック）を`takeout-metadata.util.ts`へ、`toPhotoEntity`を`photo-ingest.service.ts`のexport関数へそれぞれ切り出し、新旧両方のパイプラインから共通で呼び出す形にリファクタリングした（TDD、Red-Green）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/takeout-metadata.util.ts`: `PhotoIngestService`の private関数だった`resolvePhotoMetadata`をexport関数として移設。
+    - `backend/src/photos/photo-ingest.service.ts`: privateメソッドだった`toPhotoEntity`をexport関数化し、`resolvePhotoMetadata`は移設先からimportして使用するよう変更。
+    - `backend/src/photos/local-photo-directory.util.ts`（新規）: ローカルディレクトリ（フラット構成）を走査し写真本体・JSONサイドカーへ分類する`scanLocalPhotoDirectory`、写真本体の実バイナリを遅延読み込みする`readLocalPhotoData`。
+    - `backend/src/photos/backfill-photos-from-local.ts`（新規）: `seed-municipalities.ts`と同じくDIコンテナを経由せず手動で各サービスを組み立てるオーケストレーションスクリプト。ファイル名マッチング→メタデータ解決（EXIFフォールバック時のみ対象写真1件分を都度読み込み）→年月ごとのグループ化→月ごとに1グループずつ月別アーカイブへ振り分け・保存、という3段階で処理し、いずれの段階でも全写真の実バイナリを同時にメモリへ保持しないようにした。
+    - `backend/package.json`: `backfill:photos-local`スクリプトを追加。
+    - 対応する単体テストを新規・変更ファイルへ追加（TDD、Red-Green）。単体テスト（バックエンド全40ファイル230件）・lint・typecheckは全てGreen。
+  * **README.md**: 「既存写真の一括取り込み（写真ローカルバックフィル、任意）」節を追加し、手順（ローカルへの展開・集約→スクリプト実行）を記載。
+  * **仕様書**: 変更なし（このスクリプトはユーザーから見た機能ではなく開発者向けの一括投入手段のため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章に「既存写真の一括取り込み（写真ローカルバックフィル）」節を追加し、Bufferサイズ制約の背景・設計判断・処理段階を記載。
+
 ### [2026-07-20] Issue #23対応として写真バイナリの遅延取得APIを実装した
 * **修正の動機・概要**:
   - Issue #23「写真閲覧機能」の残りスコープのうち、対話モードで「写真バイナリの遅延取得API」に着手した。地図上の吹き出し表示・サイドバーのグリッド表示いずれも実際の画像バイナリの取得が前提となるため、既存の写真取得API（`GET /activities/:id/photos`、メタデータのみ返す）に続く優先度の高いピースとして選定した。

@@ -7,23 +7,25 @@ import { GoogleDriveAuthService } from '../google-drive/google-drive-auth.servic
 import { PhotoEntity } from './entities/photo.entity';
 import { groupPhotosByYearMonth, type PhotoWithMetadata } from './group-photos-by-year-month.util';
 import { MonthlyPhotoArchiveService, type ReorganizedPhoto } from './monthly-photo-archive.service';
-import { extractTakeoutArchive, type TakeoutArchiveEntry } from './takeout-archive.util';
-import { extractMetadataFromExif, extractMetadataFromJson, type PhotoMetadata } from './takeout-metadata.util';
+import { extractTakeoutArchive } from './takeout-archive.util';
+import { resolvePhotoMetadata } from './takeout-metadata.util';
 import { matchPhotosWithJsonSidecars } from './takeout-photo-matcher.util';
 import type { PhotoIngestResultDto } from './types/photo-ingest-result.dto';
 
 /**
- * 指定した写真エントリのメタデータを、JSONサイドカー優先・EXIF直読みフォールバックの順で解決する
- * @param photo 写真本体のエントリ
- * @param json マッチしたJSONサイドカーのエントリ。見つからない場合はnull
- * @returns 解決できたメタデータ。JSON・EXIFいずれからも取得できない場合はnull
+ * 月別アーカイブへの振り分け結果から、保存用のPhotoEntityを組み立てる。`PhotoIngestService`
+ * （Google Drive由来）・写真ローカルバックフィルスクリプト（ローカルディレクトリ由来）の両方から使う（Issue #23）
+ * @param reorganized 振り分け後の写真と保存先アーカイブ情報
+ * @returns 保存用のPhotoEntity
  */
-const resolvePhotoMetadata = async (
-  photo: TakeoutArchiveEntry,
-  json: TakeoutArchiveEntry | null
-): Promise<PhotoMetadata | null> => {
-  const jsonMetadata = json !== null ? extractMetadataFromJson(json.data) : null;
-  return jsonMetadata ?? (await extractMetadataFromExif(photo.data));
+export const toPhotoEntity = (reorganized: ReorganizedPhoto): PhotoEntity => {
+  const entity = new PhotoEntity();
+  entity.fileName = basename(reorganized.photo.entry.path);
+  entity.takenAt = reorganized.photo.metadata.takenAt;
+  entity.location = reorganized.photo.metadata.location;
+  entity.sourceFileId = reorganized.sourceFileId;
+  entity.archivePath = reorganized.archivePath;
+  return entity;
 };
 
 /**
@@ -67,26 +69,11 @@ export class PhotoIngestService {
     const groups = groupPhotosByYearMonth(photosWithMetadata);
     const reorganized = await this.monthlyPhotoArchiveService.reorganize(accessToken, groups);
 
-    const entities = reorganized.map((photo) => this.toPhotoEntity(photo));
+    const entities = reorganized.map((photo) => toPhotoEntity(photo));
     if (entities.length > 0) {
       await this.photoRepository.save(entities);
     }
 
     return { savedCount: entities.length, skippedCount };
-  }
-
-  /**
-   * 月別アーカイブへの振り分け結果から、保存用のPhotoEntityを組み立てる
-   * @param reorganized 振り分け後の写真と保存先アーカイブ情報
-   * @returns 保存用のPhotoEntity
-   */
-  private toPhotoEntity(reorganized: ReorganizedPhoto): PhotoEntity {
-    const entity = new PhotoEntity();
-    entity.fileName = basename(reorganized.photo.entry.path);
-    entity.takenAt = reorganized.photo.metadata.takenAt;
-    entity.location = reorganized.photo.metadata.location;
-    entity.sourceFileId = reorganized.sourceFileId;
-    entity.archivePath = reorganized.archivePath;
-    return entity;
   }
 }

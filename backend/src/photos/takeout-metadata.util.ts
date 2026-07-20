@@ -1,5 +1,6 @@
 import { gps, parse } from 'exifr';
 import type { Point } from 'geojson';
+import type { TakeoutArchiveEntry } from './takeout-archive.util';
 
 const MILLISECONDS_PER_SECOND = 1000;
 // Google Takeoutのメタデータは、位置情報が無い写真の場合latitude/longitudeが両方0.0になる
@@ -145,4 +146,20 @@ const readExifLocation = async (photoBuffer: Buffer): Promise<Point | null> => {
   } catch {
     return null;
   }
+};
+
+/**
+ * 指定した写真エントリのメタデータを、JSONサイドカー優先・EXIF直読みフォールバックの順で解決する。
+ * `PhotoIngestService`（Google Driveから取得したTakeout zip由来）・写真ローカルバックフィルスクリプト
+ * （ローカルディレクトリ由来）の両方から共通で使う（Issue #23）
+ * @param photo 写真本体のエントリ
+ * @param json マッチしたJSONサイドカーのエントリ。見つからない場合はnull
+ * @returns 解決できたメタデータ。JSON・EXIFいずれからも取得できない場合はnull
+ */
+export const resolvePhotoMetadata = async (
+  photo: TakeoutArchiveEntry,
+  json: TakeoutArchiveEntry | null
+): Promise<PhotoMetadata | null> => {
+  const jsonMetadata = json !== null ? extractMetadataFromJson(json.data) : null;
+  return jsonMetadata ?? (await extractMetadataFromExif(photo.data));
 };

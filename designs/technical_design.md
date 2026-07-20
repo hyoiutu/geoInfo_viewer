@@ -150,3 +150,15 @@ Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの
   - 写真の実バイナリ自体は返さない（`file_name`・`taken_at`・`location`のみを含む`PhotoDto`）。プレビュー表示に必要な実バイナリは、後述の`GET /photos/:id/image`で別途遅延取得する
 - 写真バイナリの遅延取得は`GET /photos/:id/image`（`PhotosController.getImage`、`PhotosService.findImageByPhotoId`）で実現する。対象写真の`source_file_id`（月別アーカイブzipのGoogle Drive fileId）をダウンロードし、`adm-zip`で`archive_path`のエントリを取り出してレスポンスする（NestJSの`StreamableFile`、Content-Typeは`file_name`の拡張子から`resolveImageContentType`で解決する`image-content-type.util.ts`）。写真・エントリのいずれかが見つからない場合は404を返す
   - 月別アーカイブzipのダウンロード結果は`PhotosService`インスタンス内のメモリ（`Map<sourceFileId, Buffer>`、挿入順を利用した簡易LRU、上限5件）へキャッシュする。1つのアクティビティに紐づく写真は撮影年月が近接することが多く、写真ごとに同じ月別アーカイブを再ダウンロードすると無駄が大きいため（Issue #80のパフォーマンス対応時の教訓を踏まえ、実装時点から対策した）
+
+## 既存写真の一括取り込み（写真ローカルバックフィル）
+`PhotoIngestService.ingest`（`POST /photos/ingest`）はTakeout zip全体を一度にメモリへ展開する方式（`adm-zip`、Buffer型）のため、Node.jsの`Buffer`最大サイズ（64bit環境で約2〜4GB）を超えるzipを扱えない。実データでは1エクスポートあたり最大50GB・複数ファイルという規模になることが判明し、既存写真をまとめて取り込むにはこの方式が使えないことがIssue #23の対応中に分かった（詳細な検討経緯はIssue #23のコメント参照）。この制約に対応するため、ユーザーが事前にTakeout zipを手元で展開し写真本体・JSONサイドカーをサブディレクトリなしの1フラットディレクトリへ集約した上で、それ以降（年月ごとの振り分け・DBへの投入）を自動化する`backend/src/photos/backfill-photos-from-local.ts`（`pnpm --filter backend run backfill:photos-local -- <ディレクトリパス>`）を用意した。
+
+- `seed-municipalities.ts`と同じ「NestJSのDIコンテナを経由せず、`DataSource`・各サービスを手動で`new`してスクリプトから直接呼び出す」パターンで実装しており、専用の単体テストは持たない（オーケストレーションスクリプトに対する本プロジェクトの既存の方針を踏襲）
+- `PhotoIngestService.ingest`とロジックを重複させないよう、以下の2つの関数を`PhotoIngestService`から切り出し・`takeout-metadata.util.ts`へ移設し、両方から共通で呼び出す形にした
+  - `resolvePhotoMetadata`（`takeout-metadata.util.ts`）: JSONサイドカー優先・EXIFフォールバックでのメタデータ解決
+  - `toPhotoEntity`（`photo-ingest.service.ts`からexport）: 月別アーカイブへの振り分け結果から`PhotoEntity`を組み立てる処理
+- 処理は以下の3段階で行い、いずれの段階でも全写真の実バイナリを同時にメモリへ保持しないようにしている
+  1. `scanLocalPhotoDirectory`（`local-photo-directory.util.ts`）がディレクトリを走査し、ファイル名のみで写真本体・JSONサイドカーへ分類する（写真本体側の`data`はプレースホルダの空Bufferとし、実バイナリは`readLocalPhotoData`で必要になった時点まで読み込まない）。`matchPhotosWithJsonSidecars`によるファイル名マッチング自体はパスのみを見るため、この時点で問題ない
+  2. マッチした写真ごとに`resolvePhotoMetadata`でメタデータを解決する（JSONサイドカーが優先されるが、無い・不正な場合のEXIFフォールバックのために対象写真1件分の実バイナリを`readLocalPhotoData`でその場読み込みする。読み込んだバイナリはメタデータ解決後に破棄する）
+  3. `groupPhotosByYearMonth`で年月ごとにグループ化した後、月ごとに1グループずつ（`MonthlyPhotoArchiveService.reorganize`は`[group]`という単一要素の配列で呼び出す）該当写真の実バイナリを読み込み、月別アーカイブへの振り分け・Google Driveへのアップロード・`photos`テーブルへの保存を行う
