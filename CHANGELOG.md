@@ -14,6 +14,22 @@
 
 ## 変更履歴
 
+### [2026-07-20] Issue #23対応として写真バイナリの遅延取得APIを実装した
+* **修正の動機・概要**:
+  - Issue #23「写真閲覧機能」の残りスコープのうち、対話モードで「写真バイナリの遅延取得API」に着手した。地図上の吹き出し表示・サイドバーのグリッド表示いずれも実際の画像バイナリの取得が前提となるため、既存の写真取得API（`GET /activities/:id/photos`、メタデータのみ返す）に続く優先度の高いピースとして選定した。
+  - `PhotoEntity`のコメントに既に「実バイナリは表示機能実装時に、`source_file_id`（月別アーカイブzipのfileId）・`archive_path`（zip内のパス）を使って遅延取得する想定」と設計意図が明記されており、その通りに実装した。
+  - 1つのアクティビティに紐づく写真は撮影年月が近接することが多く、写真ごとに同じ月別アーカイブzipを再ダウンロードすると無駄が大きいと判断し、直前のPR #80（行政区画フォーカスのパフォーマンス問題）と同種の問題を未然に防ぐため、実装時点からメモリ内キャッシュ（簡易LRU、上限5件）を組み込んだ。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/image-content-type.util.ts`（新規）: ファイル名の拡張子からHTTP Content-Typeを解決する`resolveImageContentType`。
+    - `backend/src/photos/photos.service.ts`: `findImageByPhotoId`（新規）を追加。`GoogleDriveAuthService`/`GoogleDriveApiClient`を新たに注入し、月別アーカイブzipのダウンロード結果をメモリキャッシュする。
+    - `backend/src/photos/photos.controller.ts`: `GET /photos/:id/image`（新規、`getImage`）を追加。`StreamableFile`でバイナリを返し、見つからない場合は404。
+    - `backend/src/photos/photos.constants.ts`: `PHOTOS_IMAGE_ROUTE`（`:id/image`）を追加。
+    - 対応する単体テストを各ファイルへ追加（TDD、Red-Green）。単体テスト（バックエンド全39ファイル225件）・lint・typecheck・型キャストチェックは全てGreen。実アプリ起動でのDI解決・ルーティング登録、実DB・実Google Drive環境を使った疎通確認（実写真での200応答・Content-Type/サイズの一致・キャッシュによる再ダウンロード抑制・存在しないIDでの404）も実施済み。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（`POST /photos/ingest`と同様、このAPIを呼び出すユーザー向けUI・表示機能はまだ実装していないため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章に、`GET /photos/:id/image`の実装内容とキャッシュ方針を追記。
+
 ### [2026-07-20] PR #80の動作確認・レビュー対応として、行政区画フォーカス機能のパフォーマンス改善と地図中心合わせを行った
 * **修正の動機・概要**:
   - PR #80の動作確認で、行政区画をクリックしてからフォーカス表示されるまでの遅延・操作中のカクつきについて指摘を受けた。原因を調査したところ、`MapView.tsx`の1つの`useEffect`が「境界データ(hit-test用含む)の取得・反映」と「フォーカス対象の反映」を兼ねており、依存配列に`focusedMunicipality`を含んでいたため、クリックのたびに変化していないはずの全国分の境界データを毎回`setData`し直していたことが判明した。effectを「境界データの取得・反映（年代のみに依存）」「フォーカス対象の反映（フォーカス対象のみに依存、setDataを伴わない取得専用経路を使用）」の2つへ分割して解消した。
