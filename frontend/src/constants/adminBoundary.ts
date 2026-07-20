@@ -34,3 +34,17 @@ export const ADMIN_BOUNDARY_HISTORICAL_FILL_OPACITY = 0.05;
 export const ADMIN_BOUNDARY_HISTORICAL_LABEL_TEXT_COLOR = '#000';
 export const ADMIN_BOUNDARY_HISTORICAL_LABEL_HALO_COLOR = '#fff';
 export const ADMIN_BOUNDARY_HISTORICAL_LABEL_HALO_WIDTH = 1;
+
+// 行政区画クリック・通過自治体リストクリックによる範囲フォーカス機能に使う（Issue #76）。
+// hit-testレイヤーは完全に透明なfillレイヤーで、queryRenderedFeatures/クリックイベントによる
+// 「クリック地点を含む自治体の検出」専用に使い、見た目には影響しない
+export const ADMIN_BOUNDARY_HITTEST_SOURCE_ID = 'admin-boundary-hittest-source';
+export const ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID = 'admin-boundary-hittest-fill';
+export const ADMIN_BOUNDARY_FOCUSED_SOURCE_ID = 'admin-boundary-focused-source';
+export const ADMIN_BOUNDARY_FOCUSED_LINE_LAYER_ID = 'admin-boundary-focused-line';
+// 自転車ログのフォーカス色(赤 #e53e3e)・ゴールマーカー(赤系)は既に「フォーカス中のアクティビティ」
+// 「ゴール地点」を表す色として使われているため、行政区画のフォーカスには別の色相(オレンジ)を割り当てて
+// 状態エンコーディングの衝突を避ける（Issue #76、issue_review_notes.md観点3）
+export const ADMIN_BOUNDARY_FOCUSED_LINE_COLOR = '#dd6b20';
+export const ADMIN_BOUNDARY_FOCUSED_LINE_WIDTH = 4;
+export const ADMIN_BOUNDARY_FOCUSED_LINE_DASHARRAY: [number, number] = [2, 1];

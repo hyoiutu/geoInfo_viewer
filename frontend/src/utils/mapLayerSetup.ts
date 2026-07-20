@@ -2,6 +2,11 @@ import type { FeatureCollection } from 'geojson';
 import type maplibregl from 'maplibre-gl';
 import { fetchMunicipalityBoundaries } from '../api/municipalitiesApi';
 import {
+  ADMIN_BOUNDARY_FOCUSED_LINE_COLOR,
+  ADMIN_BOUNDARY_FOCUSED_LINE_DASHARRAY,
+  ADMIN_BOUNDARY_FOCUSED_LINE_LAYER_ID,
+  ADMIN_BOUNDARY_FOCUSED_LINE_WIDTH,
+  ADMIN_BOUNDARY_FOCUSED_SOURCE_ID,
   ADMIN_BOUNDARY_HISTORICAL_FILL_COLOR,
   ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_FILL_OPACITY,
@@ -11,6 +16,8 @@ import {
   ADMIN_BOUNDARY_HISTORICAL_LABEL_TEXT_COLOR,
   ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID,
+  ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
+  ADMIN_BOUNDARY_HITTEST_SOURCE_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_FILTER,
   ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_LINE_COLOR,
@@ -185,26 +192,80 @@ export const addAdminBoundaryHistoricalLayer = (map: maplibregl.Map) => {
 };
 
 /**
- * 選択中の年代の行政区画境界データを、過去年代用GeoJSONソースへ反映する。currentの場合は現行のベクトルタイル
- * （boundary_3・admin-boundary-municipality）を使うため何もしない。取得結果はeraごとにcacheへ保存し、
- * 同じ年代へ再度切り替えた際の再取得を避ける
+ * 行政区画クリック・通過自治体リストクリックによる範囲フォーカス機能に使う、空のGeoJSONソースと2レイヤーを
+ * 地図に追加する。hit-testレイヤーは完全に透明なfillレイヤーとして追加し、クリック検出専用に使う。
+ * 実際のデータはapplyAdminBoundaryData（hit-test用）・applyFocusedMunicipalityLayer（フォーカス表示用）が
+ * setDataで反映する（Issue #76）
+ * @param map 追加先のMapLibre地図インスタンス
+ */
+export const addAdminBoundaryFocusLayer = (map: maplibregl.Map) => {
+  map.addSource(ADMIN_BOUNDARY_HITTEST_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+  map.addLayer({
+    id: ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
+    type: 'fill',
+    source: ADMIN_BOUNDARY_HITTEST_SOURCE_ID,
+    minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM,
+    paint: { 'fill-opacity': 0 }
+  });
+
+  map.addSource(ADMIN_BOUNDARY_FOCUSED_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+  map.addLayer({
+    id: ADMIN_BOUNDARY_FOCUSED_LINE_LAYER_ID,
+    type: 'line',
+    source: ADMIN_BOUNDARY_FOCUSED_SOURCE_ID,
+    minzoom: ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM,
+    paint: {
+      'line-color': ADMIN_BOUNDARY_FOCUSED_LINE_COLOR,
+      'line-width': ADMIN_BOUNDARY_FOCUSED_LINE_WIDTH,
+      'line-dasharray': ADMIN_BOUNDARY_FOCUSED_LINE_DASHARRAY
+    }
+  });
+};
+
+/**
+ * 選択中の年代の行政区画境界データを取得する。取得結果はeraごとにcacheへ保存し、同じ年代へ再度
+ * 切り替えた際の再取得を避ける。`applyAdminBoundaryData`（表示・hit-testソースへの反映を伴う）と
+ * `applyFocusedMunicipalityLayer`（フォーカス対象の検索）の両方から使う共通処理として切り出している
+ * （Issue #80フォローアップ。フォーカス対象の検索のためだけに表示・hit-testソースへ毎回setDataし直すと、
+ * 全国分のジオメトリの再インデックス化が発生し重くなるため、setDataを伴わない取得専用の経路を用意した）
+ * @param era 取得対象の年代識別子
+ * @param cache 年代ごとに取得済みのGeoJSONを保持するキャッシュ（呼び出し元が状態を持ち、この関数はそれを読み書きする）
+ * @returns 該当年代の境界データ（GeoJSON FeatureCollection）
+ */
+export const getOrFetchMunicipalityBoundaries = async (
+  era: MunicipalityEra,
+  cache: Map<MunicipalityEra, FeatureCollection>
+): Promise<FeatureCollection> => {
+  const cached = cache.get(era);
+  if (cached) {
+    return cached;
+  }
+  const featureCollection = await fetchMunicipalityBoundaries(era);
+  cache.set(era, featureCollection);
+  return featureCollection;
+};
+
+/**
+ * 選択中の年代の行政区画境界データを取得し、hit-test用ソースへ反映する。currentの場合、見た目は現行の
+ * ベクトルタイル（boundary_3・admin-boundary-municipality）で描画済みのため過去年代用の表示ソースへの反映は
+ * 行わないが、クリックによる範囲フォーカス機能（Issue #76）はhit-testソースを介して年代によらず動作させるため、
+ * hit-test用ソースへの反映はcurrentでも行う
  * @param map 反映先のMapLibre地図インスタンス
  * @param era 選択中の年代識別子
  * @param cache 年代ごとに取得済みのGeoJSONを保持するキャッシュ（呼び出し元が状態を持ち、この関数はそれを読み書きする）
  */
-export const applyAdminBoundaryHistoricalData = async (
+export const applyAdminBoundaryData = async (
   map: maplibregl.Map,
   era: MunicipalityEra,
   cache: Map<MunicipalityEra, FeatureCollection>
 ): Promise<void> => {
+  const featureCollection = await getOrFetchMunicipalityBoundaries(era, cache);
+
+  const hitTestSource = map.getSource<maplibregl.GeoJSONSource>(ADMIN_BOUNDARY_HITTEST_SOURCE_ID);
+  hitTestSource?.setData(featureCollection);
+
   if (era === MUNICIPALITY_ERA_CURRENT) {
     return;
-  }
-
-  const cached = cache.get(era);
-  const featureCollection = cached ?? (await fetchMunicipalityBoundaries(era));
-  if (!cached) {
-    cache.set(era, featureCollection);
   }
 
   const source = map.getSource<maplibregl.GeoJSONSource>(ADMIN_BOUNDARY_HISTORICAL_SOURCE_ID);

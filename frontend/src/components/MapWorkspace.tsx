@@ -1,5 +1,6 @@
 import { Box, Flex } from '@chakra-ui/react';
 import { useMemo, useState } from 'react';
+import type { PassedMunicipality } from '../api/activitiesApi';
 import { createDefaultVisibility } from '../constants/layerDefinitions';
 import { useActivitySelection } from '../hooks/useActivitySelection';
 import { useBackfillProgressFooter } from '../hooks/useBackfillProgressFooter';
@@ -27,6 +28,7 @@ export const MapWorkspace = () => {
   const [visibility, setVisibility] = useState<LayerVisibility>(createDefaultVisibility);
   const [era, setEra] = useState<MunicipalityEra>(MUNICIPALITY_ERA_CURRENT);
   const [filter, setFilter] = useState<ActivityFilter>(DEFAULT_ACTIVITY_FILTER);
+  const [focusedMunicipality, setFocusedMunicipality] = useState<PassedMunicipality | null>(null);
 
   const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus();
   const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =
@@ -37,9 +39,22 @@ export const MapWorkspace = () => {
 
   const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
 
+  // フォーカス中のアクティビティ・行政区画の年代が変わると、通過自治体一覧の内容自体が変わり
+  // 直前にフォーカスしていた自治体が無関係になるため、行政区画のフォーカスも解除する（Issue #76）
+  const handleFocusActivity = (index: number) => {
+    setFocusedMunicipality(null);
+    focusActivity(index);
+  };
+
+  const handleBackFromDetail = () => {
+    setFocusedMunicipality(null);
+    clearFocus();
+  };
+
   const handleApplyLayerSettings = (nextVisibility: LayerVisibility, nextEra: MunicipalityEra) => {
     setVisibility(nextVisibility);
     setEra(nextEra);
+    setFocusedMunicipality(null);
   };
 
   return (
@@ -53,6 +68,8 @@ export const MapWorkspace = () => {
             onSelectActivities={selectActivities}
             filteredActivities={filteredActivities}
             adminBoundaryEra={era}
+            focusedMunicipality={focusedMunicipality}
+            onFocusMunicipality={setFocusedMunicipality}
           />
           <MapControls
             appliedVisibility={visibility}
@@ -79,10 +96,11 @@ export const MapWorkspace = () => {
       <ActivityDetailSidebar
         activities={selectedActivities}
         focusedActivity={focusedActivity}
-        onFocus={focusActivity}
-        onBackFromDetail={clearFocus}
+        onFocus={handleFocusActivity}
+        onBackFromDetail={handleBackFromDetail}
         onBackFromList={clearSelection}
         adminBoundaryEra={era}
+        onMunicipalityFocus={setFocusedMunicipality}
       />
       <ErrorDialog />
     </Flex>

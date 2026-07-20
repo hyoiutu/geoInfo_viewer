@@ -1,9 +1,11 @@
 import type { LayerSpecification } from 'maplibre-gl';
 import { describe, expect, test } from 'vitest';
 import {
+  ADMIN_BOUNDARY_FOCUSED_LINE_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+  ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID
 } from '../../constants/adminBoundary';
 import { AERIAL_PHOTO_LAYER_ID } from '../../constants/aerialPhoto';
@@ -235,19 +237,27 @@ describe('resolveStyleLayerIdsに関するテスト', () => {
     ]);
   });
 
-  test('admin-boundaryかつ年代がcurrentのとき、カテゴリ分類済みのレイヤーIDに加え市町村境界レイヤーIDを含める', () => {
+  test('admin-boundaryかつ年代がcurrentのとき、カテゴリ分類済みのレイヤーIDに加え市町村境界・hit-test・フォーカス表示のレイヤーIDを含める', () => {
     const result = resolveStyleLayerIds('admin-boundary', SampleCategorizedLayerIds, 'current');
 
-    expect(result).toEqual(['boundary_3', 'label_city', ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID]);
+    expect(result).toEqual([
+      'boundary_3',
+      'label_city',
+      ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
+      ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
+      ADMIN_BOUNDARY_FOCUSED_LINE_LAYER_ID
+    ]);
   });
 
-  test('admin-boundaryかつ年代がcurrent以外のとき、過去年代用の塗り・線・ラベルレイヤーIDを返す', () => {
+  test('admin-boundaryかつ年代がcurrent以外のとき、過去年代用の塗り・線・ラベルレイヤーIDに加えhit-test・フォーカス表示のレイヤーIDを返す', () => {
     const result = resolveStyleLayerIds('admin-boundary', SampleCategorizedLayerIds, '2000-10-01');
 
     expect(result).toEqual([
       ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
       ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
-      ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID
+      ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
+      ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
+      ADMIN_BOUNDARY_FOCUSED_LINE_LAYER_ID
     ]);
   });
 

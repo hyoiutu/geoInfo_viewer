@@ -21,6 +21,10 @@ vi.mock('../../api/activitiesApi', () => ({
   })
 }));
 
+vi.mock('../../api/municipalitiesApi', () => ({
+  fetchMunicipalityBoundaries: vi.fn().mockResolvedValue({ type: 'FeatureCollection', features: [] })
+}));
+
 const FIXTURE_STYLE_LAYERS = [
   { id: 'background', type: 'background' },
   { id: 'road_motorway', type: 'line', 'source-layer': 'transportation' },
@@ -203,6 +207,43 @@ describe('MapWorkspaceに関するテスト', () => {
     await waitFor(() => expect(queryByText('獲得標高: 50 m')).not.toBeInTheDocument());
     expect(getByText(`1. ${formattedStartDate}`)).toBeInTheDocument();
   }, 10000);
+
+  test('通過自治体一覧の項目をクリックすると、行政区画フォーカス用オーバーレイへ反映される（Issue #76）', async () => {
+    const { fetchCyclingActivities, fetchPassedMunicipalities } = await import('../../api/activitiesApi');
+    const { fetchMunicipalityBoundaries } = await import('../../api/municipalitiesApi');
+    const startDate = '2026-06-15T01:00:00.000Z';
+    const formattedStartDate = new Date(startDate).toLocaleString('ja-JP');
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([createActivity({ id: 'low', startDate })]);
+    vi.mocked(fetchPassedMunicipalities).mockResolvedValue([{ prefectureName: '東京都', municipalityName: '渋谷区' }]);
+    const shibuyaFeature = {
+      type: 'Feature' as const,
+      geometry: { type: 'Point' as const, coordinates: [139.7, 35.6] },
+      properties: { prefectureName: '東京都', municipalityName: '渋谷区' }
+    };
+    vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue({
+      type: 'FeatureCollection',
+      features: [shibuyaFeature]
+    });
+    const { getByRole, getByText } = renderWithChakra(<MapWorkspace />);
+
+    await toggleLayerViaDialog(getByRole, '自転車ログ');
+    const mapInstance = getMapInstance();
+    await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalled());
+
+    mapInstance.queryRenderedFeatures.mockReturnValue([{ properties: { id: 'low' } }]);
+    const clickHandler = getClickHandler(mapInstance);
+    clickHandler({ point: { x: 0, y: 0 } });
+    await waitFor(() => expect(getByText(`1. ${formattedStartDate}`)).toBeInTheDocument());
+    fireEvent.click(getByText(`1. ${formattedStartDate}`));
+    await waitFor(() => expect(getByText('東京都渋谷区')).toBeInTheDocument());
+
+    fireEvent.click(getByText('東京都渋谷区'));
+
+    await waitFor(() => {
+      const setDataMock = mapInstance.getSource('any-source-id').setData;
+      expect(setDataMock).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [shibuyaFeature] });
+    });
+  });
 
   test('複数のエラーが発生した場合、エラーダイアログにスタックして表示される', async () => {
     // モーダルダイアログが一度開くと背後の要素はaria-hiddenになり操作できなくなるため、

@@ -35,6 +35,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
       />
     );
 
@@ -54,6 +55,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
       />
     );
 
@@ -72,6 +74,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={onFocus}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
       />
     );
     fireEvent.click(screen.getByText(`2. ${new Date('2026-07-01T01:00:00.000Z').toLocaleString('ja-JP')}`));
@@ -89,6 +92,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={onBackFromList}
+        onMunicipalityFocus={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: '戻る' }));
@@ -113,6 +117,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
       />
     );
 
@@ -133,11 +138,39 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={onBackFromDetail}
         onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: '戻る' }));
 
     expect(onBackFromDetail).toHaveBeenCalledTimes(1);
+  });
+
+  test('通過自治体の項目をクリックすると、その自治体でonMunicipalityFocusが呼ばれる', async () => {
+    vi.mocked(fetchPassedMunicipalities).mockResolvedValue([
+      { prefectureName: '東京都', municipalityName: '千代田区' },
+      { prefectureName: '神奈川県', municipalityName: '横浜市中区' }
+    ]);
+    const onMunicipalityFocus = vi.fn();
+    const activity = createActivity({ id: '42' });
+
+    renderWithChakra(
+      <ActivityDetailSidebar
+        activities={[activity]}
+        focusedActivity={activity}
+        onFocus={vi.fn()}
+        onBackFromDetail={vi.fn()}
+        onBackFromList={vi.fn()}
+        onMunicipalityFocus={onMunicipalityFocus}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByText('神奈川県横浜市中区')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByText('神奈川県横浜市中区'));
+
+    expect(onMunicipalityFocus).toHaveBeenCalledWith({ prefectureName: '神奈川県', municipalityName: '横浜市中区' });
   });
 
   test('フォーカス中の場合、対象アクティビティのIDで通過自治体を取得し一覧表示する', async () => {
@@ -154,6 +187,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
       />
     );
 
@@ -174,6 +208,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
         adminBoundaryEra="2000-10-01"
       />
     );
@@ -192,6 +227,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onFocus={vi.fn()}
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
       />
     );
 
@@ -212,6 +248,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
           onFocus={vi.fn()}
           onBackFromDetail={vi.fn()}
           onBackFromList={vi.fn()}
+          onMunicipalityFocus={vi.fn()}
         />
         <ErrorsProbe />
       </>

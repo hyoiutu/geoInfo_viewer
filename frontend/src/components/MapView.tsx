@@ -3,7 +3,7 @@ import type { FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
-import type { CyclingActivity } from '../api/activitiesApi';
+import type { CyclingActivity, PassedMunicipality } from '../api/activitiesApi';
 import { BICYCLE_LOG_SOURCE_ID } from '../constants/bicycleLog';
 import { useErrorReporter } from '../hooks/useErrorReporter';
 import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
@@ -12,18 +12,23 @@ import { toAppErrorInfo } from '../utils/apiError';
 import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
 import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
 import {
+  applyFocusedMunicipalityLayer,
   applyLayerVisibility,
   applySelectionLayers,
   applyStartGoalMarkers,
+  panToMunicipalityCentroid,
+  registerAdminBoundaryClickHandler,
   registerBicycleLogClickHandler,
   type StartGoalMarkerEntry
 } from '../utils/mapLayerInteraction';
 import {
+  addAdminBoundaryFocusLayer,
   addAdminBoundaryHistoricalLayer,
   addAdminBoundaryLayer,
   addAerialPhotoLayer,
   addBicycleLogLayer,
-  applyAdminBoundaryHistoricalData
+  applyAdminBoundaryData,
+  getOrFetchMunicipalityBoundaries
 } from '../utils/mapLayerSetup';
 
 const OSM_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
@@ -44,6 +49,10 @@ type MapViewProps = {
   filteredActivities: CyclingActivity[];
   /** 表示する行政区画の年代 */
   adminBoundaryEra: MunicipalityEra;
+  /** フォーカス中の自治体（地図クリック・通過自治体リストのクリックいずれか）。未フォーカスの場合はnull */
+  focusedMunicipality: PassedMunicipality | null;
+  /** 行政区画クリックで自治体が検出されたときに呼ばれるコールバック */
+  onFocusMunicipality: (municipality: PassedMunicipality) => void;
 };
 
 /**
@@ -59,7 +68,9 @@ export const MapView = ({
   focusedActivity,
   onSelectActivities,
   filteredActivities,
-  adminBoundaryEra
+  adminBoundaryEra,
+  focusedMunicipality,
+  onFocusMunicipality
 }: MapViewProps) => {
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
 
@@ -73,6 +84,8 @@ export const MapView = ({
   onSelectActivitiesRef.current = onSelectActivities;
   const focusedActivityRef = useRef(focusedActivity);
   focusedActivityRef.current = focusedActivity;
+  const onFocusMunicipalityRef = useRef(onFocusMunicipality);
+  onFocusMunicipalityRef.current = onFocusMunicipality;
 
   const addError = useErrorReporter();
 
@@ -100,12 +113,14 @@ export const MapView = ({
       addAerialPhotoLayer(map, categorizedLayerIds);
       addAdminBoundaryLayer(map);
       addAdminBoundaryHistoricalLayer(map);
+      addAdminBoundaryFocusLayer(map);
       addBicycleLogLayer(map);
       registerBicycleLogClickHandler(
         map,
         (ids) => onSelectActivitiesRef.current(ids),
         () => focusedActivityRef.current !== null
       );
+      registerAdminBoundaryClickHandler(map, (municipality) => onFocusMunicipalityRef.current(municipality));
       setIsStyleLoaded(true);
     });
 
@@ -160,19 +175,40 @@ export const MapView = ({
     applyLayerVisibility(map, categorizedLayerIds, layerVisibility, adminBoundaryEra);
   }, [layerVisibility, adminBoundaryEra, isStyleLoaded]);
 
-  // 選択中の行政区画年代が変化するたびに、過去年代用のGeoJSONを取得し反映する（currentの場合は何もしない）
+  // 選択中の行政区画年代が変化するたびに、境界データ(hit-test用含む)を取得・反映する。
+  // フォーカス対象(focusedMunicipality)はこのデータの取得・反映とは独立して変化しうるため、
+  // 依存配列に含めない（クリックのたびに全国分のジオメトリをsetDataし直すと重くなるため。Issue #80フォローアップ）
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isStyleLoaded) {
       return;
     }
 
-    void applyAdminBoundaryHistoricalData(map, adminBoundaryEra, historicalBoundariesCacheRef.current).catch(
-      (error: unknown) => {
-        addError(toAppErrorInfo(error));
-      }
-    );
+    void applyAdminBoundaryData(map, adminBoundaryEra, historicalBoundariesCacheRef.current).catch((error: unknown) => {
+      addError(toAppErrorInfo(error));
+    });
   }, [adminBoundaryEra, isStyleLoaded, addError]);
+
+  // フォーカス中の自治体が変化するたびに、フォーカス用オーバーレイのデータを更新し、地図の中心を
+  // フォーカスした行政区画の重心へ合わせる（ズームレベルは変更しない）。
+  // 表示・hit-test用ソースへのsetDataは伴わない取得専用の経路を使う（Issue #80フォローアップ）
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isStyleLoaded) {
+      return;
+    }
+
+    void getOrFetchMunicipalityBoundaries(adminBoundaryEra, historicalBoundariesCacheRef.current)
+      .then((featureCollection) => {
+        const feature = applyFocusedMunicipalityLayer(map, featureCollection, focusedMunicipality);
+        if (feature) {
+          panToMunicipalityCentroid(map, feature);
+        }
+      })
+      .catch((error: unknown) => {
+        addError(toAppErrorInfo(error));
+      });
+  }, [focusedMunicipality, adminBoundaryEra, isStyleLoaded, addError]);
 
   return <Box ref={containerRef} flex="1" minWidth="0" height="100%" data-testid="map-container" />;
 };

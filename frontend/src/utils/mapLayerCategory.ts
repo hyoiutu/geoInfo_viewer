@@ -1,8 +1,10 @@
 import type { LayerSpecification } from 'maplibre-gl';
 import {
+  ADMIN_BOUNDARY_FOCUSED_LINE_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
   ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
+  ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
   ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID
 } from '../constants/adminBoundary';
 import { AERIAL_PHOTO_LAYER_ID } from '../constants/aerialPhoto';
@@ -119,13 +121,22 @@ export const resolveStyleLayerIds = (
     ];
   }
   if (layerId === 'admin-boundary') {
+    // hit-test・フォーカス表示レイヤー（Issue #76）は現行・過去いずれの年代でも同じソースを使うため、
+    // 年代に関わらずadmin-boundaryのトグルに含める
     if (adminBoundaryEra === MUNICIPALITY_ERA_CURRENT) {
-      return [...categorizedLayerIds['admin-boundary'], ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID];
+      return [
+        ...categorizedLayerIds['admin-boundary'],
+        ADMIN_BOUNDARY_MUNICIPALITY_LAYER_ID,
+        ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
+        ADMIN_BOUNDARY_FOCUSED_LINE_LAYER_ID
+      ];
     }
     return [
       ADMIN_BOUNDARY_HISTORICAL_FILL_LAYER_ID,
       ADMIN_BOUNDARY_HISTORICAL_LINE_LAYER_ID,
-      ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID
+      ADMIN_BOUNDARY_HISTORICAL_LABEL_LAYER_ID,
+      ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID,
+      ADMIN_BOUNDARY_FOCUSED_LINE_LAYER_ID
     ];
   }
   return categorizedLayerIds[layerId];
