@@ -22,6 +22,10 @@ import { matchPhotosWithJsonSidecars } from './takeout-photo-matcher.util';
  * メモリ使用量を抑えるため、写真本体の実バイナリは以下の2箇所でのみその場限りで読み込む。
  *   - メタデータ解決時（JSONサイドカーが無い/不正な場合のEXIFフォールバック用）
  *   - 月別アーカイブへの再構成時（1ヶ月分のグループごとに読み込む。全件を同時には保持しない）
+ * 対象件数が多く実行に長時間かかることを想定し、途中で中断され再実行された場合に備えて、
+ * `monthly_photo_archives`テーブルに既にレコードがある年月（＝前回の実行で最後まで処理済みの月）は
+ * 丸ごとスキップする。処理の途中（アップロード直後〜DB保存の間等）で中断された場合、その月の
+ * レコードが無い・不完全な状態になりうるため、その場合は自動スキップされず再処理される（Issue #23）
  * @param directoryPath 走査対象のローカルディレクトリパス
  */
 const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<void> => {
@@ -30,9 +34,10 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
 
   const googleDriveApiClient = new GoogleDriveApiClient(new HttpService());
   const googleDriveAuthService = new GoogleDriveAuthService(googleDriveApiClient, new ConfigService());
+  const monthlyPhotoArchiveRepository = dataSource.getRepository(MonthlyPhotoArchiveEntity);
   const monthlyPhotoArchiveService = new MonthlyPhotoArchiveService(
     googleDriveApiClient,
-    dataSource.getRepository(MonthlyPhotoArchiveEntity)
+    monthlyPhotoArchiveRepository
   );
   const photoRepository = dataSource.getRepository(PhotoEntity);
 
@@ -59,10 +64,19 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
   console.log(`メタデータを解決しました（保存対象: ${photosWithMetadata.length}件、スキップ: ${skippedCount}件）`);
 
   const groups = groupPhotosByYearMonth(photosWithMetadata);
-  const accessToken = await googleDriveAuthService.getAccessToken();
+  const processedYearMonths = new Set((await monthlyPhotoArchiveRepository.find()).map((archive) => archive.yearMonth));
 
   let savedCount = 0;
   for (const group of groups) {
+    if (processedYearMonths.has(group.yearMonth)) {
+      console.log(`[${group.yearMonth}] 前回の実行で処理済みのためスキップします`);
+      continue;
+    }
+
+    // 対象件数が多いと全体の実行に長時間かかりアクセストークンが失効しうるため、月ごとに取得し直す
+    // （GoogleDriveAuthServiceが有効期限内であればキャッシュを返すため、都度呼び出すコストは小さい）
+    const accessToken = await googleDriveAuthService.getAccessToken();
+
     const groupWithData = {
       yearMonth: group.yearMonth,
       photos: group.photos.map((photo) => {
