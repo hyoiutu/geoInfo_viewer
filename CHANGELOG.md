@@ -14,6 +14,20 @@
 
 ## 変更履歴
 
+### [2026-07-20] Issue #78対応として過去年代の行政区画表示中に現在の細かい地名が表示されてしまう不具合を修正した
+* **修正の動機・概要**:
+  - Issue #78「表示している行政区画が現在以外のとき、現在における都道府県や市町村は表示されないが、現在の行政区、大字、小字、番地、号などが表示されてしまう」に、Issue #77に続けて自律モードで対応した。
+  - 原因調査のため使用中のOSMベーススタイル（`https://tiles.openfreemap.org/styles/liberty`）のスタイルJSONを直接取得して確認したところ、`place`ソースレイヤーには`label_other`という、`class`が`city`/`continent`/`country`/`state`/`town`/`village`のいずれにも該当しない地物（suburb/hamlet/neighbourhood等、大字・字等それより細かい地名に相当）をまとめて描画するレイヤーが存在することが分かった。`categorizeStyleLayer`（`frontend/src/utils/mapLayerCategory.ts`）の`ADMIN_PLACE_LABEL_LAYER_IDS`に`label_other`が含まれておらず、`osm-place-name`カテゴリ（行政区画の年代とは無関係に常時表示）に分類されていたことが原因だった。
+  - `label_other`を`ADMIN_PLACE_LABEL_LAYER_IDS`へ追加することで、Issue #67で実装済みの`resolveUnusedAdminBoundaryLayerIds`の仕組みがそのまま適用され、新規のレイヤーIDや処理を追加せずに解消した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/mapLayerCategory.ts`: `ADMIN_PLACE_LABEL_LAYER_IDS`に`label_other`を追加。
+    - `frontend/src/utils/__tests__/mapLayerCategory.tests.ts`: 該当テストケースを更新（TDD、Red-Green）。
+    - 単体テスト（フロントエンド全31ファイル284件・バックエンド全36ファイル206件）・lint・typecheck・型キャストチェック・E2Eテスト（4件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「レイヤ切り替え機能」章で、行政区画のラベルに「大字・字等それより細かい地名」を含む旨を明記。
+  * **設計書**: `designs/technical_design.md`の「行政区画レイヤー（年代選択）」章に原因・対応内容を追記。
+
 ### [2026-07-20] Issue #77対応としてフォーカス中アクティビティの線ホバーで走行距離を表示する機能を実装した
 * **修正の動機・概要**:
   - Issue #77「フォーカスされたアクティビティの線上をマウスオーバーすると何Km地点が表示される」に、Issue #76に続けて自律モードで対応した。issue-reviewの観点に照らし特段のブロッカー・大きな曖昧さは無いと判断し、実装を進めた。

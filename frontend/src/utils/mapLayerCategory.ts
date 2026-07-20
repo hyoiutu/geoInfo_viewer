@@ -27,13 +27,17 @@ const POI_SOURCE_LAYER = 'poi';
 const BOUNDARY_SOURCE_LAYER = 'boundary';
 // boundary_2(国境)・boundary_disputed(係争地境界)は都道府県・市町村の行政区画ではないため対象外とする
 const ADMIN_BOUNDARY_STYLE_LAYER_IDS = new Set(['boundary_3']);
-// placeソースレイヤーのうち都道府県・市町村名のみ（国名・大陸名・その他の地名は含めない）
+// placeソースレイヤーのうち行政区画に属する地名のみ（国名・大陸名は含めない）。label_otherは
+// city/town/village/state/country以外の全てのplaceクラス（suburb/hamlet/neighbourhood等、
+// 大字・字等それより細かい地名に相当）を描画するレイヤーで、これも現行の行政区画情報のため含める。
+// 含めないと、過去年代の行政区画を表示中でも現在の大字・字等の地名が表示され続けてしまう（Issue #78）
 const ADMIN_PLACE_LABEL_LAYER_IDS = new Set([
   'label_state',
   'label_city',
   'label_city_capital',
   'label_town',
-  'label_village'
+  'label_village',
+  'label_other'
 ]);
 
 /**
