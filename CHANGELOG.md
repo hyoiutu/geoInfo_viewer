@@ -14,6 +14,24 @@
 
 ## 変更履歴
 
+### [2026-07-21] PR #40のレビュー対応(errorsAtomのsetterカプセル化)がmainに反映されていなかったのを復元し、react_rules.mdへルール化した
+* **修正の動機・概要**:
+  - マージ済みPRのレビューコメントを調査した際、PR #40（Issue #28、Jotaiグローバルステート導入）で「setterを外部に出さないでください」「ルールにも追加してください」という明示的な指摘・依頼があり、対応コミット（`57240b4`）自体はGitHub上のPR #40に含まれ`merged_at`も記録されているにもかかわらず、`main`の実際の履歴にはこのコミットが含まれておらず、`errorsAtom.ts`は未カプセル化のまま・`useErrorReporter`も削除されないまま残っていたことが判明した。
+  - `issue_review_notes.md`観点4で記録済みの「スタック構成PRのbase整合性事故」（PR #41/#42/#43で発生）と同種の失敗パターンが、それ以前のPR #40でも発生していた可能性が高い（PR #40のbaseもmainではなくPR #39のブランチだった）。
+  - ユーザーの判断により、当時のコミット内容（`errorsStateAtom`による内部状態の隠蔽、読み取り専用の`errorsAtom`、書き込み専用の`addErrorAtom`/`dismissErrorAtom`、`useErrorReporter`の削除）をTDD（Red-Green）で復元した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/atoms/errorsAtom.ts`: 内部状態`errorsStateAtom`を非export化し、`errorsAtom`を読み取り専用の派生atomに変更。書き込み専用の`addErrorAtom`/`dismissErrorAtom`を新設。
+    - `frontend/src/atoms/__tests__/errorsAtom.tests.ts`（新規）。
+    - `frontend/src/components/ErrorDialog.tsx`: `useAtom(errorsAtom)`を`useAtomValue(errorsAtom)`+`useSetAtom(dismissErrorAtom)`へ変更。
+    - `frontend/src/components/__tests__/ErrorDialog.tests.tsx`: `useHydrateAtoms`によるSeedコンポーネントを、専用ストア＋`addErrorAtom`経由の初期値注入へ変更。
+    - `frontend/src/test-utils/renderWithChakra.tsx`: 任意の`store`を渡せるオプションを追加。
+    - `frontend/src/hooks/useErrorReporter.ts`・`__tests__/useErrorReporter.tests.ts`（削除）。呼び出し元4箇所（`MapView.tsx`・`usePassedMunicipalities.ts`・`useBackfillStatus.ts`・`useCyclingActivities.ts`）は`useSetAtom(addErrorAtom)`を直接使うよう変更。
+    - 単体テスト（フロントエンド全32ファイル296件）・lint・typecheck・型キャストチェックは全てGreen。E2Eテストも実行し（`bicycle-log.spec.ts`の1件は既知の環境依存フレーキーテスト、Issue #86参照、単体再実行でGreenを確認済み）回帰の無いことを確認した。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化は無いため）。
+  * **設計書**: `react_rules.md`に「グローバルステート（Jotai atom）の生の値・setterを外部へ公開しない」章を新設し、`errorsAtom.ts`を実例として明記。
+
 ### [2026-07-21] CHANGELOG.mdの履歴からユーザーの判断傾向を分析し、依存関係追加の判断基準と段階的ロールアウトの観点をルール化した
 * **修正の動機・概要**:
   - 「ループエンジニアリングの比率を増やしたいが、人間ゲートで判断していることの多くが言語化・ルール化できていない」というユーザーの問題意識を受け、CHANGELOG.md全77エントリを通読し、繰り返し同じ方向に判断されているが未文書化のパターンを抽出した。
