@@ -14,6 +14,15 @@
 
 ## 変更履歴
 
+### [2026-07-21] finish-reviewスキルのIssueクローズ手順で、issue_writeのbodyによるIssue本文消失事故を防ぐルールを追加した
+* **修正の動機・概要**:
+  - PR #81のfinish-review実行中、手順2「マージ済みPRへの参照を添えたコメントも残す」を、`issue_write`の`body`パラメータにコメント文言を渡す形で実施してしまった。`issue_write`の`body`はIssue本文全体を置き換える仕様であることを見落としており、結果としてIssue #77の元の本文（「現状/要望」）が丸ごと消失する事故が発生した。
+  - ユーザーからの指摘を受け、PR #81の説明文をもとにIssue #77の本文を復元した上で、同じ事故が再発しないよう`.agents/skills/finish-review/SKILL.md`にルールを追加した。他のスキルファイル（`auto-commit`・`issue-implement`・`issue-review`・`pr-review-respond`）には`issue_write`/`add_issue_comment`の記述が無いことを確認済みで、影響範囲はfinish-reviewのみ。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `.agents/skills/finish-review/SKILL.md`の手順2に、Issueクローズ時は`issue_write`を`state`/`state_reason`のみで呼び出し`body`は絶対に指定しないこと、PRへの参照コメントは別途`add_issue_comment`で行うことを明記。今回の事故を教訓として追記。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（AIエージェントの内部運用スキルであり、アプリケーションの機能仕様には影響しないため）。
+
 ### [2026-07-20] Issue #23対応として写真バイナリの遅延取得APIを実装した
 * **修正の動機・概要**:
   - Issue #23「写真閲覧機能」の残りスコープのうち、対話モードで「写真バイナリの遅延取得API」に着手した。地図上の吹き出し表示・サイドバーのグリッド表示いずれも実際の画像バイナリの取得が前提となるため、既存の写真取得API（`GET /activities/:id/photos`、メタデータのみ返す）に続く優先度の高いピースとして選定した。
