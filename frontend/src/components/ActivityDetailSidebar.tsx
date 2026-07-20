@@ -1,16 +1,22 @@
-import { Box, Button, Flex, Text } from '@chakra-ui/react';
-import type { CyclingActivity, PassedMunicipality } from '../api/activitiesApi';
+import { Box, Button, Flex, Image, SimpleGrid, Text } from '@chakra-ui/react';
+import type { CyclingActivity, PassedMunicipality, Photo } from '../api/activitiesApi';
+import { resolvePhotoImageUrl } from '../api/photosApi';
 import { usePassedMunicipalities } from '../hooks/usePassedMunicipalities';
+import { usePhotos } from '../hooks/usePhotos';
 import { layout } from '../theme';
 import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 import { toActivityDetailView } from '../utils/activityDetailView';
 
 const NO_ACTIVITIES = 0;
 const NO_MUNICIPALITIES = 0;
+const NO_PHOTOS = 0;
+const PHOTO_GRID_COLUMNS = 3;
 const INDEX_OFFSET = 1;
 const BACK_BUTTON_LABEL = '戻る';
 const MUNICIPALITIES_LOADING_LABEL = '通過自治体を取得中...';
 const MUNICIPALITIES_EMPTY_LABEL = '該当する自治体はありません';
+const PHOTOS_LOADING_LABEL = '写真を取得中...';
+const PHOTOS_EMPTY_LABEL = '該当する写真はありません';
 
 /** ActivityDetailSidebarのprops */
 type ActivityDetailSidebarProps = {
@@ -92,6 +98,41 @@ const PassedMunicipalitiesList = ({
   );
 };
 
+/** PhotoGridのprops */
+type PhotoGridProps = {
+  /** 撮影された写真一覧 */
+  photos: Photo[];
+  /** 取得中かどうか */
+  isLoading: boolean;
+};
+
+/**
+ * 撮影された写真一覧を、取得中・0件・複数件の状態に応じて表示する。
+ * プレビューは全て正方形にし、横長・縦長の写真は両端を均等にカットして表示する（`objectFit="cover"`、Issue #23）
+ */
+const PhotoGrid = ({ photos, isLoading }: PhotoGridProps) => {
+  if (isLoading) {
+    return <Text>{PHOTOS_LOADING_LABEL}</Text>;
+  }
+  if (photos.length === NO_PHOTOS) {
+    return <Text>{PHOTOS_EMPTY_LABEL}</Text>;
+  }
+  return (
+    <SimpleGrid columns={PHOTO_GRID_COLUMNS} gap="2">
+      {photos.map((photo) => (
+        <Image
+          key={photo.id}
+          src={resolvePhotoImageUrl(photo.id)}
+          alt={photo.fileName}
+          aspectRatio="1"
+          objectFit="cover"
+          borderRadius="md"
+        />
+      ))}
+    </SimpleGrid>
+  );
+};
+
 /** ActivityDetailのprops */
 type ActivityDetailProps = {
   /** フォーカス中のアクティビティ */
@@ -107,7 +148,8 @@ type ActivityDetailProps = {
 /** フォーカス中のアクティビティの詳細（詳細画面）を表示する。フォーカス中のアクティビティ・行政区画の年代が変わるたびに通過自治体を取得する */
 const ActivityDetail = ({ activity, onBackFromDetail, adminBoundaryEra, onMunicipalityFocus }: ActivityDetailProps) => {
   const view = toActivityDetailView(activity);
-  const { municipalities, isLoading } = usePassedMunicipalities(activity.id, adminBoundaryEra);
+  const { municipalities, isLoading: isMunicipalitiesLoading } = usePassedMunicipalities(activity.id, adminBoundaryEra);
+  const { photos, isLoading: isPhotosLoading } = usePhotos(activity.id);
 
   return (
     <Flex direction="column" gap="2">
@@ -123,9 +165,11 @@ const ActivityDetail = ({ activity, onBackFromDetail, adminBoundaryEra, onMunici
       <Text fontWeight="bold">通過自治体</Text>
       <PassedMunicipalitiesList
         municipalities={municipalities}
-        isLoading={isLoading}
+        isLoading={isMunicipalitiesLoading}
         onMunicipalityFocus={onMunicipalityFocus}
       />
+      <Text fontWeight="bold">写真</Text>
+      <PhotoGrid photos={photos} isLoading={isPhotosLoading} />
     </Flex>
   );
 };

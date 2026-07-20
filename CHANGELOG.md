@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-07-20] Issue #23対応として右サイドバーの写真グリッド表示を実装した
+* **修正の動機・概要**:
+  - Issue #23「写真閲覧機能」の残りスコープ（右サイドバーのグリッド表示・地図上の吹き出し表示・Google Picker UI）のうち、写真バイナリの遅延取得API（直前の対応）に続けて「右サイドバーのグリッド表示」に対話モードで対応した。
+  - Issue本文が要望する「ChakraUIに既存の写真をグリッド上にプレビューできるコンポーネントがあればそれをそのまま使う」を検討したが、専用コンポーネントは無いため、`SimpleGrid`+`Image`のプリミティブを組み合わせて実装した。「横長・縦長の写真は両端を均等にカットしてプレビュー表示する」はCSSの`object-fit: cover`標準の挙動そのものであり、独自のクロップ処理は不要と判断した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/api/photosApi.ts`（新規）: `resolvePhotoImageUrl`（`GET /photos/:id/image`のURLを組み立てる）。
+    - `frontend/src/api/activitiesApi.ts`: `Photo`型・`fetchPhotos`（`GET /activities/:id/photos`）を追加。
+    - `frontend/src/hooks/usePhotos.ts`（新規）: `usePassedMunicipalities`と同型の取得フック。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: `PhotoGrid`コンポーネント（新規）を追加し、通過自治体一覧の下に表示。
+    - 対応する単体テストを各ファイルへ追加（TDD、Red-Green）。単体テスト（フロントエンド全33ファイル290件）・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「位置情報付きメディア表示機能」章（従来WIPのみだった箇所）を、実装済みの内容（グリッド表示の仕様、地図上表示・取り込みUIは未実装である旨）で更新。
+  * **設計書**: `designs/technical_design.md`に「位置情報付きメディア表示機能（サイドバーのグリッド表示、Issue #23）」章を新設。
+
 ### [2026-07-20] Issue #23対応として写真バイナリの遅延取得APIを実装した
 * **修正の動機・概要**:
   - Issue #23「写真閲覧機能」の残りスコープのうち、対話モードで「写真バイナリの遅延取得API」に着手した。地図上の吹き出し表示・サイドバーのグリッド表示いずれも実際の画像バイナリの取得が前提となるため、既存の写真取得API（`GET /activities/:id/photos`、メタデータのみ返す）に続く優先度の高いピースとして選定した。
