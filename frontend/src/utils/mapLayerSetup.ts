@@ -223,11 +223,33 @@ export const addAdminBoundaryFocusLayer = (map: maplibregl.Map) => {
 };
 
 /**
+ * 選択中の年代の行政区画境界データを取得する。取得結果はeraごとにcacheへ保存し、同じ年代へ再度
+ * 切り替えた際の再取得を避ける。`applyAdminBoundaryData`（表示・hit-testソースへの反映を伴う）と
+ * `applyFocusedMunicipalityLayer`（フォーカス対象の検索）の両方から使う共通処理として切り出している
+ * （Issue #80フォローアップ。フォーカス対象の検索のためだけに表示・hit-testソースへ毎回setDataし直すと、
+ * 全国分のジオメトリの再インデックス化が発生し重くなるため、setDataを伴わない取得専用の経路を用意した）
+ * @param era 取得対象の年代識別子
+ * @param cache 年代ごとに取得済みのGeoJSONを保持するキャッシュ（呼び出し元が状態を持ち、この関数はそれを読み書きする）
+ * @returns 該当年代の境界データ（GeoJSON FeatureCollection）
+ */
+export const getOrFetchMunicipalityBoundaries = async (
+  era: MunicipalityEra,
+  cache: Map<MunicipalityEra, FeatureCollection>
+): Promise<FeatureCollection> => {
+  const cached = cache.get(era);
+  if (cached) {
+    return cached;
+  }
+  const featureCollection = await fetchMunicipalityBoundaries(era);
+  cache.set(era, featureCollection);
+  return featureCollection;
+};
+
+/**
  * 選択中の年代の行政区画境界データを取得し、hit-test用ソースへ反映する。currentの場合、見た目は現行の
  * ベクトルタイル（boundary_3・admin-boundary-municipality）で描画済みのため過去年代用の表示ソースへの反映は
  * 行わないが、クリックによる範囲フォーカス機能（Issue #76）はhit-testソースを介して年代によらず動作させるため、
- * hit-test用ソースへの反映はcurrentでも行う。取得結果はeraごとにcacheへ保存し、同じ年代へ再度切り替えた際の
- * 再取得を避ける
+ * hit-test用ソースへの反映はcurrentでも行う
  * @param map 反映先のMapLibre地図インスタンス
  * @param era 選択中の年代識別子
  * @param cache 年代ごとに取得済みのGeoJSONを保持するキャッシュ（呼び出し元が状態を持ち、この関数はそれを読み書きする）
@@ -237,11 +259,7 @@ export const applyAdminBoundaryData = async (
   era: MunicipalityEra,
   cache: Map<MunicipalityEra, FeatureCollection>
 ): Promise<void> => {
-  const cached = cache.get(era);
-  const featureCollection = cached ?? (await fetchMunicipalityBoundaries(era));
-  if (!cached) {
-    cache.set(era, featureCollection);
-  }
+  const featureCollection = await getOrFetchMunicipalityBoundaries(era, cache);
 
   const hitTestSource = map.getSource<maplibregl.GeoJSONSource>(ADMIN_BOUNDARY_HITTEST_SOURCE_ID);
   hitTestSource?.setData(featureCollection);

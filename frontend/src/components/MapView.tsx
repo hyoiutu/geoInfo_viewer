@@ -16,6 +16,7 @@ import {
   applyLayerVisibility,
   applySelectionLayers,
   applyStartGoalMarkers,
+  panToMunicipalityCentroid,
   registerAdminBoundaryClickHandler,
   registerBicycleLogClickHandler,
   registerFocusedActivityHoverHandler,
@@ -27,13 +28,13 @@ import {
   addAdminBoundaryLayer,
   addAerialPhotoLayer,
   addBicycleLogLayer,
-  applyAdminBoundaryData
+  applyAdminBoundaryData,
+  getOrFetchMunicipalityBoundaries
 } from '../utils/mapLayerSetup';
 
 const OSM_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const DEFAULT_ZOOM = 12;
 const DEFAULT_CENTER: [number, number] = [139.1798829, 35.2756364];
-const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] };
 const METERS_PER_KILOMETER = 1000;
 const HOVER_DISTANCE_DECIMAL_PLACES = 1;
 
@@ -192,24 +193,40 @@ export const MapView = ({
     applyLayerVisibility(map, categorizedLayerIds, layerVisibility, adminBoundaryEra);
   }, [layerVisibility, adminBoundaryEra, isStyleLoaded]);
 
-  // 選択中の行政区画年代・フォーカス中の自治体が変化するたびに、境界データ(hit-test用含む)を取得・反映した上で、
-  // フォーカス用オーバーレイのデータを更新する（Issue #76）
+  // 選択中の行政区画年代が変化するたびに、境界データ(hit-test用含む)を取得・反映する。
+  // フォーカス対象(focusedMunicipality)はこのデータの取得・反映とは独立して変化しうるため、
+  // 依存配列に含めない（クリックのたびに全国分のジオメトリをsetDataし直すと重くなるため。Issue #80フォローアップ）
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isStyleLoaded) {
       return;
     }
 
-    void applyAdminBoundaryData(map, adminBoundaryEra, historicalBoundariesCacheRef.current)
-      .then(() => {
-        const featureCollection =
-          historicalBoundariesCacheRef.current.get(adminBoundaryEra) ?? EMPTY_FEATURE_COLLECTION;
-        applyFocusedMunicipalityLayer(map, featureCollection, focusedMunicipality);
+    void applyAdminBoundaryData(map, adminBoundaryEra, historicalBoundariesCacheRef.current).catch((error: unknown) => {
+      addError(toAppErrorInfo(error));
+    });
+  }, [adminBoundaryEra, isStyleLoaded, addError]);
+
+  // フォーカス中の自治体が変化するたびに、フォーカス用オーバーレイのデータを更新し、地図の中心を
+  // フォーカスした行政区画の重心へ合わせる（ズームレベルは変更しない）。
+  // 表示・hit-test用ソースへのsetDataは伴わない取得専用の経路を使う（Issue #80フォローアップ）
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isStyleLoaded) {
+      return;
+    }
+
+    void getOrFetchMunicipalityBoundaries(adminBoundaryEra, historicalBoundariesCacheRef.current)
+      .then((featureCollection) => {
+        const feature = applyFocusedMunicipalityLayer(map, featureCollection, focusedMunicipality);
+        if (feature) {
+          panToMunicipalityCentroid(map, feature);
+        }
       })
       .catch((error: unknown) => {
         addError(toAppErrorInfo(error));
       });
-  }, [adminBoundaryEra, focusedMunicipality, isStyleLoaded, addError]);
+  }, [focusedMunicipality, adminBoundaryEra, isStyleLoaded, addError]);
 
   return <Box ref={containerRef} flex="1" minWidth="0" height="100%" data-testid="map-container" />;
 };

@@ -14,6 +14,37 @@
 
 ## 変更履歴
 
+### [2026-07-20] Issue #23対応として写真バイナリの遅延取得APIを実装した
+* **修正の動機・概要**:
+  - Issue #23「写真閲覧機能」の残りスコープのうち、対話モードで「写真バイナリの遅延取得API」に着手した。地図上の吹き出し表示・サイドバーのグリッド表示いずれも実際の画像バイナリの取得が前提となるため、既存の写真取得API（`GET /activities/:id/photos`、メタデータのみ返す）に続く優先度の高いピースとして選定した。
+  - `PhotoEntity`のコメントに既に「実バイナリは表示機能実装時に、`source_file_id`（月別アーカイブzipのfileId）・`archive_path`（zip内のパス）を使って遅延取得する想定」と設計意図が明記されており、その通りに実装した。
+  - 1つのアクティビティに紐づく写真は撮影年月が近接することが多く、写真ごとに同じ月別アーカイブzipを再ダウンロードすると無駄が大きいと判断し、直前のPR #80（行政区画フォーカスのパフォーマンス問題）と同種の問題を未然に防ぐため、実装時点からメモリ内キャッシュ（簡易LRU、上限5件）を組み込んだ。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/image-content-type.util.ts`（新規）: ファイル名の拡張子からHTTP Content-Typeを解決する`resolveImageContentType`。
+    - `backend/src/photos/photos.service.ts`: `findImageByPhotoId`（新規）を追加。`GoogleDriveAuthService`/`GoogleDriveApiClient`を新たに注入し、月別アーカイブzipのダウンロード結果をメモリキャッシュする。
+    - `backend/src/photos/photos.controller.ts`: `GET /photos/:id/image`（新規、`getImage`）を追加。`StreamableFile`でバイナリを返し、見つからない場合は404。
+    - `backend/src/photos/photos.constants.ts`: `PHOTOS_IMAGE_ROUTE`（`:id/image`）を追加。
+    - 対応する単体テストを各ファイルへ追加（TDD、Red-Green）。単体テスト（バックエンド全39ファイル225件）・lint・typecheck・型キャストチェックは全てGreen。実アプリ起動でのDI解決・ルーティング登録、実DB・実Google Drive環境を使った疎通確認（実写真での200応答・Content-Type/サイズの一致・キャッシュによる再ダウンロード抑制・存在しないIDでの404）も実施済み。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（`POST /photos/ingest`と同様、このAPIを呼び出すユーザー向けUI・表示機能はまだ実装していないため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章に、`GET /photos/:id/image`の実装内容とキャッシュ方針を追記。
+
+### [2026-07-20] PR #80の動作確認・レビュー対応として、行政区画フォーカス機能のパフォーマンス改善と地図中心合わせを行った
+* **修正の動機・概要**:
+  - PR #80の動作確認で、行政区画をクリックしてからフォーカス表示されるまでの遅延・操作中のカクつきについて指摘を受けた。原因を調査したところ、`MapView.tsx`の1つの`useEffect`が「境界データ(hit-test用含む)の取得・反映」と「フォーカス対象の反映」を兼ねており、依存配列に`focusedMunicipality`を含んでいたため、クリックのたびに変化していないはずの全国分の境界データを毎回`setData`し直していたことが判明した。effectを「境界データの取得・反映（年代のみに依存）」「フォーカス対象の反映（フォーカス対象のみに依存、setDataを伴わない取得専用経路を使用）」の2つへ分割して解消した。
+  - 続けて、「行政区画または通過自治体をクリックしたとき、その行政区画の中心点（重心）へ地図の中心をジャンプさせてほしい（ズームレベルは維持）」という仕様追加の要望を受けた。フォーカス対象のジオメトリ（Polygon/MultiPolygon）からシューレース公式による面積重み付き重心を算出し、`map.panTo`で中心を合わせる処理を追加した。既存のIssue #77（線上の距離算出）と同様の方針で、新規ジオメトリライブラリ（turf等）は導入せず自前実装とした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/mapLayerSetup.ts`: `getOrFetchMunicipalityBoundaries`（新規、setDataを伴わない取得専用経路）を追加し、`applyAdminBoundaryData`が内部で使うよう変更。
+    - `frontend/src/components/MapView.tsx`: 行政区画データ取得・反映のeffectと、フォーカス対象反映のeffectを分割。後者で`panToMunicipalityCentroid`を呼び出すよう追加。
+    - `frontend/src/utils/polygonCentroid.ts`（新規）: `calculatePolygonCentroid`（Polygon/MultiPolygonの面積重み付き重心を算出）。
+    - `frontend/src/utils/mapLayerInteraction.ts`: `applyFocusedMunicipalityLayer`が発見したfeatureを返すよう変更。`panToMunicipalityCentroid`（新規）を追加。
+    - 対応する単体テストを各ファイルへ追加・更新（TDD、Red-Green）。単体テスト（フロントエンド全31ファイル280件・バックエンド全38ファイル211件）・lint・typecheck・型キャストチェックは全てGreen。E2Eテストは既知の環境依存フレーキーテスト（並列実行時のバックフィル完了待ちタイムアウト、既存メモ`e2e_backfill_flakiness_aerial_photo_sequence.md`と同一事象）を除き全てGreenで、修正前のコード（stash）でも同じ失敗が再現することを確認し回帰でないことを確認済み。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「行政区画フォーカス機能」章に、地図の中心合わせに関する記述を追加。
+  * **設計書**: `designs/technical_design.md`の「行政区画フォーカス機能（Issue #76）」章に、パフォーマンス対策・地図中心合わせの設計内容を追記。
+
 ### [2026-07-20] Issue #77対応としてフォーカス中アクティビティの線ホバーで走行距離を表示する機能を実装した
 * **修正の動機・概要**:
   - Issue #77「フォーカスされたアクティビティの線上をマウスオーバーすると何Km地点が表示される」に、Issue #76に続けて自律モードで対応した。issue-reviewの観点に照らし特段のブロッカー・大きな曖昧さは無いと判断し、実装を進めた。
@@ -46,6 +77,24 @@
   * **README.md**: 変更なし。
   * **仕様書**: `specs/system_specification.md`に「行政区画フォーカス機能」の章を新設。`specs/glossary.md`に「フォーカス（行政区画の）」を追加（既存の「フォーカス（フォーカス中）」＝アクティビティ用と別概念であることを明記）。
   * **設計書**: `designs/technical_design.md`の「行政区画レイヤー（年代選択）」章を関数改名に合わせて更新し、「行政区画フォーカス機能（Issue #76）」章を新設。
+
+### [2026-07-20] Issue #23対応として写真取得API（アクティビティの開始・終了日時による検索）を実装した
+* **修正の動機・概要**:
+  - Issue #23「写真閲覧機能」の残りスコープ（写真取得API・バイナリ遅延取得API・地図/サイドバー表示・Google Picker UI）のうち、他の要素の前提となる「写真取得API」に対話モードで着手した。issue-reviewの観点1（外部サービス連携の認証情報）は既に解消済み、観点2（大規模Issueの境界の判断基準）に該当したため、着手前にユーザーへ次に実装する範囲を確認し合意を得た。
+  - 設計中に、Issue本文が要望する「位置情報が無い写真をアクティビティの軌跡と照合して撮影時の位置を推定する」機能について、既存の`cycling_activities.path`が各点の通過時刻を持たない（Strava詳細APIの軌跡データのみを使用しており、時刻付き「ストリーム」データは未取得）ため実現できないことが判明した。ユーザーに確認し、今回は位置情報が無い写真は`location: null`のまま返す（照合ロジックは実装しない）方針で合意した。
+  - `GET /activities/:id/photos`（`ActivitiesController.getPhotos`）を、既存の`GET /activities/:id/municipalities`（`MunicipalitiesService`をコントローラーへ直接注入するパターン）を踏襲する形で実装した。`PhotosService.findByActivity`が対象アクティビティの`start_date`・`elapsed_time_seconds`から終了日時を算出し、その範囲内の`taken_at`を持つ写真をTypeORMの`Between`で検索して撮影日時昇順で返す。
+  - TDD（Red-Green-Refactor）で、`PhotosService`→`toPhotoDto`（Entity→DTO変換）→`ActivitiesController.getPhotos`の順に実装した。実際にDB（Docker Compose、写真221件・アクティビティ複数件）へ接続し、写真が実在する期間のアクティビティに対して`curl`で疎通確認（4件の写真が撮影日時順・位置情報付きで返ることを確認）した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/photos.service.ts`（新規）・`__tests__/photos.service.tests.ts`（新規、2件）: `findByActivity`。
+    - `backend/src/photos/types/photo.dto.ts`（新規）・`photo-dto.util.ts`（新規）・`__tests__/photo-dto.util.tests.ts`（新規、2件）: `PhotoDto`・`toPhotoDto`。
+    - `backend/src/photos/photos.module.ts`: `CyclingActivityEntity`を`TypeOrmModule.forFeature`へ追加登録し、`PhotosService`をproviders・exportsへ追加。
+    - `backend/src/activities/activities.module.ts`: `PhotosModule`をimport。
+    - `backend/src/activities/activities.constants.ts`・`activities.controller.ts`: `ACTIVITIES_PHOTOS_ROUTE`（`:id/photos`）・`getPhotos`メソッドを追加。既存の`activities.controller.tests.ts`にも`PhotosService`モックを追加し新規テスト1件を追加。
+    - 単体テスト（バックエンド全38ファイル211件）・lint・typecheckは全てGreen。実アプリ起動でのDI解決・ルーティング登録、実DBを使った疎通確認も実施済み。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（`POST /photos/ingest`と同様、このAPIを呼び出すユーザー向けUIはまだ実装していないため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章の該当行を、実装済みの内容（エンドポイント・位置情報照合を見送った理由）に更新。`designs/class_diagram.md`のバックエンド図は、既存のgoogle-drive/photosモジュール追加時と同様に更新対象としなかった（Issue #29時点のスコープに限定した図として運用されているため）。
 
 ### [2026-07-20] PR #72（Issue #67）とPR #71（mapLayerInteraction切り出し）のマージコンフリクトを解消した
 * **修正の動機・概要**:
