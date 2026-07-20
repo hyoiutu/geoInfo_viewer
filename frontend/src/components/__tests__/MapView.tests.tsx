@@ -886,6 +886,39 @@ describe('MapViewに関するテスト', () => {
       });
     });
 
+    test('focusedMunicipalityが変化しても、hit-test用ソースへは再度setDataされない（パフォーマンス対策）', async () => {
+      const shibuyaFeature = {
+        type: 'Feature' as const,
+        geometry: { type: 'Point' as const, coordinates: [139.7, 35.6] },
+        properties: { prefectureName: '東京都', municipalityName: '渋谷区' }
+      };
+      const featureCollection = { type: 'FeatureCollection' as const, features: [shibuyaFeature] };
+      vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue(featureCollection);
+      const { rerender } = renderWithChakra(
+        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />
+      );
+      await waitFor(() => {
+        expect(getSetDataMock(ADMIN_BOUNDARY_HITTEST_SOURCE_ID)).toHaveBeenCalledWith(featureCollection);
+      });
+      getSetDataMock(ADMIN_BOUNDARY_HITTEST_SOURCE_ID).mockClear();
+
+      rerender(
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          focusedMunicipality={{ prefectureName: '東京都', municipalityName: '渋谷区' }}
+        />
+      );
+
+      await waitFor(() => {
+        expect(getSetDataMock(ADMIN_BOUNDARY_FOCUSED_SOURCE_ID)).toHaveBeenCalledWith({
+          type: 'FeatureCollection',
+          features: [shibuyaFeature]
+        });
+      });
+      expect(getSetDataMock(ADMIN_BOUNDARY_HITTEST_SOURCE_ID)).not.toHaveBeenCalled();
+    });
+
     test('focusedMunicipalityがnullに戻ったとき、フォーカス用オーバーレイが空になる', async () => {
       const featureCollection = { type: 'FeatureCollection' as const, features: [] };
       vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue(featureCollection);

@@ -26,13 +26,13 @@ import {
   addAdminBoundaryLayer,
   addAerialPhotoLayer,
   addBicycleLogLayer,
-  applyAdminBoundaryData
+  applyAdminBoundaryData,
+  getOrFetchMunicipalityBoundaries
 } from '../utils/mapLayerSetup';
 
 const OSM_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const DEFAULT_ZOOM = 12;
 const DEFAULT_CENTER: [number, number] = [139.1798829, 35.2756364];
-const EMPTY_FEATURE_COLLECTION: FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 /** MapViewのprops */
 type MapViewProps = {
@@ -174,24 +174,36 @@ export const MapView = ({
     applyLayerVisibility(map, categorizedLayerIds, layerVisibility, adminBoundaryEra);
   }, [layerVisibility, adminBoundaryEra, isStyleLoaded]);
 
-  // 選択中の行政区画年代・フォーカス中の自治体が変化するたびに、境界データ(hit-test用含む)を取得・反映した上で、
-  // フォーカス用オーバーレイのデータを更新する（Issue #76）
+  // 選択中の行政区画年代が変化するたびに、境界データ(hit-test用含む)を取得・反映する。
+  // フォーカス対象(focusedMunicipality)はこのデータの取得・反映とは独立して変化しうるため、
+  // 依存配列に含めない（クリックのたびに全国分のジオメトリをsetDataし直すと重くなるため。Issue #80フォローアップ）
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isStyleLoaded) {
       return;
     }
 
-    void applyAdminBoundaryData(map, adminBoundaryEra, historicalBoundariesCacheRef.current)
-      .then(() => {
-        const featureCollection =
-          historicalBoundariesCacheRef.current.get(adminBoundaryEra) ?? EMPTY_FEATURE_COLLECTION;
+    void applyAdminBoundaryData(map, adminBoundaryEra, historicalBoundariesCacheRef.current).catch((error: unknown) => {
+      addError(toAppErrorInfo(error));
+    });
+  }, [adminBoundaryEra, isStyleLoaded, addError]);
+
+  // フォーカス中の自治体が変化するたびに、フォーカス用オーバーレイのデータのみを更新する（Issue #76）。
+  // 表示・hit-test用ソースへのsetDataは伴わない取得専用の経路を使う（Issue #80フォローアップ）
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isStyleLoaded) {
+      return;
+    }
+
+    void getOrFetchMunicipalityBoundaries(adminBoundaryEra, historicalBoundariesCacheRef.current)
+      .then((featureCollection) => {
         applyFocusedMunicipalityLayer(map, featureCollection, focusedMunicipality);
       })
       .catch((error: unknown) => {
         addError(toAppErrorInfo(error));
       });
-  }, [adminBoundaryEra, focusedMunicipality, isStyleLoaded, addError]);
+  }, [focusedMunicipality, adminBoundaryEra, isStyleLoaded, addError]);
 
   return <Box ref={containerRef} flex="1" minWidth="0" height="100%" data-testid="map-container" />;
 };
