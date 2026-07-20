@@ -2,6 +2,8 @@ import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { describe, expect, test, vi } from 'vitest';
 import { MunicipalitiesService, type PassedMunicipalityDto } from '../../municipalities/municipalities.service';
+import { PhotosService } from '../../photos/photos.service';
+import type { PhotoDto } from '../../photos/types/photo.dto';
 import { ActivitiesController } from '../activities.controller';
 import { ActivitiesService } from '../activities.service';
 import type { BackfillStartResult, BackfillStatus } from '../activities-backfill.service';
@@ -28,7 +30,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       providers: [
         { provide: ActivitiesService, useValue: { findAll } },
         { provide: ActivitiesBackfillService, useValue: {} },
-        { provide: MunicipalitiesService, useValue: {} }
+        { provide: MunicipalitiesService, useValue: {} },
+        { provide: PhotosService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -46,7 +49,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       providers: [
         { provide: ActivitiesService, useValue: { sync } },
         { provide: ActivitiesBackfillService, useValue: {} },
-        { provide: MunicipalitiesService, useValue: {} }
+        { provide: MunicipalitiesService, useValue: {} },
+        { provide: PhotosService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -64,7 +68,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       providers: [
         { provide: ActivitiesService, useValue: {} },
         { provide: ActivitiesBackfillService, useValue: { start } },
-        { provide: MunicipalitiesService, useValue: {} }
+        { provide: MunicipalitiesService, useValue: {} },
+        { provide: PhotosService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -89,7 +94,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       providers: [
         { provide: ActivitiesService, useValue: {} },
         { provide: ActivitiesBackfillService, useValue: { getStatus } },
-        { provide: MunicipalitiesService, useValue: {} }
+        { provide: MunicipalitiesService, useValue: {} },
+        { provide: PhotosService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -107,7 +113,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       providers: [
         { provide: ActivitiesService, useValue: {} },
         { provide: ActivitiesBackfillService, useValue: { startForceRefetch } },
-        { provide: MunicipalitiesService, useValue: {} }
+        { provide: MunicipalitiesService, useValue: {} },
+        { provide: PhotosService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -125,7 +132,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       providers: [
         { provide: ActivitiesService, useValue: {} },
         { provide: ActivitiesBackfillService, useValue: {} },
-        { provide: MunicipalitiesService, useValue: { findPassedMunicipalities } }
+        { provide: MunicipalitiesService, useValue: { findPassedMunicipalities } },
+        { provide: PhotosService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -143,7 +151,8 @@ describe('ActivitiesControllerに関するテスト', () => {
       providers: [
         { provide: ActivitiesService, useValue: {} },
         { provide: ActivitiesBackfillService, useValue: {} },
-        { provide: MunicipalitiesService, useValue: { findPassedMunicipalities } }
+        { provide: MunicipalitiesService, useValue: { findPassedMunicipalities } },
+        { provide: PhotosService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
@@ -160,12 +169,33 @@ describe('ActivitiesControllerに関するテスト', () => {
       providers: [
         { provide: ActivitiesService, useValue: {} },
         { provide: ActivitiesBackfillService, useValue: {} },
-        { provide: MunicipalitiesService, useValue: { findPassedMunicipalities } }
+        { provide: MunicipalitiesService, useValue: { findPassedMunicipalities } },
+        { provide: PhotosService, useValue: {} }
       ]
     }).compile();
     const controller = moduleRef.get(ActivitiesController);
 
     expect(() => controller.getPassedMunicipalities('123', '1999-01-01')).toThrow(BadRequestException);
     expect(findPassedMunicipalities).not.toHaveBeenCalled();
+  });
+
+  test('getPhotosが呼ばれたとき、PhotosServiceのfindByActivityへアクティビティIDを渡しその戻り値をそのまま返す', async () => {
+    const photos: PhotoDto[] = [{ id: 1, fileName: 'IMG_1.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null }];
+    const findByActivity = vi.fn().mockResolvedValue(photos);
+    const moduleRef = await Test.createTestingModule({
+      controllers: [ActivitiesController],
+      providers: [
+        { provide: ActivitiesService, useValue: {} },
+        { provide: ActivitiesBackfillService, useValue: {} },
+        { provide: MunicipalitiesService, useValue: {} },
+        { provide: PhotosService, useValue: { findByActivity } }
+      ]
+    }).compile();
+    const controller = moduleRef.get(ActivitiesController);
+
+    const result = await controller.getPhotos('123');
+
+    expect(findByActivity).toHaveBeenCalledWith('123');
+    expect(result).toBe(photos);
   });
 });
