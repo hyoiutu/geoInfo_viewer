@@ -33,6 +33,24 @@
   * **仕様書**: `specs/system_specification.md`に「行政区画フォーカス機能」の章を新設。`specs/glossary.md`に「フォーカス（行政区画の）」を追加（既存の「フォーカス（フォーカス中）」＝アクティビティ用と別概念であることを明記）。
   * **設計書**: `designs/technical_design.md`の「行政区画レイヤー（年代選択）」章を関数改名に合わせて更新し、「行政区画フォーカス機能（Issue #76）」章を新設。
 
+### [2026-07-20] Issue #23対応として写真取得API（アクティビティの開始・終了日時による検索）を実装した
+* **修正の動機・概要**:
+  - Issue #23「写真閲覧機能」の残りスコープ（写真取得API・バイナリ遅延取得API・地図/サイドバー表示・Google Picker UI）のうち、他の要素の前提となる「写真取得API」に対話モードで着手した。issue-reviewの観点1（外部サービス連携の認証情報）は既に解消済み、観点2（大規模Issueの境界の判断基準）に該当したため、着手前にユーザーへ次に実装する範囲を確認し合意を得た。
+  - 設計中に、Issue本文が要望する「位置情報が無い写真をアクティビティの軌跡と照合して撮影時の位置を推定する」機能について、既存の`cycling_activities.path`が各点の通過時刻を持たない（Strava詳細APIの軌跡データのみを使用しており、時刻付き「ストリーム」データは未取得）ため実現できないことが判明した。ユーザーに確認し、今回は位置情報が無い写真は`location: null`のまま返す（照合ロジックは実装しない）方針で合意した。
+  - `GET /activities/:id/photos`（`ActivitiesController.getPhotos`）を、既存の`GET /activities/:id/municipalities`（`MunicipalitiesService`をコントローラーへ直接注入するパターン）を踏襲する形で実装した。`PhotosService.findByActivity`が対象アクティビティの`start_date`・`elapsed_time_seconds`から終了日時を算出し、その範囲内の`taken_at`を持つ写真をTypeORMの`Between`で検索して撮影日時昇順で返す。
+  - TDD（Red-Green-Refactor）で、`PhotosService`→`toPhotoDto`（Entity→DTO変換）→`ActivitiesController.getPhotos`の順に実装した。実際にDB（Docker Compose、写真221件・アクティビティ複数件）へ接続し、写真が実在する期間のアクティビティに対して`curl`で疎通確認（4件の写真が撮影日時順・位置情報付きで返ることを確認）した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/photos.service.ts`（新規）・`__tests__/photos.service.tests.ts`（新規、2件）: `findByActivity`。
+    - `backend/src/photos/types/photo.dto.ts`（新規）・`photo-dto.util.ts`（新規）・`__tests__/photo-dto.util.tests.ts`（新規、2件）: `PhotoDto`・`toPhotoDto`。
+    - `backend/src/photos/photos.module.ts`: `CyclingActivityEntity`を`TypeOrmModule.forFeature`へ追加登録し、`PhotosService`をproviders・exportsへ追加。
+    - `backend/src/activities/activities.module.ts`: `PhotosModule`をimport。
+    - `backend/src/activities/activities.constants.ts`・`activities.controller.ts`: `ACTIVITIES_PHOTOS_ROUTE`（`:id/photos`）・`getPhotos`メソッドを追加。既存の`activities.controller.tests.ts`にも`PhotosService`モックを追加し新規テスト1件を追加。
+    - 単体テスト（バックエンド全38ファイル211件）・lint・typecheckは全てGreen。実アプリ起動でのDI解決・ルーティング登録、実DBを使った疎通確認も実施済み。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（`POST /photos/ingest`と同様、このAPIを呼び出すユーザー向けUIはまだ実装していないため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章の該当行を、実装済みの内容（エンドポイント・位置情報照合を見送った理由）に更新。`designs/class_diagram.md`のバックエンド図は、既存のgoogle-drive/photosモジュール追加時と同様に更新対象としなかった（Issue #29時点のスコープに限定した図として運用されているため）。
+
 ### [2026-07-20] PR #72（Issue #67）とPR #71（mapLayerInteraction切り出し）のマージコンフリクトを解消した
 * **修正の動機・概要**:
   - finish-reviewスキルでPR #72（Issue #67「行政区画レイヤーの年代切り替え時の重複表示バグ」修正、`MapView.tsx`内の`applyLayerVisibility`へ`resolveUnusedAdminBoundaryLayerIds`呼び出しを追加する内容）のブランチへ最新mainを取り込んだところ、PR #71のレビュー対応（`applyLayerVisibility`を`MapView.tsx`から`mapLayerInteraction.ts`へ切り出し）と同一関数を独立に変更していたため、`frontend/src/components/MapView.tsx`でコンフリクトが発生した。
