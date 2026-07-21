@@ -97,8 +97,10 @@ export const flattenPhotoDirectory = async (
   return { copiedCount, skippedDuplicateCount };
 };
 
-const inputDirectoryPath = process.argv[2];
-const outputDirectoryPath = process.argv[3];
+// `pnpm --filter <package> run <script> -- <args>`はnpm scriptsと異なり、区切りの`--`自体を
+// 除去せずそのままprocess.argvへ渡すため、位置引数を取り出す前に取り除いておく
+const scriptArgs = process.argv.slice(2).filter((arg) => arg !== '--');
+const [inputDirectoryPath, outputDirectoryPath] = scriptArgs;
 if (inputDirectoryPath === undefined || outputDirectoryPath === undefined) {
   console.error(
     '使い方: ts-node src/photos/flatten-local-photo-directory.ts <展開済みディレクトリ> <出力先フラットディレクトリ>'
