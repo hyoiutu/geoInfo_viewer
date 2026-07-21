@@ -101,7 +101,9 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
   console.log(`完了しました（保存: ${savedCount}件、スキップ: ${skippedCount}件）`);
 };
 
-const directoryPath = process.argv[2];
+// `pnpm --filter <package> run <script> -- <args>`はnpm scriptsと異なり、区切りの`--`自体を
+// 除去せずそのままprocess.argvへ渡すため、位置引数を取り出す前に取り除いておく
+const [directoryPath] = process.argv.slice(2).filter((arg) => arg !== '--');
 if (directoryPath === undefined) {
   console.error('使い方: ts-node src/photos/backfill-photos-from-local.ts <ローカルディレクトリパス>');
   process.exitCode = 1;

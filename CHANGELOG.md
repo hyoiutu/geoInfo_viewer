@@ -14,6 +14,15 @@
 
 ## 変更履歴
 
+### [2026-07-21] backfill-photos-from-local.tsで、pnpm経由の実行時に区切りの--が引数として渡ってしまう不具合を修正した
+* **修正の動機・概要**:
+  - 別スクリプト`flatten-local-photo-directory.ts`（Issue #23対応、写真ディレクトリのフラット化ツール）で、ユーザーが`pnpm --filter backend run flatten:photos-local -- <入力> <出力>`を実行した際に`ENOENT`（`path: '--'`）が発生することが判明した。原因は、`pnpm --filter <package> run <script> -- <args>`がnpm scriptsの一般的な挙動と異なり区切りの`--`自体を除去せずそのまま`process.argv`へ渡すことだった。
+  - `backfill-photos-from-local.ts`も同じ`process.argv[2]`による位置引数の取り出し方をしており、`pnpm --filter backend run backfill:photos-local -- <ディレクトリパス>`のように`--`を挟んで実行すると同じ不具合が起きることが分かったため、予防的に同じ修正を適用した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/backfill-photos-from-local.ts`のCLIエントリポイントで、位置引数取り出し前に`'--'`をフィルタするよう修正。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（開発者向けツールの引数解析の修正のみのため）。
+
 ### [2026-07-21] 写真ローカルバックフィルスクリプトに、中断・再実行時の重複登録防止とアクセストークン失効対策を追加した
 * **修正の動機・概要**:
   - PR #85のレビュー中、対象件数が多く実行に長時間かかる想定であることを踏まえ、ユーザーから「スクリプトが途中で中断された場合どうなるか」との質問を受けた。当時の実装には中断・再実行時の状態管理が無く、単純に再実行すると`monthly_photo_archives`・`photos`の完了済み分も含めて全写真がゼロから再処理され、同一写真がDrive上の月別アーカイブzip・`photos`テーブルの双方で重複登録されるという実運用上の欠陥があることが判明した。
