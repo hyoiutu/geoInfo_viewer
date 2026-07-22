@@ -18,6 +18,21 @@ export type RefreshTokenParams = {
   refreshToken: string | undefined;
 };
 
+// レジューマブルアップロードの1チャンクあたりのサイズ。Google Drive APIの仕様上256KiBの倍数にする必要がある。
+// 月別アーカイブzip全体（数GBになりうる）を1回のPUTで送信すると、TLSの書き込みエラー(EPROTO)が
+// 実際に発生した（写真ローカルバックフィルの実行時、Issue #23）ため、チャンクに分割して送信する
+export const UPLOAD_CHUNK_SIZE_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Google Drive APIのレジューマブルアップロードにおいて、チャンクのPUTレスポンスとして正常とみなす
+ * HTTPステータスかどうかを判定する。中間チャンクは200番台ではなく308（Resume Incomplete、
+ * 「このチャンクは受理したので続きを送ってほしい」という独自の意味で使われる）を返すため、
+ * axiosの既定のvalidateStatus（2xxのみ成功扱い）のままだとエラーとして扱われてしまう
+ * @param status レスポンスのHTTPステータスコード
+ * @returns 正常なレスポンスとみなす場合true
+ */
+const isValidUploadChunkStatus = (status: number): boolean => (status >= 200 && status < 300) || status === 308;
+
 /**
  * Google Drive REST APIへの生のHTTPアクセスを担うクライアント。
  * 認証トークンのキャッシュ等の業務ロジックは持たず、HTTPリクエストの組み立てと
@@ -99,19 +114,29 @@ export class GoogleDriveApiClient {
   /**
    * 既存ファイルのコンテンツ（バイナリ本体）を更新する。Google Drive APIの「シンプルアップロード」
    * （`uploadType=media`）は数MB程度までしか信頼できる動作を保証しないため、月別アーカイブzip
-   * （数十MB以上になりうる）を安定してアップロードできるよう「レジューマブルアップロード」方式を使う
+   * （数十MB〜数GBになりうる）を安定してアップロードできるよう「レジューマブルアップロード」方式を使う
    * （実際に502エラーで発覚、Issue #23）。
    * 1. セッション開始リクエスト（`uploadType=resumable`）を送り、レスポンスの`Location`ヘッダーから
    *    アップロード先セッションURLを取得する。Google公式ドキュメントの推奨に従い、ボディは空のJSON
    *    （`Content-Type: application/json`）とし、`X-Upload-Content-Type`/`X-Upload-Content-Length`
    *    でこれから送信する実バイナリの情報を明示する
-   * 2. 取得したセッションURLへ実際のバイナリ本体を1回のPUTで送信する（チャンク分割・再開処理は行わない。
-   *    レジューマブル方式自体が大きなペイロードのアップロードをシンプルアップロードより安定して扱える）
+   * 2. 取得したセッションURLへ、実際のバイナリ本体を`UPLOAD_CHUNK_SIZE_BYTES`ごとに分割して順にPUTする。
+   *    内容全体を1回のPUTで送信する実装だった際、数GB規模のzipでTLSの書き込みエラー(EPROTO)が
+   *    実際に発生したため、チャンク分割へ変更した。各チャンクには`Content-Range`ヘッダーで
+   *    全体のうちどの範囲かを明示する。失敗時のチャンク単位の再開（途中のチャンクから再送する）は
+   *    実装していない（失敗した場合はエラーとして呼び出し元へ伝播し、月単位で最初から再試行する）
    * @param accessToken Google Driveのアクセストークン
    * @param fileId 更新対象のDriveファイルID
    * @param content アップロードするバイナリ本体
+   * @param chunkSizeBytes 1チャンクあたりのサイズ。テストで小さい値へ差し替えられるよう引数化しているが、
+   * 通常は省略しデフォルト（`UPLOAD_CHUNK_SIZE_BYTES`）を使うこと
    */
-  async updateFileContent(accessToken: string, fileId: string, content: Buffer): Promise<void> {
+  async updateFileContent(
+    accessToken: string,
+    fileId: string,
+    content: Buffer,
+    chunkSizeBytes: number = UPLOAD_CHUNK_SIZE_BYTES
+  ): Promise<void> {
     try {
       const sessionResponse = await firstValueFrom(
         this.httpService.patch(
@@ -131,11 +156,19 @@ export class GoogleDriveApiClient {
       );
 
       const uploadSessionUrl: string = sessionResponse.headers.location;
-      await firstValueFrom(
-        this.httpService.put(uploadSessionUrl, content, {
-          headers: { 'Content-Type': 'application/zip' }
-        })
-      );
+      for (let start = 0; start < content.length; start += chunkSizeBytes) {
+        const end = Math.min(start + chunkSizeBytes, content.length);
+        await firstValueFrom(
+          this.httpService.put(uploadSessionUrl, content.subarray(start, end), {
+            headers: {
+              'Content-Type': 'application/zip',
+              'Content-Range': `bytes ${start}-${end - 1}/${content.length}`
+            },
+            maxRedirects: 0,
+            validateStatus: isValidUploadChunkStatus
+          })
+        );
+      }
     } catch (error) {
       throw toGoogleDriveApiException(error);
     }

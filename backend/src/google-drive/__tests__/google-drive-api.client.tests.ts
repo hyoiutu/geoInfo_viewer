@@ -149,7 +149,7 @@ describe('GoogleDriveApiClientに関するテスト', () => {
   });
 
   describe('updateFileContent', () => {
-    test('レジューマブルアップロードのセッションを開始し、取得したURLへコンテンツをPUTする', async () => {
+    test('レジューマブルアップロードのセッションを開始し、内容がチャンクサイズ以下の場合は1回のPUTで送信する', async () => {
       const httpServicePatch = vi
         .fn()
         .mockReturnValue(of({ headers: { location: 'https://upload.example/session-1' } }));
@@ -172,9 +172,59 @@ describe('GoogleDriveApiClientに関するテスト', () => {
           params: { uploadType: 'resumable' }
         }
       );
+      expect(httpServicePut).toHaveBeenCalledTimes(1);
       expect(httpServicePut).toHaveBeenCalledWith('https://upload.example/session-1', content, {
-        headers: { 'Content-Type': 'application/zip' }
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Range': `bytes 0-${content.length - 1}/${content.length}`
+        },
+        maxRedirects: 0,
+        validateStatus: expect.any(Function)
       });
+    });
+
+    test('内容がチャンクサイズを超える場合、複数回に分けてPUTする（中間チャンクは308を正常応答として扱う）', async () => {
+      const httpServicePatch = vi
+        .fn()
+        .mockReturnValue(of({ headers: { location: 'https://upload.example/session-1' } }));
+      const httpServicePut = vi
+        .fn()
+        .mockReturnValueOnce(of({ status: 308, data: undefined }))
+        .mockReturnValueOnce(of({ status: 200, data: createFileMetadata({ id: 'file-1' }) }));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch, httpServicePut);
+      // テストでは巨大バッファでのアサーション失敗時のOOMを避けるため、chunkSizeBytesを小さい値に差し替える
+      const testChunkSizeBytes = 4;
+      const content = Buffer.from('abcde');
+
+      await client.updateFileContent('token-xyz', 'file-1', content, testChunkSizeBytes);
+
+      expect(httpServicePut).toHaveBeenCalledTimes(2);
+      expect(httpServicePut).toHaveBeenNthCalledWith(
+        1,
+        'https://upload.example/session-1',
+        content.subarray(0, testChunkSizeBytes),
+        {
+          headers: {
+            'Content-Type': 'application/zip',
+            'Content-Range': `bytes 0-${testChunkSizeBytes - 1}/${content.length}`
+          },
+          maxRedirects: 0,
+          validateStatus: expect.any(Function)
+        }
+      );
+      expect(httpServicePut).toHaveBeenNthCalledWith(
+        2,
+        'https://upload.example/session-1',
+        content.subarray(testChunkSizeBytes),
+        {
+          headers: {
+            'Content-Type': 'application/zip',
+            'Content-Range': `bytes ${testChunkSizeBytes}-${content.length - 1}/${content.length}`
+          },
+          maxRedirects: 0,
+          validateStatus: expect.any(Function)
+        }
+      );
     });
 
     test('セッション開始が失敗した場合、errorCode: GOOGLE_DRIVE_API_ERRORのAppExceptionを投げる', async () => {

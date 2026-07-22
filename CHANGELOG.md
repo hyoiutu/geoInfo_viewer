@@ -14,6 +14,17 @@
 
 ## 変更履歴
 
+### [2026-07-23] GoogleDriveApiClient.updateFileContentを真のチャンク分割アップロードへ変更した（自律モード）
+* **修正の動機・概要**:
+  - 診断用ログを追加して再実行したところ、実際のエラーは502ではなく`AxiosError: write EPROTO`（TLS書き込みエラー）で、リクエストの`Content-Length`が約4.15GB（3.87GiB）だったことが判明した。「502」は`toGoogleDriveApiException`が原因不明のエラーに対して固定で使っていたフォールバック値であり、実際にGoogleから返された応答ではなかった。
+  - 月別アーカイブzip（動画を含む月）が数GB規模になり、これを1回のPUTで送信しようとしたことがTLS層での書き込み失敗の原因と判断した。レジューマブルアップロード自体は正しい方式だったが、実際のバイナリ送信を1回の巨大なPUTで行っていた実装が不十分だった。
+  - `UPLOAD_CHUNK_SIZE_BYTES`（16MiB）ごとに分割し`Content-Range`ヘッダーを付けて順にPUTする、真のチャンク分割アップロードへ変更した。中間チャンクはHTTPステータス308（Resume Incomplete）を返すため、axiosの`validateStatus`で308も正常応答として扱い、308をリダイレクトとして追従してしまわないよう`maxRedirects: 0`も指定した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/google-drive/google-drive-api.client.ts`の`updateFileContent`を、`content`を`UPLOAD_CHUNK_SIZE_BYTES`単位で分割し順にPUTする実装へ変更（`chunkSizeBytes`引数はテストで小さい値に差し替えるためのもの、通常は省略）。対応する単体テストを更新（TDD、Red-Green）。単体テスト（バックエンド全40ファイル234件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、真のチャンク分割へ変更した経緯・実装内容を追記。
+
 ### [2026-07-23] toGoogleDriveApiExceptionが原因不明のエラー時に元のエラー詳細をログ出力するようにした（自律モード）
 * **修正の動機・概要**:
   - ユーザーからの依頼を受け、写真ローカルバックフィルスクリプトが成功するまで自律的に実行・修正・再実行するループで対応中。再実行しても`updateFileContent`で同じ`GOOGLE_DRIVE_API_ERROR`（502）が再現した。
