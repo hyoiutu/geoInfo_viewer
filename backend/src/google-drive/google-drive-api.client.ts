@@ -97,18 +97,32 @@ export class GoogleDriveApiClient {
   }
 
   /**
-   * 既存ファイルのコンテンツ（バイナリ本体）を更新する
+   * 既存ファイルのコンテンツ（バイナリ本体）を更新する。Google Drive APIの「シンプルアップロード」
+   * （`uploadType=media`）は数MB程度までしか信頼できる動作を保証しないため、月別アーカイブzip
+   * （数十MB以上になりうる）を安定してアップロードできるよう「レジューマブルアップロード」方式を使う
+   * （実際に502エラーで発覚、Issue #23）。
+   * 1. セッション開始リクエスト（`uploadType=resumable`、ボディなし）を送り、レスポンスの`Location`
+   *    ヘッダーからアップロード先セッションURLを取得する
+   * 2. 取得したセッションURLへ実際のバイナリ本体を1回のPUTで送信する（チャンク分割・再開処理は行わない。
+   *    レジューマブル方式自体が大きなペイロードのアップロードをシンプルアップロードより安定して扱える）
    * @param accessToken Google Driveのアクセストークン
    * @param fileId 更新対象のDriveファイルID
    * @param content アップロードするバイナリ本体
    */
   async updateFileContent(accessToken: string, fileId: string, content: Buffer): Promise<void> {
     try {
+      const sessionResponse = await firstValueFrom(
+        this.httpService.patch(`${GOOGLE_DRIVE_UPLOAD_BASE_URL}/files/${fileId}`, undefined, {
+          // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
+          headers: { Authorization: `Bearer ${accessToken}` },
+          params: { uploadType: 'resumable' }
+        })
+      );
+
+      const uploadSessionUrl: string = sessionResponse.headers.location;
       await firstValueFrom(
-        this.httpService.patch(`${GOOGLE_DRIVE_UPLOAD_BASE_URL}/files/${fileId}`, content, {
-          // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization/Content-Type)に合わせる
-          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/zip' },
-          params: { uploadType: 'media' }
+        this.httpService.put(uploadSessionUrl, content, {
+          headers: { 'Content-Type': 'application/zip' }
         })
       );
     } catch (error) {

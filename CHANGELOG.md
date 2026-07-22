@@ -14,6 +14,16 @@
 
 ## 変更履歴
 
+### [2026-07-22] GoogleDriveApiClient.updateFileContentをレジューマブルアップロード方式へ変更した
+* **修正の動機・概要**:
+  - 2GiB超ファイルのスキップ対応後に再実行したところ、`monthly_photo_archives`が0件のまま`errorCode: GOOGLE_DRIVE_API_ERROR`（HTTP 502）でクラッシュした。DBを確認したところ最初の年月グループのアップロードから失敗しており、たまたま巨大な月に当たったのではなく構造的な問題だと判明した。
+  - 調査の結果、`updateFileContent`が使っていた「シンプルアップロード」（`uploadType=media`）はGoogle Drive APIの仕様上数MB程度までしか信頼できる動作を保証しておらず、写真数十件以上をまとめた月別アーカイブzipは通常この範囲を超えるため、どの月のアップロードも失敗しうる状態だったことが分かった。ユーザーと協議の上、「レジューマブルアップロード」方式（セッション開始→取得したURLへPUT、チャンク分割は行わない）へ変更する方針で合意した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/google-drive/google-drive-api.client.ts`の`updateFileContent`を、`uploadType=resumable`でのセッション開始（`Location`ヘッダーからアップロード先URLを取得）→取得したURLへの1回のPUT、という2段階の方式に変更。対応する単体テストを更新（TDD、Red-Green）。単体テスト（バックエンド全40ファイル231件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章に、レジューマブルアップロード方式への変更経緯を追記。
+
 ### [2026-07-22] backfill-photos-from-local.tsで、2GiB超のファイル（動画）でクラッシュする不具合を修正した
 * **修正の動機・概要**:
   - ユーザーが実際に約55,000件規模のGoogle Photosライブラリ（写真＋動画）に対してスクリプトを実行したところ、Phase A（55,461件検出）は成功したが、Phase B（メタデータ解決、EXIFフォールバックのための実バイナリ読み込み）で2.51GBの動画ファイルを読み込もうとした際に`RangeError: File size is greater than 2 GiB`でクラッシュした。

@@ -20,12 +20,16 @@ describe('GoogleDriveApiClientに関するテスト', () => {
   const createClient = async (
     httpServiceGet: ReturnType<typeof vi.fn>,
     httpServicePost: ReturnType<typeof vi.fn>,
-    httpServicePatch: ReturnType<typeof vi.fn> = vi.fn()
+    httpServicePatch: ReturnType<typeof vi.fn> = vi.fn(),
+    httpServicePut: ReturnType<typeof vi.fn> = vi.fn()
   ) => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         GoogleDriveApiClient,
-        { provide: HttpService, useValue: { get: httpServiceGet, post: httpServicePost, patch: httpServicePatch } }
+        {
+          provide: HttpService,
+          useValue: { get: httpServiceGet, post: httpServicePost, patch: httpServicePatch, put: httpServicePut }
+        }
       ]
     }).compile();
 
@@ -145,24 +149,48 @@ describe('GoogleDriveApiClientに関するテスト', () => {
   });
 
   describe('updateFileContent', () => {
-    test('アクセストークンをAuthorizationヘッダーに含め、指定したファイルIDのコンテンツをPATCHで更新する', async () => {
-      const httpServicePatch = vi.fn().mockReturnValue(of({ data: createFileMetadata({ id: 'file-1' }) }));
-      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch);
+    test('レジューマブルアップロードのセッションを開始し、取得したURLへコンテンツをPUTする', async () => {
+      const httpServicePatch = vi
+        .fn()
+        .mockReturnValue(of({ headers: { location: 'https://upload.example/session-1' } }));
+      const httpServicePut = vi.fn().mockReturnValue(of({ data: createFileMetadata({ id: 'file-1' }) }));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch, httpServicePut);
       const content = Buffer.from('zip-content');
 
       await client.updateFileContent('token-xyz', 'file-1', content);
 
-      expect(httpServicePatch).toHaveBeenCalledWith(expect.stringContaining('/files/file-1'), content, {
-        headers: { Authorization: 'Bearer token-xyz', 'Content-Type': 'application/zip' },
-        params: { uploadType: 'media' }
+      expect(httpServicePatch).toHaveBeenCalledWith(expect.stringContaining('/files/file-1'), undefined, {
+        headers: { Authorization: 'Bearer token-xyz' },
+        params: { uploadType: 'resumable' }
+      });
+      expect(httpServicePut).toHaveBeenCalledWith('https://upload.example/session-1', content, {
+        headers: { 'Content-Type': 'application/zip' }
       });
     });
 
-    test('失敗した場合、errorCode: GOOGLE_DRIVE_API_ERRORのAppExceptionを投げる', async () => {
+    test('セッション開始が失敗した場合、errorCode: GOOGLE_DRIVE_API_ERRORのAppExceptionを投げる', async () => {
       const httpServicePatch = vi
         .fn()
         .mockReturnValue(throwError(() => ({ isAxiosError: true, response: { status: 500 } })));
       const client = await createClient(vi.fn(), vi.fn(), httpServicePatch);
+
+      try {
+        await client.updateFileContent('token-xyz', 'file-1', Buffer.from('zip-content'));
+        expect.unreachable('例外が投げられるはず');
+      } catch (error) {
+        assertIsAppException(error);
+        expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
+      }
+    });
+
+    test('コンテンツのPUTが失敗した場合、errorCode: GOOGLE_DRIVE_API_ERRORのAppExceptionを投げる', async () => {
+      const httpServicePatch = vi
+        .fn()
+        .mockReturnValue(of({ headers: { location: 'https://upload.example/session-1' } }));
+      const httpServicePut = vi
+        .fn()
+        .mockReturnValue(throwError(() => ({ isAxiosError: true, response: { status: 502 } })));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch, httpServicePut);
 
       try {
         await client.updateFileContent('token-xyz', 'file-1', Buffer.from('zip-content'));
