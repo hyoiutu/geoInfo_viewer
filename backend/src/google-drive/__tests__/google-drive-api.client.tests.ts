@@ -159,10 +159,19 @@ describe('GoogleDriveApiClientに関するテスト', () => {
 
       await client.updateFileContent('token-xyz', 'file-1', content);
 
-      expect(httpServicePatch).toHaveBeenCalledWith(expect.stringContaining('/files/file-1'), undefined, {
-        headers: { Authorization: 'Bearer token-xyz' },
-        params: { uploadType: 'resumable' }
-      });
+      expect(httpServicePatch).toHaveBeenCalledWith(
+        expect.stringContaining('/files/file-1'),
+        {},
+        {
+          headers: {
+            Authorization: 'Bearer token-xyz',
+            'Content-Type': 'application/json; charset=UTF-8',
+            'X-Upload-Content-Type': 'application/zip',
+            'X-Upload-Content-Length': String(content.length)
+          },
+          params: { uploadType: 'resumable' }
+        }
+      );
       expect(httpServicePut).toHaveBeenCalledWith('https://upload.example/session-1', content, {
         headers: { 'Content-Type': 'application/zip' }
       });

@@ -9,7 +9,12 @@ import { GoogleDriveAuthService } from '../google-drive/google-drive-auth.servic
 import { MonthlyPhotoArchiveEntity } from './entities/monthly-photo-archive.entity';
 import { PhotoEntity } from './entities/photo.entity';
 import { groupPhotosByYearMonth, type PhotoWithMetadata } from './group-photos-by-year-month.util';
-import { type LocalArchiveEntry, readLocalPhotoData, scanLocalPhotoDirectory } from './local-photo-directory.util';
+import {
+  createLazyPhotoData,
+  type LocalArchiveEntry,
+  readLocalPhotoData,
+  scanLocalPhotoDirectory
+} from './local-photo-directory.util';
 import { MonthlyPhotoArchiveService } from './monthly-photo-archive.service';
 import { toPhotoEntity } from './photo-ingest.service';
 import { resolvePhotoMetadata } from './takeout-metadata.util';
@@ -27,7 +32,8 @@ const MAX_READABLE_FILE_SIZE_BYTES = 2 ** 31 - 1;
  * 超えてそのまま扱うことができないため、ユーザーが事前にzipを展開しローカルの1フラットディレクトリへ
  * 集約したものを入力とする（Issue #23）。
  * メモリ使用量を抑えるため、写真本体の実バイナリは以下の2箇所でのみその場限りで読み込む。
- *   - メタデータ解決時（JSONサイドカーが無い/不正な場合のEXIFフォールバック用）
+ *   - メタデータ解決時（`createLazyPhotoData`により、JSONサイドカーが無い/不正な場合のEXIFフォールバックで
+ *     実際にdataへアクセスされた時のみ読み込む。JSONで解決できる大多数の写真は本体を一切読み込まない）
  *   - 月別アーカイブへの再構成時（1ヶ月分のグループごとに読み込む。全件を同時には保持しない）
  * 対象件数が多く実行に長時間かかることを想定し、途中で中断され再実行された場合に備えて、
  * `monthly_photo_archives`テーブルに既にレコードがある年月（＝前回の実行で最後まで処理済みの月）は
@@ -69,7 +75,7 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
       continue;
     }
 
-    const metadata = await resolvePhotoMetadata(readLocalPhotoData(localEntry), json);
+    const metadata = await resolvePhotoMetadata(createLazyPhotoData(localEntry), json);
     if (metadata === null) {
       skippedCount += 1;
       continue;

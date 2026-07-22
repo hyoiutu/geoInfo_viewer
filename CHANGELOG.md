@@ -14,6 +14,30 @@
 
 ## 変更履歴
 
+### [2026-07-23] 写真ローカルバックフィルのメタデータ解決を、写真本体の遅延読み込みへ変更し不要なI/Oを削減した
+* **修正の動機・概要**:
+  - ユーザーから「スクリプト実行からエラーが起こるまで数時間かかるため、途中から再開できないか」との相談を受けた。調査の結果、メタデータ解決処理（Phase B）が`readLocalPhotoData`で全55,461件の写真本体を無条件に（JSONサイドカーで解決できる場合も）読み込んでおり、外付けHDD上の数万件規模（動画含む）に対してこれを行うと不要なディスクI/Oが大量に発生し、これが実行時間の大部分を占めていたと判明した。
+  - `resolvePhotoMetadata`はJSONサイドカーで解決できた場合、写真本体のdataには一切アクセスしない実装になっているため、`createLazyPhotoData`（新規、`local-photo-directory.util.ts`）でdataアクセス自体を遅延させたエントリを渡すよう変更した。これにより、JSONサイドカーで解決できる大多数の写真は本体を一切読み込まなくなる。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/local-photo-directory.util.ts`: `createLazyPhotoData`（新規）を追加。`data`プロパティをgetterにして実際にアクセスされた時点まで`readFileSync`を遅延させる。
+    - `backend/src/photos/backfill-photos-from-local.ts`: メタデータ解決時の`readLocalPhotoData`呼び出しを`createLazyPhotoData`へ変更。
+    - 対応する単体テストを追加（TDD、Red-Green）。単体テスト（バックエンド全40ファイル233件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向けスクリプトの内部最適化のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所を、遅延読み込みへの変更内容・変更理由に合わせて更新。
+
+### [2026-07-22] GoogleDriveApiClient.updateFileContentのレジューマブルアップロードのセッション開始リクエストを仕様により厳密に沿う形に修正した
+* **修正の動機・概要**:
+  - レジューマブルアップロード方式へ変更後に再実行したところ、同一箇所（`updateFileContent`）で再び`GOOGLE_DRIVE_API_ERROR`（502）が発生した。DBを確認したところ`monthly_photo_archives`は依然として0件で、最初の年月グループから失敗していた。
+  - 初回実装のセッション開始リクエストはボディなし・`Content-Type`等のヘッダーなしだったが、Google公式ドキュメントは空のJSONボディ（`Content-Type: application/json; charset=UTF-8`）と`X-Upload-Content-Type`/`X-Upload-Content-Length`ヘッダーの付与を推奨している。仕様により厳密に沿う形に修正した。
+  - なお、本環境ではGoogle Drive実APIへの疎通確認ができないため、この修正で解消するかはユーザーの実行結果を待って判断する。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/google-drive/google-drive-api.client.ts`の`updateFileContent`のセッション開始リクエストに、空のJSONボディ・`Content-Type`・`X-Upload-Content-Type`・`X-Upload-Content-Length`ヘッダーを追加。対応する単体テストを更新（TDD、Red-Green）。単体テスト（バックエンド全40ファイル231件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、セッション開始リクエストの詳細（ボディ・ヘッダー）を追記。
+
 ### [2026-07-22] GoogleDriveApiClient.updateFileContentをレジューマブルアップロード方式へ変更した
 * **修正の動機・概要**:
   - 2GiB超ファイルのスキップ対応後に再実行したところ、`monthly_photo_archives`が0件のまま`errorCode: GOOGLE_DRIVE_API_ERROR`（HTTP 502）でクラッシュした。DBを確認したところ最初の年月グループのアップロードから失敗しており、たまたま巨大な月に当たったのではなく構造的な問題だと判明した。

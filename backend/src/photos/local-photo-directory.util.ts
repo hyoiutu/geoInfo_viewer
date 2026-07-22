@@ -57,3 +57,20 @@ export const readLocalPhotoData = (entry: LocalArchiveEntry): TakeoutArchiveEntr
   path: entry.path,
   data: readFileSync(entry.absolutePath)
 });
+
+/**
+ * 写真本体の実バイナリを、dataへ実際にアクセスされた時点まで遅延させて読み込むTakeoutArchiveEntryを作る。
+ * JSONサイドカー優先でメタデータを解決する場合（`resolvePhotoMetadata`）、JSON側で解決できれば
+ * 写真本体のdataには一切アクセスしないため、この関数を使えば無駄な読み込みを避けられる。
+ * 数万件規模のディレクトリに対してreadLocalPhotoDataで全件を無条件に読み込むと、JSONで解決できる
+ * 大多数の写真についても不要なディスクI/Oが発生し実行時間が大きく伸びることが判明したため追加した
+ * （Issue #23 写真ローカルバックフィル）
+ * @param entry photoEntriesの1件
+ * @returns dataアクセス時に遅延読み込みするTakeoutArchiveEntry
+ */
+export const createLazyPhotoData = (entry: LocalArchiveEntry): TakeoutArchiveEntry => ({
+  path: entry.path,
+  get data() {
+    return readFileSync(entry.absolutePath);
+  }
+});
