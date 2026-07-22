@@ -14,6 +14,17 @@
 
 ## 変更履歴
 
+### [2026-07-22] backfill-photos-from-local.tsで、2GiB超のファイル（動画）でクラッシュする不具合を修正した
+* **修正の動機・概要**:
+  - ユーザーが実際に約55,000件規模のGoogle Photosライブラリ（写真＋動画）に対してスクリプトを実行したところ、Phase A（55,461件検出）は成功したが、Phase B（メタデータ解決、EXIFフォールバックのための実バイナリ読み込み）で2.51GBの動画ファイルを読み込もうとした際に`RangeError: File size is greater than 2 GiB`でクラッシュした。
+  - 調査の結果、Node.jsの`fs.readFileSync`は実行環境のメモリ量に関わらず2GiB（`2 ** 31 - 1`バイト）を超えるファイルを読み込めないというハード制限が原因と判明した。DBを確認したところ`monthly_photo_archives`は0件のままで、Phase C（Google Driveへのアップロード・DB保存）には未到達であり、実害（重複データ等）は無いことを確認した。
+  - この写真取り込みパイプラインは動画を想定していない設計だったため、ユーザーと対応方針を協議し、「2GiB超のファイルは読み込みを試みずスキップし、完了時にパス一覧を出力（手動での個別対応用）」という方針で合意した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/backfill-photos-from-local.ts`のメタデータ解決ループに、写真本体の実バイナリを読み込む直前の`statSync`によるサイズチェックを追加。2GiB（`MAX_READABLE_FILE_SIZE_BYTES`）を超える場合は読み込みを試みずスキップし、完了時にスキップしたファイルのパス一覧をログ出力するようにした。単体テスト（バックエンド全12ファイル63件）・lint・typecheckは全てGreen。実際に2GiB超のファイル（sparse file）を用意し、Node.jsの`readFileSync`が同じ境界値で例外を投げること・サイズ判定が正しく機能することを確認済み。
+  * **README.md**: 「既存写真の一括取り込み（写真ローカルバックフィル、任意）」節に、2GiB超のファイルは自動スキップされる旨を追記。
+  * **仕様書**: 変更なし（開発者向けツールの制約対応のため）。
+  * **設計書**: `designs/technical_design.md`の「既存写真の一括取り込み（写真ローカルバックフィル）」節に、Node.jsのファイルサイズ制約とスキップ対応を追記。
+
 ### [2026-07-21] backfill-photos-from-local.tsで、pnpm経由の実行時に区切りの--が引数として渡ってしまう不具合を修正した
 * **修正の動機・概要**:
   - 別スクリプト`flatten-local-photo-directory.ts`（Issue #23対応、写真ディレクトリのフラット化ツール）で、ユーザーが`pnpm --filter backend run flatten:photos-local -- <入力> <出力>`を実行した際に`ENOENT`（`path: '--'`）が発生することが判明した。原因は、`pnpm --filter <package> run <script> -- <args>`がnpm scriptsの一般的な挙動と異なり区切りの`--`自体を除去せずそのまま`process.argv`へ渡すことだった。

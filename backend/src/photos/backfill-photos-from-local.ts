@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { statSync } from 'node:fs';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
@@ -14,6 +15,12 @@ import { toPhotoEntity } from './photo-ingest.service';
 import { resolvePhotoMetadata } from './takeout-metadata.util';
 import { matchPhotosWithJsonSidecars } from './takeout-photo-matcher.util';
 
+// Node.jsのfs.readFileSyncは、実行環境のメモリ量に関わらず2GiB(2^31-1バイト)を超える
+// ファイルを読み込めない（RangeError: File size is greater than 2 GiB）。動画等の
+// 大容量ファイルが対象ディレクトリに含まれる場合に備え、この上限を超えるファイルは
+// 読み込み自体を試みずスキップする（Issue #23、実際にGoogle Takeoutの動画で発生）
+const MAX_READABLE_FILE_SIZE_BYTES = 2 ** 31 - 1;
+
 /**
  * ローカルディレクトリに展開済みの写真＋JSONサイドカーを取り込み、撮影年月ごとの月別アーカイブへ
  * 再構成してphotosテーブルへ保存する。Google Takeoutのzip自体（50GB級）をNode.jsのBuffer上限を
@@ -25,7 +32,9 @@ import { matchPhotosWithJsonSidecars } from './takeout-photo-matcher.util';
  * 対象件数が多く実行に長時間かかることを想定し、途中で中断され再実行された場合に備えて、
  * `monthly_photo_archives`テーブルに既にレコードがある年月（＝前回の実行で最後まで処理済みの月）は
  * 丸ごとスキップする。処理の途中（アップロード直後〜DB保存の間等）で中断された場合、その月の
- * レコードが無い・不完全な状態になりうるため、その場合は自動スキップされず再処理される（Issue #23）
+ * レコードが無い・不完全な状態になりうるため、その場合は自動スキップされず再処理される（Issue #23）。
+ * `MAX_READABLE_FILE_SIZE_BYTES`（2GiB）を超えるファイル（動画等）は読み込み自体を試みずスキップし、
+ * 完了時にパス一覧を出力する（手動での個別対応用）
  * @param directoryPath 走査対象のローカルディレクトリパス
  */
 const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<void> => {
@@ -48,10 +57,16 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
 
   const photosWithMetadata: PhotoWithMetadata[] = [];
   let skippedCount = 0;
+  const skippedTooLargePaths: string[] = [];
   for (const { photo, json } of matched) {
     const localEntry = localEntryByPath.get(photo.path);
     if (localEntry === undefined) {
       throw new Error(`写真エントリの読み込みに失敗しました: ${photo.path}`);
+    }
+
+    if (statSync(localEntry.absolutePath).size > MAX_READABLE_FILE_SIZE_BYTES) {
+      skippedTooLargePaths.push(localEntry.absolutePath);
+      continue;
     }
 
     const metadata = await resolvePhotoMetadata(readLocalPhotoData(localEntry), json);
@@ -62,6 +77,12 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
     photosWithMetadata.push({ entry: { path: photo.path, data: Buffer.alloc(0) }, metadata });
   }
   console.log(`メタデータを解決しました（保存対象: ${photosWithMetadata.length}件、スキップ: ${skippedCount}件）`);
+  if (skippedTooLargePaths.length > 0) {
+    console.log(`2GiB超のため読み込みをスキップしたファイル（${skippedTooLargePaths.length}件）:`);
+    for (const path of skippedTooLargePaths) {
+      console.log(`  - ${path}`);
+    }
+  }
 
   const groups = groupPhotosByYearMonth(photosWithMetadata);
   const processedYearMonths = new Set((await monthlyPhotoArchiveRepository.find()).map((archive) => archive.yearMonth));
@@ -98,7 +119,9 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
   }
 
   await dataSource.destroy();
-  console.log(`完了しました（保存: ${savedCount}件、スキップ: ${skippedCount}件）`);
+  console.log(
+    `完了しました（保存: ${savedCount}件、スキップ: ${skippedCount}件、2GiB超によりスキップ: ${skippedTooLargePaths.length}件）`
+  );
 };
 
 // `pnpm --filter <package> run <script> -- <args>`はnpm scriptsと異なり、区切りの`--`自体を
