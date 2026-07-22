@@ -15,14 +15,22 @@ const HTTP_STATUS_TOO_MANY_REQUESTS = 429;
 const isAxiosError = (error: unknown): error is AxiosError =>
   typeof error === 'object' && error !== null && 'isAxiosError' in error && error.isAxiosError === true;
 
-/** HTTPステータスから種別を判別できない場合の、汎用的なGoogle Drive API通信エラーを組み立てる */
-const createGenericGoogleDriveApiException = (): AppException =>
-  new AppException(
+/**
+ * HTTPステータスから種別を判別できない場合の、汎用的なGoogle Drive API通信エラーを組み立てる。
+ * AppExceptionへの変換で元のエラーの詳細（レスポンス本体・ヘッダー等）が失われ、原因調査ができなく
+ * なるため、種別を判別できない＝原因不明な失敗の場合に限り、診断用として元のエラー詳細を
+ * ログ出力する（実際に502エラーの原因調査で必要になった、Issue #23）
+ * @param error try/catchで捕捉した元の値
+ */
+const createGenericGoogleDriveApiException = (error: unknown): AppException => {
+  console.error('Google Drive APIとの通信で原因不明のエラーが発生しました。診断用の詳細:', error);
+  return new AppException(
     APP_ERROR_CODE.googleDriveApiError,
     'Google Drive APIとの通信に失敗しました',
     'しばらく時間をおいてから再度お試しください',
     HttpStatus.BAD_GATEWAY
   );
+};
 
 /**
  * Google Drive API呼び出し(axios)で発生したエラーを、レスポンスのHTTPステータスに応じて
@@ -33,7 +41,7 @@ const createGenericGoogleDriveApiException = (): AppException =>
  */
 export const toGoogleDriveApiException = (error: unknown): AppException => {
   if (!isAxiosError(error)) {
-    return createGenericGoogleDriveApiException();
+    return createGenericGoogleDriveApiException(error);
   }
 
   const status = error.response?.status;
@@ -65,5 +73,5 @@ export const toGoogleDriveApiException = (error: unknown): AppException => {
     );
   }
 
-  return createGenericGoogleDriveApiException();
+  return createGenericGoogleDriveApiException(error);
 };
