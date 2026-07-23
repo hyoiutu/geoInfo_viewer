@@ -8,15 +8,14 @@ import { groupPhotosByYearMonth } from '../group-photos-by-year-month.util';
 import { MonthlyPhotoArchiveService } from '../monthly-photo-archive.service';
 import { PhotoIngestService } from '../photo-ingest.service';
 import { extractTakeoutArchive } from '../takeout-archive.util';
-import { extractMetadataFromExif, extractMetadataFromJson } from '../takeout-metadata.util';
+import { resolvePhotoMetadata } from '../takeout-metadata.util';
 import { matchPhotosWithJsonSidecars } from '../takeout-photo-matcher.util';
 
 vi.mock('../takeout-archive.util', () => ({ extractTakeoutArchive: vi.fn() }));
 vi.mock('../takeout-photo-matcher.util', () => ({ matchPhotosWithJsonSidecars: vi.fn() }));
-vi.mock('../takeout-metadata.util', () => ({
-  extractMetadataFromJson: vi.fn(),
-  extractMetadataFromExif: vi.fn()
-}));
+// JSON優先・EXIFフォールバックの具体的な分岐ロジック自体はtakeout-metadata.util.tests.tsで検証済みのため、
+// ここではPhotoIngestServiceがresolvePhotoMetadataの結果(メタデータ有無)をどう扱うかのみを検証する
+vi.mock('../takeout-metadata.util', () => ({ resolvePhotoMetadata: vi.fn() }));
 vi.mock('../group-photos-by-year-month.util', () => ({ groupPhotosByYearMonth: vi.fn() }));
 
 const createPhotoEntry = (path: string) => ({ path, data: Buffer.from(path) });
@@ -59,7 +58,7 @@ describe('PhotoIngestServiceに関するテスト', () => {
     vi.mocked(extractTakeoutArchive).mockReturnValue({ photoEntries: [photo], jsonEntries: [json] });
     vi.mocked(matchPhotosWithJsonSidecars).mockReturnValue([{ photo, json }]);
     const takenAt = new Date('2026-07-01T00:00:00.000Z');
-    vi.mocked(extractMetadataFromJson).mockReturnValue({ takenAt, location: null });
+    vi.mocked(resolvePhotoMetadata).mockResolvedValue({ takenAt, location: null });
     const photoWithMetadata = { entry: photo, metadata: { takenAt, location: null } };
     vi.mocked(groupPhotosByYearMonth).mockReturnValue([{ yearMonth: '2026-07', photos: [photoWithMetadata] }]);
     const reorganize = vi
@@ -72,6 +71,7 @@ describe('PhotoIngestServiceに関するテスト', () => {
     expect(getAccessToken).toHaveBeenCalledTimes(1);
     expect(downloadFile).toHaveBeenCalledWith('access-token-1', 'file-1');
     expect(extractTakeoutArchive).toHaveBeenCalledWith(Buffer.from('zip-content'));
+    expect(resolvePhotoMetadata).toHaveBeenCalledWith(photo, json);
     expect(groupPhotosByYearMonth).toHaveBeenCalledWith([photoWithMetadata]);
     expect(reorganize).toHaveBeenCalledWith('access-token-1', [{ yearMonth: '2026-07', photos: [photoWithMetadata] }]);
     expect(save).toHaveBeenCalledWith([
@@ -86,55 +86,14 @@ describe('PhotoIngestServiceに関するテスト', () => {
     expect(result).toEqual({ savedCount: 1, skippedCount: 0 });
   });
 
-  test('jsonがnull(対応するJSONサイドカーが見つからない)の場合、EXIFからのメタデータ抽出にフォールバックする', async () => {
-    const getAccessToken = vi.fn().mockResolvedValue('access-token-1');
-    const downloadFile = vi.fn().mockResolvedValue(Buffer.from('zip-content'));
-    const save = vi.fn().mockResolvedValue(undefined);
-    const photo = createPhotoEntry('album/IMG_2.jpg');
-    vi.mocked(extractTakeoutArchive).mockReturnValue({ photoEntries: [photo], jsonEntries: [] });
-    vi.mocked(matchPhotosWithJsonSidecars).mockReturnValue([{ photo, json: null }]);
-    const takenAt = new Date('2026-07-02T00:00:00.000Z');
-    vi.mocked(extractMetadataFromExif).mockResolvedValue({ takenAt, location: null });
-    vi.mocked(groupPhotosByYearMonth).mockReturnValue([]);
-    const reorganize = vi.fn().mockResolvedValue([]);
-    const service = await createService({ getAccessToken, downloadFile, reorganize, save });
-
-    const result = await service.ingest('file-1');
-
-    expect(extractMetadataFromJson).not.toHaveBeenCalled();
-    expect(extractMetadataFromExif).toHaveBeenCalledWith(photo.data);
-    expect(groupPhotosByYearMonth).toHaveBeenCalledWith([{ entry: photo, metadata: { takenAt, location: null } }]);
-    expect(result).toEqual({ savedCount: 0, skippedCount: 0 });
-  });
-
-  test('JSONの解析に失敗した場合も、EXIFからのメタデータ抽出にフォールバックする', async () => {
-    const getAccessToken = vi.fn().mockResolvedValue('access-token-1');
-    const downloadFile = vi.fn().mockResolvedValue(Buffer.from('zip-content'));
-    const save = vi.fn().mockResolvedValue(undefined);
-    const photo = createPhotoEntry('album/IMG_3.jpg');
-    const json = createPhotoEntry('album/IMG_3.jpg.json');
-    vi.mocked(extractTakeoutArchive).mockReturnValue({ photoEntries: [photo], jsonEntries: [json] });
-    vi.mocked(matchPhotosWithJsonSidecars).mockReturnValue([{ photo, json }]);
-    vi.mocked(extractMetadataFromJson).mockReturnValue(null);
-    const takenAt = new Date('2026-07-03T00:00:00.000Z');
-    vi.mocked(extractMetadataFromExif).mockResolvedValue({ takenAt, location: null });
-    vi.mocked(groupPhotosByYearMonth).mockReturnValue([]);
-    const reorganize = vi.fn().mockResolvedValue([]);
-    const service = await createService({ getAccessToken, downloadFile, reorganize, save });
-
-    await service.ingest('file-1');
-
-    expect(extractMetadataFromExif).toHaveBeenCalledWith(photo.data);
-  });
-
-  test('JSON・EXIFいずれからもメタデータが取得できない写真は、グルーピング対象から除外されスキップ件数に加算される', async () => {
+  test('メタデータが取得できない写真は、グルーピング対象から除外されスキップ件数に加算される', async () => {
     const getAccessToken = vi.fn().mockResolvedValue('access-token-1');
     const downloadFile = vi.fn().mockResolvedValue(Buffer.from('zip-content'));
     const save = vi.fn().mockResolvedValue(undefined);
     const photo = createPhotoEntry('album/IMG_4.jpg');
     vi.mocked(extractTakeoutArchive).mockReturnValue({ photoEntries: [photo], jsonEntries: [] });
     vi.mocked(matchPhotosWithJsonSidecars).mockReturnValue([{ photo, json: null }]);
-    vi.mocked(extractMetadataFromExif).mockResolvedValue(null);
+    vi.mocked(resolvePhotoMetadata).mockResolvedValue(null);
     vi.mocked(groupPhotosByYearMonth).mockReturnValue([]);
     const reorganize = vi.fn().mockResolvedValue([]);
     const service = await createService({ getAccessToken, downloadFile, reorganize, save });
@@ -162,8 +121,7 @@ describe('PhotoIngestServiceに関するテスト', () => {
       { photo: photoWithoutMetadata, json: null }
     ]);
     const takenAt = new Date('2026-07-05T00:00:00.000Z');
-    vi.mocked(extractMetadataFromJson).mockReturnValue({ takenAt, location: null });
-    vi.mocked(extractMetadataFromExif).mockResolvedValue(null);
+    vi.mocked(resolvePhotoMetadata).mockResolvedValueOnce({ takenAt, location: null }).mockResolvedValueOnce(null);
     const photoWithMetadata = { entry: photoWithMetadataEntry, metadata: { takenAt, location: null } };
     vi.mocked(groupPhotosByYearMonth).mockReturnValue([{ yearMonth: '2026-07', photos: [photoWithMetadata] }]);
     const reorganize = vi

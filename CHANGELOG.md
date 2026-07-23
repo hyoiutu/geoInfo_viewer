@@ -23,15 +23,121 @@
   * **README.md**: 変更なし。
   * **仕様書・設計書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化は無いため）。
 
-### [2026-07-21] flatten-local-photo-directory.tsで、pnpm経由の実行時に区切りの--が引数として渡ってしまう不具合を修正した
+### [2026-07-23] 月別アーカイブをサイズ上限ごとの複数partへ分割し、メモリ不足によるプロセス強制終了を解消した（自律モード）
 * **修正の動機・概要**:
-  - ユーザーが実際に`pnpm --filter backend run flatten:photos-local -- <入力> <出力>`を実行したところ、`ENOENT`（`path: '--'`）でエラーになった。
-  - `pnpm --filter <package> run <script> -- <args>`は、npm scriptsの一般的な挙動と異なり区切りの`--`自体を除去せずそのまま`process.argv`へ渡すため、`process.argv[2]`が`'--'`、`process.argv[3]`が本来の1つ目の引数になっていたことが原因と判明した。
-  - `process.argv.slice(2)`から`'--'`を除去してから位置引数を取り出すよう修正し、実際に`--`付きで実行して動作することを確認した。
+  - timeout追加後も同じ月（写真729件・約16.6GiB）の処理開始直後にプロセスが（`ps aux`から消える形で、エラーも出さず）停止する事象が再発した。今回はnohup/disownで実行環境（バックグラウンドタスクの追跡）から完全に切り離した上で再実行したが、同じ地点で同様に停止したため、実行環境由来の外的要因（ハーネス側のタスク存続期間の制約等）ではないと判断した。
+  - 実機のメモリ量（16GB）を確認したところ、`readLocalPhotoData`で月グループ全写真の実バイナリ（約16.6GiB）をメモリに保持した状態のまま、`AdmZip.toBuffer()`がさらに同程度のサイズのzip結合バッファをもう1つ生成するため、ピークメモリ使用量が実機の物理メモリを大きく超えることが判明した。カーネルのメモリ不足によるプロセス強制終了（OOM kill）はアプリケーション側からは検知できず、エラーも出ないまま進行が止まって見える、という観測された症状と一致する。
+  - 対応として、1つの年月の写真を`MAX_ARCHIVE_PART_SIZE_BYTES`（1GiB）ごとの複数「part」に分割し、それぞれ独立したzipファイルとしてGoogle Driveへ保存する方式へ変更した。既存の`monthly_photo_archives`テーブル（48件、本対応より前に一括処理済み）は分割という概念が存在しなかった時代のデータのため、マイグレーションで`part = -1`（`LEGACY_WHOLE_MONTH_PART`）を設定し、サイズに関わらず常に処理済みとして扱うことで、再分割・重複アップロードを防いだ。
 * **各ファイルへの影響と変更内容**:
-  * **実装**: `backend/src/photos/flatten-local-photo-directory.ts`のCLIエントリポイントで、位置引数取り出し前に`'--'`をフィルタするよう修正。
+  * **実装**:
+    - `backend/src/migrations/1784788434237-AddPartToMonthlyPhotoArchives.ts`（新規）: `monthly_photo_archives`に`part`列を追加（既存行は-1で初期化）し、一意制約を`year_month`単独から`(year_month, part)`の組へ変更。実DBに対して適用済み（適用前に`monthly_photo_archives`・`photos`テーブルをバックアップ済み）。
+    - `backend/src/photos/entities/monthly-photo-archive.entity.ts`: `part`列を追加。
+    - `backend/src/photos/group-photos-by-year-month.util.ts`: `YearMonthGroup`に任意の`part`フィールドを追加（省略時は0）。
+    - `backend/src/photos/split-photos-into-sized-parts.util.ts`（新規）: 写真一覧を累積サイズ上限ごとに分割する純粋関数。単体テストを新規追加。
+    - `backend/src/photos/monthly-photo-archive.service.ts`: `reorganize`が`(yearMonth, part)`の組でアーカイブを検索・作成するよう変更。ファイル名はpart>0の場合`-partN`を付与。
+    - `backend/src/photos/backfill-photos-from-local.ts`: 年月ごとの処理を、`part = -1`の既存行がある年月は丸ごとスキップ、それ以外はpartごとに分割してpart単位でスキップ判定・処理するよう変更。
+    - 単体テスト（バックエンド全41ファイル241件）・lint・typecheckは全てGreen。biome --writeの適用によりNestJSのDIコンストラクタ引数（`GoogleDriveApiClient`）が`import type`化されDIが壊れる既知の罠が再発したため、手動で通常のimportへ戻した。
   * **README.md**: 変更なし。
-  * **仕様書・設計書**: 変更なし（開発者向けツールの引数解析の修正のみのため）。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、part分割の経緯・スキップ判定の2段階化・タイムアウト追加が保険的対策であり真因はメモリ不足だったことを追記。
+
+### [2026-07-23] GoogleDriveApiClientの全リクエストにtimeoutを追加し、進行状況ログを同期出力へ変更した（自律モード）
+* **修正の動機・概要**:
+  - STORED（無圧縮）への変更後に再実行したが、依然として48/178グループから進捗しなかった。今回はプロセスが完全に終了（`ps aux`に存在せず、exit code 0、ただし最終的な「完了しました」ログは出ないまま）していることを確認した。macOSのシステムログ・クラッシュレポート・sleep/wakeログを調査したが、OOM kill・システムスリープ・クラッシュのいずれの痕跡も見当たらなかった。
+  - `GoogleDriveApiClient`の全HTTPリクエスト（`getFileMetadata`/`downloadFile`/`createFileMetadata`/`updateFileContent`/`refreshToken`）に`timeout`が一切設定されていないことに気づいた。axiosは`timeout`未指定の場合、ネットワーク接続がスタックしても応答を無限に待ち続けエラーにもならない。今回のような外部ネットワーク要因（実行環境が外付けHDD経由・長時間実行）でTCP接続が停止した場合、エラーも出ずCPUも使わずプロセスが無音のまま進行しなくなる、という観測された症状と一致する。
+  - あわせて、`console.log`は標準出力がパイプ（`tee`）に接続されている場合Node.jsによって非同期にバッファリングされることがあり、プロセスが外部要因で停止した場合にバッファ済みだが未フラッシュのログ行が失われる可能性があると判明した。次回以降の診断のため、`backfill-photos-from-local.ts`のログ出力を`fs.writeSync`による同期出力へ変更し、月グループごとの処理開始（写真件数・合計バイト数）・Google Driveへのアップロード完了のログを追加した。これにより、次回以降万が一同様の停止が再発した場合、どの月のどの段階で停止したかログから正確に特定できるようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/google-drive/google-drive-api.client.ts`の全リクエストに`timeout`を追加（メタデータ取得・アップロードセッション開始・トークンリフレッシュ等の軽量リクエストは30秒、既存アーカイブのダウンロードは5分、アップロードチャンク1回あたりは2分）。対応する単体テストを更新（TDD、Red-Green）。
+    - `backend/src/photos/backfill-photos-from-local.ts`のログ出力を`console.log`から`fs.writeSync`による同期出力（`log`ヘルパー）へ変更し、月グループの処理開始・完了ログを追加。
+    - 単体テスト（バックエンド全40ファイル235件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、timeout追加の経緯と同期ログ出力への変更を追記。
+
+### [2026-07-23] mergeMonthlyArchiveの新規zipエントリをSTORED（無圧縮）に変更した（自律モード）
+* **修正の動機・概要**:
+  - 処理状況の可視化ログを追加した結果、対象178グループ中48件処理済み・130件未処理と判明したが、その後複数回再実行しても48件から進捗しなかった。再実行の都度プロセスがCPUを高く使用したまま（81%程度）進捗ログが出ないことを確認し、Google Driveへのアップロード（ネットワークI/O）ではなくCPUバウンドな処理（zip圧縮）で長時間停止している可能性を疑った。
+  - `mergeMonthlyArchive`は`adm-zip`の既定であるDEFLATE圧縮でzipエントリを追加していたが、写真・動画は既に圧縮済みの形式でありDEFLATE圧縮によるサイズ削減効果はほぼ無い一方、DEFLATE圧縮自体はCPUバウンドな処理のため、GB規模になりうる月別アーカイブ（動画を多く含む月等）では圧縮だけで長時間かかりうると判断した。新規エントリをSTORED（無圧縮）へ変更し、単純なバッファコピーのみで済むようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/monthly-archive.util.ts`の`mergeMonthlyArchive`で、`addFile`後に`entry.header.method`をSTORED（`0`）へ明示的に設定するよう変更。対応する単体テストを追加（TDD、Red-Green）。単体テスト（バックエンド全40ファイル235件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、STORED（無圧縮）採用の経緯を追記。
+
+### [2026-07-23] 写真ローカルバックフィルスクリプトに、対象年月グループの処理済み/未処理件数を可視化するログを追加した（自律モード）
+* **修正の動機・概要**:
+  - チャンク分割アップロード修正後に実行したところ、エラー無く終了（exit code 0）したが「完了しました」の最終ログが出力されず、Phase Bで報告された保存対象件数（49,658件）と実際に保存された件数（23,302件）に大きな乖離があった。再実行しても新たな進捗が見られなかった。
+  - 原因調査のため、`groupPhotosByYearMonth`が実際に何グループへ分類したか・そのうち何件が処理済み/未処理かを可視化するログを追加した。対象規模が大きく1回の実行では全グループを処理しきれない可能性があり、月単位のスキップ機構により複数回の再実行で徐々に完了へ近づく設計のため、進捗の見える化が必要と判断した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/backfill-photos-from-local.ts`に、年月グループの総数・処理済み件数・未処理件数を出力するログを追加。単体テスト（バックエンド全40ファイル234件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（診断用ログ出力のみのため）。
+
+### [2026-07-23] GoogleDriveApiClient.updateFileContentを真のチャンク分割アップロードへ変更した（自律モード）
+* **修正の動機・概要**:
+  - 診断用ログを追加して再実行したところ、実際のエラーは502ではなく`AxiosError: write EPROTO`（TLS書き込みエラー）で、リクエストの`Content-Length`が約4.15GB（3.87GiB）だったことが判明した。「502」は`toGoogleDriveApiException`が原因不明のエラーに対して固定で使っていたフォールバック値であり、実際にGoogleから返された応答ではなかった。
+  - 月別アーカイブzip（動画を含む月）が数GB規模になり、これを1回のPUTで送信しようとしたことがTLS層での書き込み失敗の原因と判断した。レジューマブルアップロード自体は正しい方式だったが、実際のバイナリ送信を1回の巨大なPUTで行っていた実装が不十分だった。
+  - `UPLOAD_CHUNK_SIZE_BYTES`（16MiB）ごとに分割し`Content-Range`ヘッダーを付けて順にPUTする、真のチャンク分割アップロードへ変更した。中間チャンクはHTTPステータス308（Resume Incomplete）を返すため、axiosの`validateStatus`で308も正常応答として扱い、308をリダイレクトとして追従してしまわないよう`maxRedirects: 0`も指定した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/google-drive/google-drive-api.client.ts`の`updateFileContent`を、`content`を`UPLOAD_CHUNK_SIZE_BYTES`単位で分割し順にPUTする実装へ変更（`chunkSizeBytes`引数はテストで小さい値に差し替えるためのもの、通常は省略）。対応する単体テストを更新（TDD、Red-Green）。単体テスト（バックエンド全40ファイル234件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、真のチャンク分割へ変更した経緯・実装内容を追記。
+
+### [2026-07-23] toGoogleDriveApiExceptionが原因不明のエラー時に元のエラー詳細をログ出力するようにした（自律モード）
+* **修正の動機・概要**:
+  - ユーザーからの依頼を受け、写真ローカルバックフィルスクリプトが成功するまで自律的に実行・修正・再実行するループで対応中。再実行しても`updateFileContent`で同じ`GOOGLE_DRIVE_API_ERROR`（502）が再現した。
+  - `toGoogleDriveApiException`はHTTPステータスのみでエラー種別を判定し、判別できない場合は元のエラー（レスポンス本体・ヘッダー等）を全て握りつぶして汎用メッセージに変換していたため、502の実際の原因（Googleが具体的に何を拒否したか）が一切分からない状態だった。これ以上憶測でレジューマブルアップロードの実装を変更するのは非生産的と判断し、まず原因不明なエラー時に限り元のエラー詳細をログ出力するようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/common/errors/google-drive-api.exception.ts`の`createGenericGoogleDriveApiException`（HTTPステータスから種別を判別できない場合のフォールバック）で、`console.error`により元のエラー詳細を出力するよう変更。単体テスト（バックエンド全40ファイル233件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（診断用ログ出力のみで挙動・設計に変化は無いため）。
+
+### [2026-07-23] 写真ローカルバックフィルのメタデータ解決を、写真本体の遅延読み込みへ変更し不要なI/Oを削減した
+* **修正の動機・概要**:
+  - ユーザーから「スクリプト実行からエラーが起こるまで数時間かかるため、途中から再開できないか」との相談を受けた。調査の結果、メタデータ解決処理（Phase B）が`readLocalPhotoData`で全55,461件の写真本体を無条件に（JSONサイドカーで解決できる場合も）読み込んでおり、外付けHDD上の数万件規模（動画含む）に対してこれを行うと不要なディスクI/Oが大量に発生し、これが実行時間の大部分を占めていたと判明した。
+  - `resolvePhotoMetadata`はJSONサイドカーで解決できた場合、写真本体のdataには一切アクセスしない実装になっているため、`createLazyPhotoData`（新規、`local-photo-directory.util.ts`）でdataアクセス自体を遅延させたエントリを渡すよう変更した。これにより、JSONサイドカーで解決できる大多数の写真は本体を一切読み込まなくなる。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/local-photo-directory.util.ts`: `createLazyPhotoData`（新規）を追加。`data`プロパティをgetterにして実際にアクセスされた時点まで`readFileSync`を遅延させる。
+    - `backend/src/photos/backfill-photos-from-local.ts`: メタデータ解決時の`readLocalPhotoData`呼び出しを`createLazyPhotoData`へ変更。
+    - 対応する単体テストを追加（TDD、Red-Green）。単体テスト（バックエンド全40ファイル233件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向けスクリプトの内部最適化のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所を、遅延読み込みへの変更内容・変更理由に合わせて更新。
+
+### [2026-07-22] GoogleDriveApiClient.updateFileContentのレジューマブルアップロードのセッション開始リクエストを仕様により厳密に沿う形に修正した
+* **修正の動機・概要**:
+  - レジューマブルアップロード方式へ変更後に再実行したところ、同一箇所（`updateFileContent`）で再び`GOOGLE_DRIVE_API_ERROR`（502）が発生した。DBを確認したところ`monthly_photo_archives`は依然として0件で、最初の年月グループから失敗していた。
+  - 初回実装のセッション開始リクエストはボディなし・`Content-Type`等のヘッダーなしだったが、Google公式ドキュメントは空のJSONボディ（`Content-Type: application/json; charset=UTF-8`）と`X-Upload-Content-Type`/`X-Upload-Content-Length`ヘッダーの付与を推奨している。仕様により厳密に沿う形に修正した。
+  - なお、本環境ではGoogle Drive実APIへの疎通確認ができないため、この修正で解消するかはユーザーの実行結果を待って判断する。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/google-drive/google-drive-api.client.ts`の`updateFileContent`のセッション開始リクエストに、空のJSONボディ・`Content-Type`・`X-Upload-Content-Type`・`X-Upload-Content-Length`ヘッダーを追加。対応する単体テストを更新（TDD、Red-Green）。単体テスト（バックエンド全40ファイル231件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、セッション開始リクエストの詳細（ボディ・ヘッダー）を追記。
+
+### [2026-07-22] GoogleDriveApiClient.updateFileContentをレジューマブルアップロード方式へ変更した
+* **修正の動機・概要**:
+  - 2GiB超ファイルのスキップ対応後に再実行したところ、`monthly_photo_archives`が0件のまま`errorCode: GOOGLE_DRIVE_API_ERROR`（HTTP 502）でクラッシュした。DBを確認したところ最初の年月グループのアップロードから失敗しており、たまたま巨大な月に当たったのではなく構造的な問題だと判明した。
+  - 調査の結果、`updateFileContent`が使っていた「シンプルアップロード」（`uploadType=media`）はGoogle Drive APIの仕様上数MB程度までしか信頼できる動作を保証しておらず、写真数十件以上をまとめた月別アーカイブzipは通常この範囲を超えるため、どの月のアップロードも失敗しうる状態だったことが分かった。ユーザーと協議の上、「レジューマブルアップロード」方式（セッション開始→取得したURLへPUT、チャンク分割は行わない）へ変更する方針で合意した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/google-drive/google-drive-api.client.ts`の`updateFileContent`を、`uploadType=resumable`でのセッション開始（`Location`ヘッダーからアップロード先URLを取得）→取得したURLへの1回のPUT、という2段階の方式に変更。対応する単体テストを更新（TDD、Red-Green）。単体テスト（バックエンド全40ファイル231件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章に、レジューマブルアップロード方式への変更経緯を追記。
+
+### [2026-07-22] backfill-photos-from-local.tsで、2GiB超のファイル（動画）でクラッシュする不具合を修正した
+* **修正の動機・概要**:
+  - ユーザーが実際に約55,000件規模のGoogle Photosライブラリ（写真＋動画）に対してスクリプトを実行したところ、Phase A（55,461件検出）は成功したが、Phase B（メタデータ解決、EXIFフォールバックのための実バイナリ読み込み）で2.51GBの動画ファイルを読み込もうとした際に`RangeError: File size is greater than 2 GiB`でクラッシュした。
+  - 調査の結果、Node.jsの`fs.readFileSync`は実行環境のメモリ量に関わらず2GiB（`2 ** 31 - 1`バイト）を超えるファイルを読み込めないというハード制限が原因と判明した。DBを確認したところ`monthly_photo_archives`は0件のままで、Phase C（Google Driveへのアップロード・DB保存）には未到達であり、実害（重複データ等）は無いことを確認した。
+  - この写真取り込みパイプラインは動画を想定していない設計だったため、ユーザーと対応方針を協議し、「2GiB超のファイルは読み込みを試みずスキップし、完了時にパス一覧を出力（手動での個別対応用）」という方針で合意した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/backfill-photos-from-local.ts`のメタデータ解決ループに、写真本体の実バイナリを読み込む直前の`statSync`によるサイズチェックを追加。2GiB（`MAX_READABLE_FILE_SIZE_BYTES`）を超える場合は読み込みを試みずスキップし、完了時にスキップしたファイルのパス一覧をログ出力するようにした。単体テスト（バックエンド全12ファイル63件）・lint・typecheckは全てGreen。実際に2GiB超のファイル（sparse file）を用意し、Node.jsの`readFileSync`が同じ境界値で例外を投げること・サイズ判定が正しく機能することを確認済み。
+  * **README.md**: 「既存写真の一括取り込み（写真ローカルバックフィル、任意）」節に、2GiB超のファイルは自動スキップされる旨を追記。
+  * **仕様書**: 変更なし（開発者向けツールの制約対応のため）。
+  * **設計書**: `designs/technical_design.md`の「既存写真の一括取り込み（写真ローカルバックフィル）」節に、Node.jsのファイルサイズ制約とスキップ対応を追記。
 
 ### [2026-07-21] test_rules.mdに、スタンドアロンCLIスクリプトのリリース前動作確認に関するルールを追加した
 * **修正の動機・概要**:
@@ -41,6 +147,25 @@
   * **実装**: `test_rules.md`のバックエンド節に、スタンドアロンCLIスクリプトはリリース前に実際の呼び出しコマンドで動作確認することを明記。
   * **README.md**: 変更なし。
   * **仕様書・設計書**: 変更なし（テスト運用ルールの追記のみのため）。
+
+### [2026-07-21] backfill-photos-from-local.tsで、pnpm経由の実行時に区切りの--が引数として渡ってしまう不具合を修正した
+* **修正の動機・概要**:
+  - 別スクリプト`flatten-local-photo-directory.ts`（Issue #23対応、写真ディレクトリのフラット化ツール）で、ユーザーが`pnpm --filter backend run flatten:photos-local -- <入力> <出力>`を実行した際に`ENOENT`（`path: '--'`）が発生することが判明した。原因は、`pnpm --filter <package> run <script> -- <args>`がnpm scriptsの一般的な挙動と異なり区切りの`--`自体を除去せずそのまま`process.argv`へ渡すことだった。
+  - `backfill-photos-from-local.ts`も同じ`process.argv[2]`による位置引数の取り出し方をしており、`pnpm --filter backend run backfill:photos-local -- <ディレクトリパス>`のように`--`を挟んで実行すると同じ不具合が起きることが分かったため、予防的に同じ修正を適用した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/backfill-photos-from-local.ts`のCLIエントリポイントで、位置引数取り出し前に`'--'`をフィルタするよう修正。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（開発者向けツールの引数解析の修正のみのため）。
+
+### [2026-07-21] flatten-local-photo-directory.tsで、pnpm経由の実行時に区切りの--が引数として渡ってしまう不具合を修正した
+* **修正の動機・概要**:
+  - ユーザーが実際に`pnpm --filter backend run flatten:photos-local -- <入力> <出力>`を実行したところ、`ENOENT`（`path: '--'`）でエラーになった。
+  - `pnpm --filter <package> run <script> -- <args>`は、npm scriptsの一般的な挙動と異なり区切りの`--`自体を除去せずそのまま`process.argv`へ渡すため、`process.argv[2]`が`'--'`、`process.argv[3]`が本来の1つ目の引数になっていたことが原因と判明した。
+  - `process.argv.slice(2)`から`'--'`を除去してから位置引数を取り出すよう修正し、実際に`--`付きで実行して動作することを確認した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/flatten-local-photo-directory.ts`のCLIエントリポイントで、位置引数取り出し前に`'--'`をフィルタするよう修正。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（開発者向けツールの引数解析の修正のみのため）。
 
 ### [2026-07-21] Issue #23対応として、Google Takeoutのネストした写真ディレクトリをフラット化するツールを実装した
 * **修正の動機・概要**:
@@ -55,6 +180,19 @@
   * **README.md**: 「Google Takeoutの写真データのフラット化（任意）」節を追加。
   * **仕様書**: 変更なし（開発者向けの前処理ツールのため）。
   * **設計書**: `designs/technical_design.md`に「写真ローカルフラット化ツール」節を追加。
+
+### [2026-07-21] 写真ローカルバックフィルスクリプトに、中断・再実行時の重複登録防止とアクセストークン失効対策を追加した
+* **修正の動機・概要**:
+  - PR #85のレビュー中、対象件数が多く実行に長時間かかる想定であることを踏まえ、ユーザーから「スクリプトが途中で中断された場合どうなるか」との質問を受けた。当時の実装には中断・再実行時の状態管理が無く、単純に再実行すると`monthly_photo_archives`・`photos`の完了済み分も含めて全写真がゼロから再処理され、同一写真がDrive上の月別アーカイブzip・`photos`テーブルの双方で重複登録されるという実運用上の欠陥があることが判明した。
+  - 対応方針をユーザーと協議し、「月単位のスキップを実装する」案（`monthly_photo_archives`に既存レコードがある年月は丸ごとスキップ）を採用した。実装コストが小さく、月境界で中断すれば安全に再開できる一方、1つの月の処理途中で中断した場合は自動スキップされず手動確認が必要という限界がある旨を明記した。
+  - あわせて、アクセストークンを実行開始時に1回だけ取得し使い回していたため、対象件数が多く実行が長時間に及ぶとアクセストークンが途中で失効しうる別の潜在バグにも気づき、月のグループごとに取得し直すよう修正した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/backfill-photos-from-local.ts`: 処理開始時に`monthly_photo_archives`の既存年月一覧を取得し、月ごとの処理ループの先頭でスキップ判定を追加。アクセストークンの取得をループ外から月ごとのループ内へ移動。
+    - lint・typecheck・単体テスト（本スクリプトは`seed-municipalities.ts`と同様に専用テストを持たない方針のため対象外。`backend/src/photos/`配下の既存テストは全てGreenのまま）を確認済み。
+  * **README.md**: 「既存写真の一括取り込み（写真ローカルバックフィル、任意）」節に、中断・再実行時は完了済みの年月が自動スキップされる旨を追記。
+  * **仕様書**: 変更なし（開発者向けスクリプトの内部挙動のため）。
+  * **設計書**: `designs/technical_design.md`の「既存写真の一括取り込み（写真ローカルバックフィル）」節に、月単位スキップの判定方法・限界、アクセストークン再取得の理由を追記。
 
 ### [2026-07-21] PR #40のレビュー対応(errorsAtomのsetterカプセル化)がmainに反映されていなかったのを復元し、react_rules.mdへルール化した
 * **修正の動機・概要**:
@@ -94,6 +232,32 @@
   * **実装**: `.agents/skills/finish-review/SKILL.md`の手順2に、Issueクローズ時は`issue_write`を`state`/`state_reason`のみで呼び出し`body`は絶対に指定しないこと、PRへの参照コメントは別途`add_issue_comment`で行うことを明記。今回の事故を教訓として追記。
   * **README.md**: 変更なし。
   * **仕様書**: 変更なし（AIエージェントの内部運用スキルであり、アプリケーションの機能仕様には影響しないため）。
+
+### [2026-07-20] 設計書のサイドバー写真グリッド表示に関する記述が実装と乖離していたのを修正した
+* **修正の動機・概要**:
+  - ユーザーからの質問（写真閲覧機能の残作業確認）に回答する過程で、`designs/technical_design.md`の「位置情報付きメディア表示機能」章冒頭が「サイドバーのグリッド表示は未実装」のままになっており、実際にはPR #84（`d9db6d0`）で実装済みであることに気づいた。乖離を修正した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: 変更なし。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし。
+  * **設計書**: `designs/technical_design.md`冒頭の記述を「サイドバーのグリッド表示は実装済み、地図上の吹き出し表示は未実装」に修正。
+
+### [2026-07-20] Issue #23対応として既存写真の一括取り込み用の写真ローカルバックフィルスクリプトを実装した
+* **修正の動機・概要**:
+  - サイドバーのグリッド表示の動作確認中、既存のPicker UI経由の取り込み方式（`POST /photos/ingest`、Takeout zip全体を一度にメモリへ展開する方式）では、実際のエクスポート規模（最大50GB・複数ファイル）を扱えないことが判明した。Node.jsの`Buffer`には約2〜4GBの上限があり、zip全体をメモリへ展開する現行方式ではこの規模のファイルを扱うとクラッシュする。
+  - Google Driveをまたぐ再構成（Drive上でzipを解凍・振り分け）を伴う案も検討したが、API呼び出し回数・レート制限の観点からユーザー側で「事前にローカルへ展開・フラットな1ディレクトリへ集約」した上で、それ以降の年月ごとの振り分け・DB投入のみを自動化するスクリプト方式を採用することにした（ユーザーとの協議の結果、複数の代替案の中から選定）。
+  - 既存の取り込みパイプライン（`PhotoIngestService.ingest`）とロジックを重複させないよう、`resolvePhotoMetadata`（JSON優先・EXIFフォールバック）を`takeout-metadata.util.ts`へ、`toPhotoEntity`を`photo-ingest.service.ts`のexport関数へそれぞれ切り出し、新旧両方のパイプラインから共通で呼び出す形にリファクタリングした（TDD、Red-Green）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/takeout-metadata.util.ts`: `PhotoIngestService`の private関数だった`resolvePhotoMetadata`をexport関数として移設。
+    - `backend/src/photos/photo-ingest.service.ts`: privateメソッドだった`toPhotoEntity`をexport関数化し、`resolvePhotoMetadata`は移設先からimportして使用するよう変更。
+    - `backend/src/photos/local-photo-directory.util.ts`（新規）: ローカルディレクトリ（フラット構成）を走査し写真本体・JSONサイドカーへ分類する`scanLocalPhotoDirectory`、写真本体の実バイナリを遅延読み込みする`readLocalPhotoData`。
+    - `backend/src/photos/backfill-photos-from-local.ts`（新規）: `seed-municipalities.ts`と同じくDIコンテナを経由せず手動で各サービスを組み立てるオーケストレーションスクリプト。ファイル名マッチング→メタデータ解決（EXIFフォールバック時のみ対象写真1件分を都度読み込み）→年月ごとのグループ化→月ごとに1グループずつ月別アーカイブへ振り分け・保存、という3段階で処理し、いずれの段階でも全写真の実バイナリを同時にメモリへ保持しないようにした。
+    - `backend/package.json`: `backfill:photos-local`スクリプトを追加。
+    - 対応する単体テストを新規・変更ファイルへ追加（TDD、Red-Green）。単体テスト（バックエンド全40ファイル230件）・lint・typecheckは全てGreen。
+  * **README.md**: 「既存写真の一括取り込み（写真ローカルバックフィル、任意）」節を追加し、手順（ローカルへの展開・集約→スクリプト実行）を記載。
+  * **仕様書**: 変更なし（このスクリプトはユーザーから見た機能ではなく開発者向けの一括投入手段のため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章に「既存写真の一括取り込み（写真ローカルバックフィル）」節を追加し、Bufferサイズ制約の背景・設計判断・処理段階を記載。
 
 ### [2026-07-20] Issue #23対応として右サイドバーの写真グリッド表示を実装した
 * **修正の動機・概要**:

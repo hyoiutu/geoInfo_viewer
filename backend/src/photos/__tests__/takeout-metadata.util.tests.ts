@@ -1,6 +1,6 @@
 // biome-ignore-all lint/style/useNamingConvention: exifrのタグ名(DateTimeOriginal等、PascalCase)に合わせたテストダブル
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { extractMetadataFromExif, extractMetadataFromJson } from '../takeout-metadata.util';
+import { extractMetadataFromExif, extractMetadataFromJson, resolvePhotoMetadata } from '../takeout-metadata.util';
 
 vi.mock('exifr', () => ({
   parse: vi.fn(),
@@ -119,5 +119,45 @@ describe('extractMetadataFromExifに関するテスト', () => {
     const result = await extractMetadataFromExif(Buffer.from('mp4-binary'));
 
     expect(result).toBeNull();
+  });
+});
+
+describe('resolvePhotoMetadataに関するテスト', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const createEntry = (path: string, data: Buffer) => ({ path, data });
+
+  test('JSONサイドカーがある場合、JSONから抽出したメタデータを返す（EXIFは読まない）', async () => {
+    const { parse } = await import('exifr');
+    const json = Buffer.from(JSON.stringify({ photoTakenTime: { timestamp: '1751328000' } }));
+    const photo = createEntry('IMG_1.jpg', Buffer.from('jpeg-binary'));
+
+    const result = await resolvePhotoMetadata(photo, createEntry('IMG_1.jpg.json', json));
+
+    expect(result).toEqual({ takenAt: new Date(1751328000 * 1000), location: null });
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  test('JSONサイドカーが無い場合、EXIFからのメタデータ抽出にフォールバックする', async () => {
+    const { parse } = await import('exifr');
+    vi.mocked(parse).mockResolvedValue({ DateTimeOriginal: new Date('2026-07-01T10:00:00.000Z') });
+    const photo = createEntry('IMG_2.jpg', Buffer.from('jpeg-binary'));
+
+    const result = await resolvePhotoMetadata(photo, null);
+
+    expect(result).toEqual({ takenAt: new Date('2026-07-01T10:00:00.000Z'), location: null });
+  });
+
+  test('JSONの解析に失敗した場合も、EXIFからのメタデータ抽出にフォールバックする', async () => {
+    const { parse } = await import('exifr');
+    vi.mocked(parse).mockResolvedValue({ DateTimeOriginal: new Date('2026-07-03T00:00:00.000Z') });
+    const invalidJson = Buffer.from('not a json');
+    const photo = createEntry('IMG_3.jpg', Buffer.from('jpeg-binary'));
+
+    const result = await resolvePhotoMetadata(photo, createEntry('IMG_3.jpg.json', invalidJson));
+
+    expect(result).toEqual({ takenAt: new Date('2026-07-03T00:00:00.000Z'), location: null });
   });
 });

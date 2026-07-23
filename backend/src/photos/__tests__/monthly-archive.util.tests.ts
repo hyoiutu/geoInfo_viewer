@@ -77,6 +77,16 @@ describe('mergeMonthlyArchiveに関するテスト', () => {
     expect(result.entries).toEqual([{ photo, archivePath: 'IMG_1-2' }]);
   });
 
+  test('新規エントリはSTORED（無圧縮）で追加する。写真・動画は既に圧縮済みの形式でありDEFLATE圧縮の効果が薄い一方、GB規模の月別アーカイブではDEFLATE圧縮自体のCPU負荷が実行時間を大きく圧迫するため（Issue #23）', () => {
+    const photo = { entry: createEntry('album/IMG_1.jpg'), metadata };
+
+    const result = mergeMonthlyArchive(null, [photo]);
+
+    const zip = new AdmZip(result.zipBuffer);
+    const zipCompressionMethodStored = 0;
+    expect(zip.getEntry('IMG_1.jpg')?.header.method).toBe(zipCompressionMethodStored);
+  });
+
   test('新規エントリが空の場合、既存アーカイブをそのまま返す', () => {
     const existingZip = new AdmZip();
     existingZip.addFile('existing.jpg', Buffer.from('existing-content'));

@@ -134,7 +134,7 @@ root/
 - `MapControls`に4つ目のアイコンボタン（`lucide-react`の`ChartColumn`、aria-label「統計データ」）を追加する。既存のレイヤー・フィルタ・設定アイコンと同じ`IconButton`（`borderRadius="full" shadow="md"`）のスタイルを踏襲する
 
 # 位置情報付きメディア表示機能（写真データ取り込み基盤）
-Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの直接連携ではなくGoogle Takeout（増分エクスポート）＋Google Drive経由の取り込み方式を採用した（詳細な調査経緯・GCP設定はIssue #23のコメント参照）。以下は、写真閲覧機能そのもの（地図上の吹き出し表示・サイドバーのグリッド表示、いずれも未実装）の前段として、Google Drive上のTakeoutエクスポート（zip）から写真のメタデータをバックエンドのDBへ取り込むパイプラインの設計である。
+Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの直接連携ではなくGoogle Takeout（増分エクスポート）＋Google Drive経由の取り込み方式を採用した（詳細な調査経緯・GCP設定はIssue #23のコメント参照）。以下は、Google Drive上のTakeoutエクスポート（zip）から写真のメタデータをバックエンドのDBへ取り込むパイプラインの設計である。写真閲覧機能そのもののうちサイドバーのグリッド表示は実装済み（後述）、地図上の吹き出し表示は未実装である。
 
 - 取り込みは`POST /photos/ingest`（`PhotosController`、リクエストボディ`{ fileId: string }`）で、ユーザーがブラウザ上のGoogle Picker UIで選択したTakeout zipのGoogle Drive上のfileIdをトリガーとして受け取る想定（Picker UI自体は未実装。現時点ではfileIdを直接指定して動作確認する）
 - 当初は「マスターデータ（Takeout zip）はDriveに置いたまま、表示時に必要になった写真だけをローカルへ遅延キャッシュする」設計方針だったが、実データ検証により1つのTakeout zip（最大2GB）に14年分の写真が撮影時期を問わず分散して含まれることが判明し、この方式では1回の表示のために複数の巨大zipをダウンロードする必要が生じ非現実的と判断した。そのため、取り込み時にTakeout zipの写真を撮影年月ごとに再構成した別zip（月別アーカイブ）へ振り分けてGoogle Drive上に保存し直す方式へ変更した（Issue #23）。取り込みと月別再構成は1つのパイプライン（`PhotoIngestService.ingest`）内で行う
@@ -147,8 +147,13 @@ Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの
   6. `MonthlyPhotoArchiveService.reorganize`が、年月グループごとに以下を行う
      - `monthly_photo_archives`テーブルを年月で検索し、対応する月別アーカイブが既存か確認する
      - 既存の場合は`GoogleDriveApiClient.downloadFile`でその月別アーカイブzipをダウンロードし、無ければ新規（未作成）として扱う
-     - `mergeMonthlyArchive`（`monthly-archive.util.ts`）が、ダウンロードした（または空の）zipへ当該年月の新規写真を追記する。zip内の配置はTakeout側のディレクトリ構造を捨てファイル名（basename）のみを使い、異なる元zip由来で同名ファイルが衝突する場合は拡張子の直前へ連番（`-2`, `-3`, ...）を付けて回避する
+     - `mergeMonthlyArchive`（`monthly-archive.util.ts`）が、ダウンロードした（または空の）zipへ当該年月の新規写真を追記する。zip内の配置はTakeout側のディレクトリ構造を捨てファイル名（basename）のみを使い、異なる元zip由来で同名ファイルが衝突する場合は拡張子の直前へ連番（`-2`, `-3`, ...）を付けて回避する。追加するエントリはSTORED（無圧縮）とする。`adm-zip`の既定であるDEFLATE圧縮は写真・動画（既に圧縮済みの形式でサイズ削減効果がほぼ無い）に対してもCPUバウンドな圧縮処理を行うため、GB規模になりうる月別アーカイブでは圧縮自体が実行時間を大きく圧迫することが写真ローカルバックフィルの実行時に判明したため（Issue #23）
      - 既存アーカイブが無い場合は`GoogleDriveApiClient.createFileMetadata`で新規zipファイルを作成し、`monthly_photo_archives`テーブルへ`year_month`・`drive_file_id`の対応を保存する。既存・新規いずれの場合も`GoogleDriveApiClient.updateFileContent`でzip本体をアップロードする
+       - `updateFileContent`はGoogle Drive APIの「レジューマブルアップロード」方式（`uploadType=resumable`）を使う。当初は「シンプルアップロード」（`uploadType=media`）だったが、Google Drive APIはこの方式を数MB程度までしか信頼できる動作を保証しておらず、実際に月別アーカイブzip（写真・動画を含む場合は数十MB〜になりうる）のアップロードでエラーが発生した（写真ローカルバックフィルの実行時に発覚、Issue #23）。レジューマブル方式は、セッション開始リクエストでレスポンスの`Location`ヘッダーからアップロード先セッションURLを取得し、そのURLへ実際のバイナリ本体をアップロードする2段階で行う
+         - セッション開始リクエストは、Google公式ドキュメントの推奨に従いボディを空のJSON（`Content-Type: application/json; charset=UTF-8`）とし、`X-Upload-Content-Type`（アップロードするバイナリのMIMEタイプ）・`X-Upload-Content-Length`（バイト数）を明示する
+         - 実バイナリの送信は`UPLOAD_CHUNK_SIZE_BYTES`（16MiB）ごとに分割し、`Content-Range`ヘッダーで全体のうちどの範囲かを明示しながら順にPUTする。当初は1回の大きなPUTで送信していたが、実際に約4GB規模の月別アーカイブzipでTLSの書き込みエラー（`EPROTO`）が発生したため、チャンク分割へ変更した。中間チャンクのレスポンスはHTTPステータス308（Resume Incomplete、「このチャンクは受理したので続きを送ってほしい」というGoogle Drive API独自の意味）を返すため、axiosの`validateStatus`で308も正常応答として扱うようにし、308をリダイレクトとして追従してしまわないよう`maxRedirects: 0`も指定している。チャンク単位の失敗時再送（同じチャンクだけを再試行する）は実装しておらず、失敗した場合は月単位で最初から再試行する
+         - なお、`toGoogleDriveApiException`はHTTPステータスから種別を判別できない場合、元のエラー詳細を握りつぶしていたため原因調査が困難だった。この調査を機に、種別を判別できない場合に限り元のエラー詳細を`console.error`で出力するよう変更した（`google-drive-api.exception.ts`）
+         - `GoogleDriveApiClient`の全リクエスト（メタデータ取得・ダウンロード・セッション開始・チャンクアップロード・トークンリフレッシュ）に`timeout`を設定している。axiosは`timeout`を指定しない限り応答を無限に待ち続けエラーにもならないため、ネットワーク接続がスタックした場合にプロセスが無音のまま進行しなくなりうる。メタデータ等の軽量リクエストは30秒、既存アーカイブの（非チャンク）ダウンロードは5分、アップロードチャンク（16MiB）1回あたりは2分をそれぞれ上限とする（保険的な対策。実際に写真ローカルバックフィルの実行が無音のまま停止する事象の直接の原因は、後述する月別アーカイブのメモリ使用量過多によるプロセス強制終了であると判明した）
   7. 振り分け結果（各写真の月別アーカイブ上の`drive_file_id`・エントリパス）をもとに`PhotoEntity`を組み立て、`photos`テーブルへ保存する
 - `photos`テーブル（`backend/src/photos/entities/photo.entity.ts`、マイグレーション`1784369772129-CreatePhotos`）は、写真の実バイナリ自体は保存せず、`file_name`・`taken_at`・`location`（`geometry(Point, 4326)`、PostGIS）・`source_file_id`・`archive_path`のみを保持する。月別再構成後は`source_file_id`は元のTakeout zipではなく振り分け先の月別アーカイブzipのGoogle Drive fileIdを指し、`archive_path`はその月別アーカイブ内でのエントリパスを指す。実際に表示時に必要になった写真は、`source_file_id`が示す月別アーカイブ（元のTakeout zipより粒度が細かく、対象期間の写真のみを含む）を再ダウンロードして`archive_path`のエントリを取り出すことで遅延取得する想定
 - `monthly_photo_archives`テーブル（`backend/src/photos/entities/monthly-photo-archive.entity.ts`、マイグレーション`1784388784983-CreateMonthlyPhotoArchives`）は、撮影年月（`year_month`、`YYYY-MM`形式・一意制約あり）ごとに、対応する月別アーカイブzipのGoogle Drive fileId（`drive_file_id`）を保持する。取り込みパイプラインが、ある年月の写真を追記する際に既存アーカイブへ追記すべきか新規作成すべきかを判定するために参照する
@@ -172,3 +177,26 @@ Google Takeoutで一括ダウンロードした写真をローカルへ展開す
 - `seed-municipalities.ts`と同様、DIコンテナを経由しない独立スクリプトとして実装（DB接続も不要な純粋なファイル操作のため、`DataSource`の初期化も行わない）。
 - 対象ディレクトリを再帰的に走査し、見つかった全ファイル（写真・JSONサイドカーを問わない）を出力先ディレクトリへコピーする。元のディレクトリ構造・ファイルは変更しない（コピーのみ）。
 - Google Takeoutは、1枚の写真が複数のアルバムに属する場合、同一内容のファイルが複数のディレクトリに重複して含まれることがある。ファイル名が衝突した際は内容のSHA-256ハッシュ（`node:crypto`、動画等の大きいファイルでもメモリを圧迫しないようストリームで計算）を比較し、内容が完全に一致する場合は重複とみなしコピーをスキップして1件に集約する。内容が異なる場合は、`mergeMonthlyArchive`（月別アーカイブ内での同名衝突回避）と共通の`resolveUniquePath`（`monthly-archive.util.ts`からexport）で拡張子の直前へ連番（`-2`, `-3`, ...）を付けて別ファイルとして保存する。
+
+## 既存写真の一括取り込み（写真ローカルバックフィル）
+`PhotoIngestService.ingest`（`POST /photos/ingest`）はTakeout zip全体を一度にメモリへ展開する方式（`adm-zip`、Buffer型）のため、Node.jsの`Buffer`最大サイズ（64bit環境で約2〜4GB）を超えるzipを扱えない。実データでは1エクスポートあたり最大50GB・複数ファイルという規模になることが判明し、既存写真をまとめて取り込むにはこの方式が使えないことがIssue #23の対応中に分かった（詳細な検討経緯はIssue #23のコメント参照）。この制約に対応するため、ユーザーが事前にTakeout zipを手元で展開し写真本体・JSONサイドカーをサブディレクトリなしの1フラットディレクトリへ集約した上で、それ以降（年月ごとの振り分け・DBへの投入）を自動化する`backend/src/photos/backfill-photos-from-local.ts`（`pnpm --filter backend run backfill:photos-local -- <ディレクトリパス>`）を用意した。
+
+- `seed-municipalities.ts`と同じ「NestJSのDIコンテナを経由せず、`DataSource`・各サービスを手動で`new`してスクリプトから直接呼び出す」パターンで実装しており、スクリプト本体（オーケストレーション部分）に対する専用の単体テストは持たない（本プロジェクトの既存の方針を踏襲）。分割等の純粋なロジック（`splitPhotosIntoSizedParts`）は個別のutil関数として切り出し、そちらには単体テストがある
+- `PhotoIngestService.ingest`とロジックを重複させないよう、以下の2つの関数を`PhotoIngestService`から切り出し・`takeout-metadata.util.ts`へ移設し、両方から共通で呼び出す形にした
+  - `resolvePhotoMetadata`（`takeout-metadata.util.ts`）: JSONサイドカー優先・EXIFフォールバックでのメタデータ解決
+  - `toPhotoEntity`（`photo-ingest.service.ts`からexport）: 月別アーカイブへの振り分け結果から`PhotoEntity`を組み立てる処理
+- 処理は以下の3段階で行い、いずれの段階でも全写真の実バイナリを同時にメモリへ保持しないようにしている
+  1. `scanLocalPhotoDirectory`（`local-photo-directory.util.ts`）がディレクトリを走査し、ファイル名のみで写真本体・JSONサイドカーへ分類する（写真本体側の`data`はプレースホルダの空Bufferとし、実バイナリは`readLocalPhotoData`で必要になった時点まで読み込まない）。`matchPhotosWithJsonSidecars`によるファイル名マッチング自体はパスのみを見るため、この時点で問題ない
+  2. マッチした写真ごとに`resolvePhotoMetadata`でメタデータを解決する。写真本体は`createLazyPhotoData`（`local-photo-directory.util.ts`）でdataへのアクセスを遅延させたエントリとして渡し、JSONサイドカーで解決できた場合は写真本体に一切アクセスしない。JSONが無い・不正な場合のEXIFフォールバックで実際にdataへアクセスされた時点で初めて`readFileSync`が実行される
+     - 当初は全件を`readLocalPhotoData`で無条件に読み込んでからメタデータ解決していたが、数万件規模（外付けHDD、動画含む）での実行時にJSONで解決できる大多数の写真についても不要な読み込みが発生し実行時間が大きく伸びていたことが判明したため、遅延読み込みへ変更した（Issue #23）
+  3. `groupPhotosByYearMonth`で年月ごとにグループ化した後、月ごとに1グループずつ、さらに`splitPhotosIntoSizedParts`（`split-photos-into-sized-parts.util.ts`）で`MAX_ARCHIVE_PART_SIZE_BYTES`（1GiB）ごとの複数「part」へ分割し、partごとに（`MonthlyPhotoArchiveService.reorganize`は`[group]`という単一要素の配列で呼び出す）該当写真の実バイナリを読み込み、月別アーカイブへの振り分け・Google Driveへのアップロード・`photos`テーブルへの保存を行う
+    - 当初は1つの年月の全写真を1回の`reorganize`呼び出し（1つのzip）にまとめて処理していたが、動画を多数含む月（実データで写真729件・約16.6GiB）では、元データ（`readLocalPhotoData`で読み込んだBuffer群）とzip化後のバッファ（`AdmZip.toBuffer()`が生成する結合済みBuffer）を同時に保持する必要があり、ピークメモリ使用量が実行環境の物理メモリ（実機は16GB）を大きく超えてプロセスがエラーも出さないまま強制終了される不具合が実際に発生した（後述の`GoogleDriveApiClient`のtimeout追加後も再発したことで、ネットワークハングではなくメモリ不足が真因と判明。Issue #23）。対応として、1つの年月を1GiBごとの複数partへ分割し、それぞれ独立したzipとして処理することでピークメモリ使用量を抑えた
+    - `monthly_photo_archives`は`(year_month, part)`の組で一意（マイグレーション`AddPartToMonthlyPhotoArchives`）とし、1つの年月が複数のzipファイル（Google Drive上は`2026-01.zip`・`2026-01-part2.zip`・...のように命名）にまたがることを許容する。`photos`テーブル側は`source_file_id`が具体的にどのzipファイルを指すかを個別に保持しているため、1つの年月が複数zipに分かれていても写真の検索・取得（撮影年月とは無関係に`taken_at`で行う）には影響しない
+    - 本対応より前（`part`列導入前）に作成された既存行は、分割という概念が存在しなかった時代に「その年月の全写真を含む唯一のzip」として作成されたものであるため、マイグレーションで`part = -1`（`LEGACY_WHOLE_MONTH_PART`）を設定し、サイズに関わらず常に処理済み（丸ごとスキップ対象）として扱う。これにより、既存の大容量な月（1GiB超）を新方式で誤って再分割・重複アップロードしてしまうことを防いでいる
+- 対象件数が多いと全体の実行に長時間かかるため、途中で中断され再実行された場合の重複登録を避ける目的で、以下の2段階でスキップ判定を行う
+  1. `monthly_photo_archives`に`part = -1`（`LEGACY_WHOLE_MONTH_PART`）のレコードがある年月（＝本対応より前に一括で処理済みの月）は丸ごとスキップする
+  2. それ以外の年月は、`(year_month, part)`ごとに既にレコードがあるpartをスキップし、無いpartのみ処理する
+  `reorganize`・`mergeMonthlyArchive`は同名ファイルの衝突を「別写真」として連番を付けて共存させる設計（既存アーカイブへの追記を前提とする通常の取り込みパイプラインでは正しい挙動）のため、スキップせず再実行すると同一写真が重複登録されてしまう。この対策はpart単位の粒度であり、1つのpartの処理途中（Driveへのアップロード直後〜DB保存の間等）で中断された場合はレコードが無い・不完全な状態になりうるため自動スキップされず再処理される（必要に応じて手動確認が必要）
+- アクセストークンは全体で1回だけ取得するのではなく月のグループごとに取得し直す。対象件数が多く実行が長時間に及ぶとアクセストークンが途中で失効しうるため（`GoogleDriveAuthService`は有効期限内であればキャッシュを返すため、都度呼び出すコストは小さい）
+- Node.jsの`fs.readFileSync`は実行環境のメモリ量に関わらず2GiB（`2 ** 31 - 1`バイト）を超えるファイルを読み込めない（`RangeError: File size is greater than 2 GiB`）。実際に約55,000件規模のGoogle Photosライブラリ（動画を含む）で2.5GB超の動画ファイルにより発生した。段階2でメタデータ解決のため写真1件分の実バイナリを読み込む直前に`statSync`でファイルサイズを確認し、上限を超える場合は読み込み自体を試みずスキップする（`skippedTooLargePaths`としてカウントし、完了時にパス一覧を出力。段階3では既にメタデータ解決の時点で除外済みのため到達しない）
+- スクリプト内のログ出力は`console.log`ではなく`fs.writeSync`による同期出力（`log`ヘルパー関数）を使う。`console.log`は標準出力がパイプ（`tee`等）へ接続されている場合Node.jsによって非同期にバッファリングされることがあり、プロセスが外部要因（ネットワークハング等）で停止した場合にバッファ済みだが未フラッシュの行が失われ、どこまで進行したか実行ログから追跡できなくなる問題が実際に発生したため（Issue #23）。あわせて、月グループの処理開始時に写真件数・合計バイト数をログ出力し、Google Driveへの振り分け・アップロード完了時にも完了ログを出す（どの月のどの段階で停止したか特定できるようにするため）
