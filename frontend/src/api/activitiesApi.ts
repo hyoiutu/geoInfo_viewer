@@ -1,3 +1,4 @@
+import type { Point } from 'geojson';
 import type { AppErrorInfo } from '../types/apiError';
 import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 import { buildApiError } from '../utils/apiError';
@@ -45,6 +46,18 @@ export type PassedMunicipality = {
   municipalityName: string;
 };
 
+/** fetchPhotosが返す一覧の1件分（撮影された写真） */
+export type Photo = {
+  /** 写真ID */
+  id: number;
+  /** ファイル名 */
+  fileName: string;
+  /** 撮影日時（ISO 8601形式の文字列） */
+  takenAt: string;
+  /** 撮影位置（GeoJSON Point）。位置情報が無い写真の場合はnull */
+  location: Point | null;
+};
+
 /** getBackfillStatusが返すバックフィルの進捗状況 */
 export type BackfillStatus = {
   /** 現在実行中かどうか */
@@ -83,6 +96,21 @@ export const fetchPassedMunicipalities = async (
   era: MunicipalityEra = MUNICIPALITY_ERA_CURRENT
 ): Promise<PassedMunicipality[]> => {
   const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_PATH}/${activityId}/municipalities?era=${era}`);
+
+  if (!response.ok) {
+    throw await buildApiError(response);
+  }
+
+  return response.json();
+};
+
+/**
+ * 指定したアクティビティの開始・終了日時の範囲で撮影された写真一覧を取得する（撮影日時昇順）
+ * @param activityId 対象のアクティビティID
+ * @returns 写真一覧
+ */
+export const fetchPhotos = async (activityId: string): Promise<Photo[]> => {
+  const response = await fetch(`${BACKEND_BASE_URL}${ACTIVITIES_PATH}/${activityId}/photos`);
 
   if (!response.ok) {
     throw await buildApiError(response);
