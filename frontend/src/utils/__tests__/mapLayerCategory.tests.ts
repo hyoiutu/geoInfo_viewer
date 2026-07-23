@@ -104,8 +104,9 @@ describe('categorizeStyleLayerに関するテスト', () => {
     'label_city',
     'label_city_capital',
     'label_town',
-    'label_village'
-  ])('idが%sの(都道府県・市町村名)のとき、admin-boundaryを返す', (id) => {
+    'label_village',
+    'label_other'
+  ])('idが%sの(都道府県・市町村名、および大字・字等それより細かい地名)のとき、admin-boundaryを返す', (id) => {
     const layer = createLayer(id, 'symbol', 'place');
 
     const category = categorizeStyleLayer(layer);
@@ -116,9 +117,8 @@ describe('categorizeStyleLayerに関するテスト', () => {
   test.each([
     'label_country_1',
     'label_country_2',
-    'label_country_3',
-    'label_other'
-  ])('idが%sの(都道府県・市町村名以外の地名)のとき、osm-place-nameを返す', (id) => {
+    'label_country_3'
+  ])('idが%sの(国名等、行政区画に属さない地名)のとき、osm-place-nameを返す', (id) => {
     const layer = createLayer(id, 'symbol', 'place');
 
     const category = categorizeStyleLayer(layer);
