@@ -1,4 +1,5 @@
-import { Box, Button, Flex, Image, SimpleGrid, Text } from '@chakra-ui/react';
+import { Box, Button, Flex, Image, SimpleGrid, Spinner, Text } from '@chakra-ui/react';
+import { useState } from 'react';
 import type { CyclingActivity, PassedMunicipality, Photo } from '../api/activitiesApi';
 import { resolvePhotoImageUrl } from '../api/photosApi';
 import { usePassedMunicipalities } from '../hooks/usePassedMunicipalities';
@@ -106,6 +107,55 @@ type PhotoGridProps = {
   isLoading: boolean;
 };
 
+/** PhotoGridItemのprops */
+type PhotoGridItemProps = {
+  /** 表示対象の写真 */
+  photo: Photo;
+};
+
+/**
+ * 写真1件分のグリッドセル。メタデータ（ファイル名）が判明した時点で即座にファイル名・ローディング
+ * アイコンを表示し、実バイナリの読み込み（`<Image>`の`onLoad`）が完了し次第、読み込めた写真から
+ * 順に表示へ切り替える（全件の読み込み完了を待たない、Issue #23フォローアップ）
+ */
+const PhotoGridItem = ({ photo }: PhotoGridItemProps) => {
+  const [isImageLoaded, setIsImageLoaded] = useState(false);
+
+  return (
+    <Box position="relative" width="100%" aspectRatio="1">
+      <Image
+        src={resolvePhotoImageUrl(photo.id)}
+        alt={photo.fileName}
+        width="100%"
+        height="100%"
+        aspectRatio="1"
+        objectFit="cover"
+        borderRadius="md"
+        visibility={isImageLoaded ? 'visible' : 'hidden'}
+        onLoad={() => setIsImageLoaded(true)}
+        onError={() => setIsImageLoaded(true)}
+      />
+      {!isImageLoaded && (
+        <Flex
+          position="absolute"
+          inset="0"
+          direction="column"
+          align="center"
+          justify="center"
+          gap="1"
+          bg="gray.100"
+          borderRadius="md"
+        >
+          <Spinner size="sm" />
+          <Text fontSize="xs" textAlign="center" px="1" wordBreak="break-all">
+            {photo.fileName}
+          </Text>
+        </Flex>
+      )}
+    </Box>
+  );
+};
+
 /**
  * 撮影された写真一覧を、取得中・0件・複数件の状態に応じて表示する。
  * プレビューは全て正方形にし、横長・縦長の写真は両端を均等にカットして表示する（`objectFit="cover"`、Issue #23）
@@ -120,15 +170,7 @@ const PhotoGrid = ({ photos, isLoading }: PhotoGridProps) => {
   return (
     <SimpleGrid columns={PHOTO_GRID_COLUMNS} gap="2">
       {photos.map((photo) => (
-        <Image
-          key={photo.id}
-          src={resolvePhotoImageUrl(photo.id)}
-          alt={photo.fileName}
-          width="100%"
-          aspectRatio="1"
-          objectFit="cover"
-          borderRadius="md"
-        />
+        <PhotoGridItem key={photo.id} photo={photo} />
       ))}
     </SimpleGrid>
   );
