@@ -1,11 +1,12 @@
 import { Box } from '@chakra-ui/react';
 import type { FeatureCollection } from 'geojson';
+import { useSetAtom } from 'jotai';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
 import type { CyclingActivity, PassedMunicipality } from '../api/activitiesApi';
+import { addErrorAtom } from '../atoms/errorsAtom';
 import { BICYCLE_LOG_SOURCE_ID } from '../constants/bicycleLog';
-import { useErrorReporter } from '../hooks/useErrorReporter';
 import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
 import { toAppErrorInfo } from '../utils/apiError';
@@ -91,7 +92,7 @@ export const MapView = ({
   const onFocusMunicipalityRef = useRef(onFocusMunicipality);
   onFocusMunicipalityRef.current = onFocusMunicipality;
 
-  const addError = useErrorReporter();
+  const addError = useSetAtom(addErrorAtom);
 
   // マウント時に一度だけMapLibreの地図を生成し、スタイル読み込み完了後に航空写真・自転車ログレイヤーを追加する
   useEffect(() => {
