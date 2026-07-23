@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { statSync } from 'node:fs';
+import { statSync, writeSync } from 'node:fs';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
@@ -25,6 +25,14 @@ import { matchPhotosWithJsonSidecars } from './takeout-photo-matcher.util';
 // 大容量ファイルが対象ディレクトリに含まれる場合に備え、この上限を超えるファイルは
 // 読み込み自体を試みずスキップする（Issue #23、実際にGoogle Takeoutの動画で発生）
 const MAX_READABLE_FILE_SIZE_BYTES = 2 ** 31 - 1;
+
+// console.logはパイプ(tee等)へ出力する際、Node.jsによって非同期にバッファリングされることがあり、
+// プロセスが（ハング等により）外部から強制終了された場合、バッファ済みだが未フラッシュのログ行が
+// 失われうる。長時間実行され外部要因で停止する可能性があるこのスクリプトでは、どこまで進行したかを
+// 確実に追跡できるよう、fs.writeSyncで同期的（かつ即座にフラッシュされる形）にログを出力する
+const log = (message: string): void => {
+  writeSync(1, `${message}\n`);
+};
 
 /**
  * ローカルディレクトリに展開済みの写真＋JSONサイドカーを取り込み、撮影年月ごとの月別アーカイブへ
@@ -59,7 +67,7 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
   const { photoEntries, jsonEntries } = scanLocalPhotoDirectory(directoryPath);
   const localEntryByPath = new Map<string, LocalArchiveEntry>(photoEntries.map((entry) => [entry.path, entry]));
   const matched = matchPhotosWithJsonSidecars(photoEntries, jsonEntries);
-  console.log(`${matched.length}件の写真を検出しました`);
+  log(`${matched.length}件の写真を検出しました`);
 
   const photosWithMetadata: PhotoWithMetadata[] = [];
   let skippedCount = 0;
@@ -82,25 +90,25 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
     }
     photosWithMetadata.push({ entry: { path: photo.path, data: Buffer.alloc(0) }, metadata });
   }
-  console.log(`メタデータを解決しました（保存対象: ${photosWithMetadata.length}件、スキップ: ${skippedCount}件）`);
+  log(`メタデータを解決しました（保存対象: ${photosWithMetadata.length}件、スキップ: ${skippedCount}件）`);
   if (skippedTooLargePaths.length > 0) {
-    console.log(`2GiB超のため読み込みをスキップしたファイル（${skippedTooLargePaths.length}件）:`);
+    log(`2GiB超のため読み込みをスキップしたファイル（${skippedTooLargePaths.length}件）:`);
     for (const path of skippedTooLargePaths) {
-      console.log(`  - ${path}`);
+      log(`  - ${path}`);
     }
   }
 
   const groups = groupPhotosByYearMonth(photosWithMetadata);
   const processedYearMonths = new Set((await monthlyPhotoArchiveRepository.find()).map((archive) => archive.yearMonth));
   const remainingGroups = groups.filter((group) => !processedYearMonths.has(group.yearMonth));
-  console.log(
+  log(
     `撮影年月で${groups.length}グループに分類しました（処理済み: ${groups.length - remainingGroups.length}件、未処理: ${remainingGroups.length}件）`
   );
 
   let savedCount = 0;
   for (const group of groups) {
     if (processedYearMonths.has(group.yearMonth)) {
-      console.log(`[${group.yearMonth}] 前回の実行で処理済みのためスキップします`);
+      log(`[${group.yearMonth}] 前回の実行で処理済みのためスキップします`);
       continue;
     }
 
@@ -119,17 +127,22 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
       })
     };
 
+    const totalBytes = groupWithData.photos.reduce((sum, photo) => sum + photo.entry.data.length, 0);
+    const totalMebibytes = (totalBytes / (1024 * 1024)).toFixed(1);
+    log(`[${group.yearMonth}] 処理開始（写真${groupWithData.photos.length}件、合計約${totalMebibytes}MiB）`);
+
     const reorganized = await monthlyPhotoArchiveService.reorganize(accessToken, [groupWithData]);
+    log(`[${group.yearMonth}] Google Driveへの振り分け・アップロードが完了しました`);
     const entities = reorganized.map((photo) => toPhotoEntity(photo));
     if (entities.length > 0) {
       await photoRepository.save(entities);
       savedCount += entities.length;
     }
-    console.log(`[${group.yearMonth}] ${entities.length}件を月別アーカイブへ振り分け・保存しました`);
+    log(`[${group.yearMonth}] ${entities.length}件を月別アーカイブへ振り分け・保存しました`);
   }
 
   await dataSource.destroy();
-  console.log(
+  log(
     `完了しました（保存: ${savedCount}件、スキップ: ${skippedCount}件、2GiB超によりスキップ: ${skippedTooLargePaths.length}件）`
   );
 };

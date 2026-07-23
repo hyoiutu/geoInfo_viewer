@@ -47,7 +47,7 @@ describe('GoogleDriveApiClientに関するテスト', () => {
       expect(result).toEqual(metadata);
       expect(httpServiceGet).toHaveBeenCalledWith(
         expect.stringContaining('/files/file-1'),
-        expect.objectContaining({ headers: { Authorization: 'Bearer token-xyz' } })
+        expect.objectContaining({ headers: { Authorization: 'Bearer token-xyz' }, timeout: expect.any(Number) })
       );
     });
 
@@ -98,7 +98,8 @@ describe('GoogleDriveApiClientに関するテスト', () => {
         expect.objectContaining({
           headers: { Authorization: 'Bearer token-xyz' },
           params: { alt: 'media' },
-          responseType: 'arraybuffer'
+          responseType: 'arraybuffer',
+          timeout: expect.any(Number)
         })
       );
     });
@@ -128,7 +129,7 @@ describe('GoogleDriveApiClientに関するテスト', () => {
       expect(httpServicePost).toHaveBeenCalledWith(
         expect.any(String),
         { name: '2026-07.zip' },
-        expect.objectContaining({ headers: { Authorization: 'Bearer token-xyz' } })
+        expect.objectContaining({ headers: { Authorization: 'Bearer token-xyz' }, timeout: expect.any(Number) })
       );
     });
 
@@ -169,7 +170,8 @@ describe('GoogleDriveApiClientに関するテスト', () => {
             'X-Upload-Content-Type': 'application/zip',
             'X-Upload-Content-Length': String(content.length)
           },
-          params: { uploadType: 'resumable' }
+          params: { uploadType: 'resumable' },
+          timeout: expect.any(Number)
         }
       );
       expect(httpServicePut).toHaveBeenCalledTimes(1);
@@ -179,7 +181,8 @@ describe('GoogleDriveApiClientに関するテスト', () => {
           'Content-Range': `bytes 0-${content.length - 1}/${content.length}`
         },
         maxRedirects: 0,
-        validateStatus: expect.any(Function)
+        validateStatus: expect.any(Function),
+        timeout: expect.any(Number)
       });
     });
 
@@ -209,7 +212,8 @@ describe('GoogleDriveApiClientに関するテスト', () => {
             'Content-Range': `bytes 0-${testChunkSizeBytes - 1}/${content.length}`
           },
           maxRedirects: 0,
-          validateStatus: expect.any(Function)
+          validateStatus: expect.any(Function),
+          timeout: expect.any(Number)
         }
       );
       expect(httpServicePut).toHaveBeenNthCalledWith(
@@ -222,7 +226,8 @@ describe('GoogleDriveApiClientに関するテスト', () => {
             'Content-Range': `bytes ${testChunkSizeBytes}-${content.length - 1}/${content.length}`
           },
           maxRedirects: 0,
-          validateStatus: expect.any(Function)
+          validateStatus: expect.any(Function),
+          timeout: expect.any(Number)
         }
       );
     });
@@ -274,12 +279,16 @@ describe('GoogleDriveApiClientに関するテスト', () => {
       });
 
       expect(result).toEqual(tokenResponse);
-      expect(httpServicePost).toHaveBeenCalledWith(expect.any(String), {
-        client_id: 'client-id',
-        client_secret: 'client-secret',
-        refresh_token: 'refresh-token',
-        grant_type: 'refresh_token'
-      });
+      expect(httpServicePost).toHaveBeenCalledWith(
+        expect.any(String),
+        {
+          client_id: 'client-id',
+          client_secret: 'client-secret',
+          refresh_token: 'refresh-token',
+          grant_type: 'refresh_token'
+        },
+        expect.objectContaining({ timeout: expect.any(Number) })
+      );
     });
 
     test('失敗した場合、errorCode: GOOGLE_DRIVE_AUTH_FAILEDのAppExceptionを投げる(401)', async () => {

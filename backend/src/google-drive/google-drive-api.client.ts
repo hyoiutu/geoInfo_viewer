@@ -23,6 +23,17 @@ export type RefreshTokenParams = {
 // 実際に発生した（写真ローカルバックフィルの実行時、Issue #23）ため、チャンクに分割して送信する
 export const UPLOAD_CHUNK_SIZE_BYTES = 16 * 1024 * 1024;
 
+// メタデータ取得・セッション開始等、軽量なリクエストのタイムアウト。
+// axiosはtimeoutを指定しない限りリクエストが応答なく無限に待ち続けるため、
+// ネットワーク接続がスタックした場合に永久にハングしてしまう問題が写真ローカルバックフィルの
+// 実行時に実際に発生した（エラーも出ないままプロセスが進行しなくなる、Issue #23）
+const GOOGLE_DRIVE_REQUEST_TIMEOUT_MS = 30 * 1000;
+// 既存アーカイブのダウンロードは（チャンク分割していないため）数GBになりうるので、より長めに確保する
+const GOOGLE_DRIVE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+// アップロードチャンク(16MiB)1回あたりのタイムアウト。低速回線でも完了しうる時間を確保しつつ、
+// 応答が無いまま無限に待ち続けることは無いようにする
+const UPLOAD_CHUNK_TIMEOUT_MS = 2 * 60 * 1000;
+
 /**
  * Google Drive APIのレジューマブルアップロードにおいて、チャンクのPUTレスポンスとして正常とみなす
  * HTTPステータスかどうかを判定する。中間チャンクは200番台ではなく308（Resume Incomplete、
@@ -54,7 +65,8 @@ export class GoogleDriveApiClient {
         this.httpService.get<GoogleDriveFileMetadata>(`${GOOGLE_DRIVE_API_BASE_URL}/files/${fileId}`, {
           // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
           headers: { Authorization: `Bearer ${accessToken}` },
-          params: { fields: GOOGLE_DRIVE_FILE_METADATA_FIELDS }
+          params: { fields: GOOGLE_DRIVE_FILE_METADATA_FIELDS },
+          timeout: GOOGLE_DRIVE_REQUEST_TIMEOUT_MS
         })
       );
 
@@ -77,7 +89,8 @@ export class GoogleDriveApiClient {
           // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
           headers: { Authorization: `Bearer ${accessToken}` },
           params: { alt: 'media' },
-          responseType: 'arraybuffer'
+          responseType: 'arraybuffer',
+          timeout: GOOGLE_DRIVE_DOWNLOAD_TIMEOUT_MS
         })
       );
 
@@ -100,8 +113,11 @@ export class GoogleDriveApiClient {
         this.httpService.post<GoogleDriveFileMetadata>(
           `${GOOGLE_DRIVE_API_BASE_URL}/files`,
           { name },
-          // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
-          { headers: { Authorization: `Bearer ${accessToken}` } }
+          {
+            // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
+            headers: { Authorization: `Bearer ${accessToken}` },
+            timeout: GOOGLE_DRIVE_REQUEST_TIMEOUT_MS
+          }
         )
       );
 
@@ -125,6 +141,9 @@ export class GoogleDriveApiClient {
    *    実際に発生したため、チャンク分割へ変更した。各チャンクには`Content-Range`ヘッダーで
    *    全体のうちどの範囲かを明示する。失敗時のチャンク単位の再開（途中のチャンクから再送する）は
    *    実装していない（失敗した場合はエラーとして呼び出し元へ伝播し、月単位で最初から再試行する）
+   * 各リクエストには`timeout`を設定する。ネットワーク接続がスタックした場合、axiosはtimeout未指定だと
+   * 応答を無限に待ち続けエラーにもならないため、プロセスがCPU/ネットワークどちらも使わず無音のまま
+   * 進行しなくなる不具合が写真ローカルバックフィルの実行時に実際に発生した（Issue #23）
    * @param accessToken Google Driveのアクセストークン
    * @param fileId 更新対象のDriveファイルID
    * @param content アップロードするバイナリ本体
@@ -150,7 +169,8 @@ export class GoogleDriveApiClient {
               'X-Upload-Content-Type': 'application/zip',
               'X-Upload-Content-Length': String(content.length)
             },
-            params: { uploadType: 'resumable' }
+            params: { uploadType: 'resumable' },
+            timeout: GOOGLE_DRIVE_REQUEST_TIMEOUT_MS
           }
         )
       );
@@ -165,7 +185,8 @@ export class GoogleDriveApiClient {
               'Content-Range': `bytes ${start}-${end - 1}/${content.length}`
             },
             maxRedirects: 0,
-            validateStatus: isValidUploadChunkStatus
+            validateStatus: isValidUploadChunkStatus,
+            timeout: UPLOAD_CHUNK_TIMEOUT_MS
           })
         );
       }
@@ -182,16 +203,20 @@ export class GoogleDriveApiClient {
   async refreshToken(params: RefreshTokenParams): Promise<GoogleTokenResponse> {
     try {
       const response = await firstValueFrom(
-        this.httpService.post<GoogleTokenResponse>(GOOGLE_OAUTH_TOKEN_URL, {
-          // biome-ignore lint/style/useNamingConvention: Google APIのリクエストボディ形式(snake_case)に合わせる
-          client_id: params.clientId,
-          // biome-ignore lint/style/useNamingConvention: Google APIのリクエストボディ形式(snake_case)に合わせる
-          client_secret: params.clientSecret,
-          // biome-ignore lint/style/useNamingConvention: Google APIのリクエストボディ形式(snake_case)に合わせる
-          refresh_token: params.refreshToken,
-          // biome-ignore lint/style/useNamingConvention: Google APIのリクエストボディ形式(snake_case)に合わせる
-          grant_type: GOOGLE_GRANT_TYPE_REFRESH_TOKEN
-        })
+        this.httpService.post<GoogleTokenResponse>(
+          GOOGLE_OAUTH_TOKEN_URL,
+          {
+            // biome-ignore lint/style/useNamingConvention: Google APIのリクエストボディ形式(snake_case)に合わせる
+            client_id: params.clientId,
+            // biome-ignore lint/style/useNamingConvention: Google APIのリクエストボディ形式(snake_case)に合わせる
+            client_secret: params.clientSecret,
+            // biome-ignore lint/style/useNamingConvention: Google APIのリクエストボディ形式(snake_case)に合わせる
+            refresh_token: params.refreshToken,
+            // biome-ignore lint/style/useNamingConvention: Google APIのリクエストボディ形式(snake_case)に合わせる
+            grant_type: GOOGLE_GRANT_TYPE_REFRESH_TOKEN
+          },
+          { timeout: GOOGLE_DRIVE_REQUEST_TIMEOUT_MS }
+        )
       );
 
       return response.data;
