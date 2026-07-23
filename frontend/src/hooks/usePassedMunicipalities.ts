@@ -1,8 +1,9 @@
+import { useSetAtom } from 'jotai';
 import { useEffect, useState } from 'react';
 import { fetchPassedMunicipalities, type PassedMunicipality } from '../api/activitiesApi';
+import { addErrorAtom } from '../atoms/errorsAtom';
 import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 import { toAppErrorInfo } from '../utils/apiError';
-import { useErrorReporter } from './useErrorReporter';
 
 /** usePassedMunicipalitiesの戻り値 */
 type UsePassedMunicipalitiesResult = {
@@ -14,7 +15,7 @@ type UsePassedMunicipalitiesResult = {
 
 /**
  * 指定したアクティビティが通過した自治体一覧を取得するフック。activityId・eraが変わるたびに再取得する。
- * エラーはグローバルなエラースタック（useErrorReporter）へ報告する
+ * エラーはグローバルなエラースタック（errorsAtom）へ報告する
  * @param activityId 対象のアクティビティID
  * @param era 判定に使う行政区画の年代識別子（省略時は現行）
  * @returns 通過した自治体一覧と取得中フラグ
@@ -25,7 +26,7 @@ export const usePassedMunicipalities = (
 ): UsePassedMunicipalitiesResult => {
   const [municipalities, setMunicipalities] = useState<PassedMunicipality[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const addError = useErrorReporter();
+  const addError = useSetAtom(addErrorAtom);
 
   // activityId・eraが変わるたびに取得し直す。フォーカス先の切り替えが速い場合に古い結果で上書きしないよう、
   // アンマウント/依存値変化時にキャンセルフラグを立てる

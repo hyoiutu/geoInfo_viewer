@@ -1,13 +1,15 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity } from '../../api/activitiesApi';
-import { fetchPassedMunicipalities } from '../../api/activitiesApi';
+import { fetchPassedMunicipalities, fetchPhotos } from '../../api/activitiesApi';
+import { resolvePhotoImageUrl } from '../../api/photosApi';
 import { ErrorsProbe } from '../../test-utils/ErrorsProbe';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { ActivityDetailSidebar } from '../ActivityDetailSidebar';
 
 vi.mock('../../api/activitiesApi', () => ({
-  fetchPassedMunicipalities: vi.fn()
+  fetchPassedMunicipalities: vi.fn(),
+  fetchPhotos: vi.fn()
 }));
 
 const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity => ({
@@ -25,6 +27,7 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
 describe('ActivityDetailSidebarに関するテスト', () => {
   beforeEach(() => {
     vi.mocked(fetchPassedMunicipalities).mockResolvedValue([]);
+    vi.mocked(fetchPhotos).mockResolvedValue([]);
   });
 
   test('activitiesが空の場合、何も表示しない', () => {
@@ -256,6 +259,75 @@ describe('ActivityDetailSidebarに関するテスト', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('errors-probe').textContent).toContain('fetch failed');
+    });
+  });
+
+  test('フォーカス中の場合、対象アクティビティのIDで写真を取得しグリッド表示する', async () => {
+    const photos = [
+      { id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null },
+      { id: 2, fileName: 'b.jpg', takenAt: '2026-07-01T00:40:00.000Z', location: null }
+    ];
+    vi.mocked(fetchPhotos).mockResolvedValue(photos);
+    const activity = createActivity({ id: '42' });
+
+    renderWithChakra(
+      <ActivityDetailSidebar
+        activities={[activity]}
+        focusedActivity={activity}
+        onFocus={vi.fn()}
+        onBackFromDetail={vi.fn()}
+        onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
+      />
+    );
+
+    expect(fetchPhotos).toHaveBeenCalledWith('42');
+    await waitFor(() => {
+      expect(screen.getByAltText('a.jpg')).toHaveAttribute('src', resolvePhotoImageUrl(1));
+    });
+    expect(screen.getByAltText('b.jpg')).toHaveAttribute('src', resolvePhotoImageUrl(2));
+  });
+
+  test('写真が無い場合、その旨を表示する', async () => {
+    vi.mocked(fetchPhotos).mockResolvedValue([]);
+    const activity = createActivity({});
+
+    renderWithChakra(
+      <ActivityDetailSidebar
+        activities={[activity]}
+        focusedActivity={activity}
+        onFocus={vi.fn()}
+        onBackFromDetail={vi.fn()}
+        onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('該当する写真はありません')).toBeInTheDocument();
+    });
+  });
+
+  test('写真の取得に失敗した場合、グローバルなエラースタックに追加される', async () => {
+    vi.mocked(fetchPhotos).mockRejectedValue(new Error('fetch photos failed'));
+    const activity = createActivity({});
+
+    renderWithChakra(
+      <>
+        <ActivityDetailSidebar
+          activities={[activity]}
+          focusedActivity={activity}
+          onFocus={vi.fn()}
+          onBackFromDetail={vi.fn()}
+          onBackFromList={vi.fn()}
+          onMunicipalityFocus={vi.fn()}
+        />
+        <ErrorsProbe />
+      </>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('errors-probe').textContent).toContain('fetch photos failed');
     });
   });
 });

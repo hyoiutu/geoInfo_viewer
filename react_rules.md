@@ -122,3 +122,34 @@ const createMarkerElement = (icon: ReactElement): { element: HTMLDivElement; roo
 ```
 
 MapLibreの`Marker`等、React管理外のライブラリが独自にDOM要素（`HTMLElement`）を要求するAPIでは、`document.createElement`によるコンテナ生成自体は避けられない。しかし、その中身を`renderToStaticMarkup`で文字列化し`innerHTML`へ代入する方法は、Reactの管理下から外れたDOM操作であり避けること。代わりに`react-dom/client`の`createRoot`でコンテナへレンダリングし、Reactの管理下に置く。`createRoot().render()`は非同期にコミットされうるため、呼び出し側（ライブラリ側API）へ渡す時点で描画済みであることを保証する必要がある場合は`flushSync`で同期化すること。また、作成したrootは要素を破棄するタイミングで必ず`root.unmount()`を呼ぶこと（呼ばないとメモリリークする）。
+
+---
+
+# グローバルステート（Jotai atom）の生の値・setterを外部へ公開しない
+
+NG
+```typescript
+// errorsAtom.ts
+export const errorsAtom = atom<AppErrorInfo[]>([]);
+
+// 呼び出し側はuseSetAtom(errorsAtom)で任意の配列を直接セットできてしまう
+```
+
+OK
+```typescript
+// errorsAtom.ts
+const errorsStateAtom = atom<AppErrorInfo[]>([]);
+
+// 読み取り専用（useAtomValueのみ可能。useSetAtomで書き込もうとするとコンパイルエラーになる）
+export const errorsAtom = atom((get) => get(errorsStateAtom));
+
+// 書き込み専用。用途を限定した操作のみを公開する
+export const addErrorAtom = atom(null, (get, set, error: AppErrorInfo) => {
+  set(errorsStateAtom, [...get(errorsStateAtom), error]);
+});
+export const dismissErrorAtom = atom(null, (get, set, index: number) => {
+  set(errorsStateAtom, get(errorsStateAtom).filter((_, i) => i !== index));
+});
+```
+
+atomが持つ生の状態と、その状態を直接書き換えられるsetterをそのままexportすると、呼び出し側がどこからでも任意の値へ書き換えられてしまい、状態がどう変化しうるかをatomの定義だけから把握できなくなる（DIP/ISPで避けている「使わない操作への依存を強制する」ことと同種の問題）。書き込み用のatomは、実際に必要な操作（追加・削除等）ごとに用途を限定した形（`addErrorAtom`/`dismissErrorAtom`のように、対象の値・エラー内容など操作に必要な引数のみを受け取る）でexportし、読み取り用のatomは読み取り専用（`atom((get) => ...)`）にすること。カスタムフック（例: `useErrorReporter`）を経由するだけの薄いラッパーが不要になる場合は、atomを直接使う形に置き換えて削除してよい（`errorsAtom.ts`、PR #40レビュー対応、Issue #28）。
