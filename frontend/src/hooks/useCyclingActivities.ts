@@ -1,3 +1,4 @@
+import { useSetAtom } from 'jotai';
 import { useEffect, useRef, useState } from 'react';
 import {
   type CyclingActivity,
@@ -6,9 +7,9 @@ import {
   type SyncResult,
   syncCyclingActivities
 } from '../api/activitiesApi';
+import { addErrorAtom } from '../atoms/errorsAtom';
 import type { AppErrorInfo } from '../types/apiError';
 import { toAppErrorInfo } from '../utils/apiError';
-import { useErrorReporter } from './useErrorReporter';
 
 /** useCyclingActivitiesの戻り値 */
 type UseCyclingActivitiesResult = {
@@ -58,7 +59,7 @@ const syncAndLoadBicycleLog = async (
  * @returns 取得済みの全アクティビティ一覧
  */
 export const useCyclingActivities = (isBicycleLogVisible: boolean): UseCyclingActivitiesResult => {
-  const addError = useErrorReporter();
+  const addError = useSetAtom(addErrorAtom);
   const [activities, setActivities] = useState<CyclingActivity[]>([]);
   const wasBicycleLogVisibleRef = useRef(false);
 

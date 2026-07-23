@@ -1,4 +1,4 @@
-import type { FeatureCollection } from 'geojson';
+import type { Feature, FeatureCollection } from 'geojson';
 import maplibregl from 'maplibre-gl';
 import type { Root } from 'react-dom/client';
 import type { CyclingActivity, PassedMunicipality } from '../api/activitiesApi';
@@ -15,6 +15,7 @@ import type { MunicipalityEra } from '../types/municipalityEra';
 import { cyclingActivityToGeoJson } from './cyclingActivityToGeoJson';
 import { findDistanceAlongPathAtPoint } from './findDistanceAlongPathAtPoint';
 import { resolveStyleLayerIds, resolveUnusedAdminBoundaryLayerIds } from './mapLayerCategory';
+import { calculatePolygonCentroid } from './polygonCentroid';
 import { createGoalMarkerElement, createStartMarkerElement } from './startGoalMarkerElement';
 import { typedEntries } from './typedObject';
 
@@ -230,15 +231,16 @@ export const registerAdminBoundaryClickHandler = (
  * @param map 反映先のMapLibre地図インスタンス
  * @param featureCollection 検索対象の行政区画データ（都道府県名・市区町村名のプロパティを持つ）
  * @param focusedMunicipality フォーカス対象。未フォーカスの場合はnull
+ * @returns 見つかったfeature。未フォーカス、または該当するfeatureが見つからない場合はundefined
  */
 export const applyFocusedMunicipalityLayer = (
   map: maplibregl.Map,
   featureCollection: FeatureCollection,
   focusedMunicipality: PassedMunicipality | null
-) => {
+): Feature | undefined => {
   const source = map.getSource<maplibregl.GeoJSONSource>(ADMIN_BOUNDARY_FOCUSED_SOURCE_ID);
   if (!source) {
-    return;
+    return undefined;
   }
 
   const feature = focusedMunicipality
@@ -249,4 +251,22 @@ export const applyFocusedMunicipalityLayer = (
       )
     : undefined;
   source.setData({ type: 'FeatureCollection', features: feature ? [feature] : [] });
+  return feature;
+};
+
+/**
+ * 行政区画のfeatureの重心へ地図の中心を合わせる（ズームレベルは変更しない）。Polygon/MultiPolygon以外の
+ * ジオメトリ、または重心を算出できない（縮退した）ジオメトリの場合は何もしない（Issue #80フォローアップ）
+ * @param map 対象のMapLibre地図インスタンス
+ * @param feature 中心を合わせる対象のfeature
+ */
+export const panToMunicipalityCentroid = (map: maplibregl.Map, feature: Feature) => {
+  if (feature.geometry.type !== 'Polygon' && feature.geometry.type !== 'MultiPolygon') {
+    return;
+  }
+  const centroid = calculatePolygonCentroid(feature.geometry);
+  if (!centroid) {
+    return;
+  }
+  map.panTo(centroid);
 };

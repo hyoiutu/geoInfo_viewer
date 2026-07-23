@@ -52,7 +52,8 @@ import {
   addAdminBoundaryLayer,
   addAerialPhotoLayer,
   addBicycleLogLayer,
-  applyAdminBoundaryData
+  applyAdminBoundaryData,
+  getOrFetchMunicipalityBoundaries
 } from '../mapLayerSetup';
 
 vi.mock('../../api/municipalitiesApi', () => ({
@@ -343,5 +344,36 @@ describe('applyAdminBoundaryDataに関するテスト', () => {
 
     expect(fetchMunicipalityBoundaries).not.toHaveBeenCalled();
     expect(setData).toHaveBeenCalledWith(cachedFeatureCollection);
+  });
+});
+
+describe('getOrFetchMunicipalityBoundariesに関するテスト', () => {
+  let fetchMunicipalityBoundaries: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    fetchMunicipalityBoundaries = vi.mocked((await import('../../api/municipalitiesApi')).fetchMunicipalityBoundaries);
+    fetchMunicipalityBoundaries.mockReset();
+  });
+
+  test('キャッシュが無い場合、取得しキャッシュへ保存した上で返す（mapの操作は行わない）', async () => {
+    const featureCollection = { type: 'FeatureCollection' as const, features: [] };
+    fetchMunicipalityBoundaries.mockResolvedValue(featureCollection);
+    const cache = new Map<MunicipalityEra, GeoJSON.FeatureCollection>();
+
+    const result = await getOrFetchMunicipalityBoundaries('2000-10-01', cache);
+
+    expect(fetchMunicipalityBoundaries).toHaveBeenCalledWith('2000-10-01');
+    expect(result).toBe(featureCollection);
+    expect(cache.get('2000-10-01')).toBe(featureCollection);
+  });
+
+  test('キャッシュに既に該当年代のデータがある場合、再取得せずキャッシュの内容を返す', async () => {
+    const cachedFeatureCollection = { type: 'FeatureCollection' as const, features: [] };
+    const cache = new Map<MunicipalityEra, GeoJSON.FeatureCollection>([['2000-10-01', cachedFeatureCollection]]);
+
+    const result = await getOrFetchMunicipalityBoundaries('2000-10-01', cache);
+
+    expect(fetchMunicipalityBoundaries).not.toHaveBeenCalled();
+    expect(result).toBe(cachedFeatureCollection);
   });
 });

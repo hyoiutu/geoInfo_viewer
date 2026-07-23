@@ -29,3 +29,4 @@
 | Google Takeout（Takeout） | Googleアカウントのデータを一括エクスポートする公式機能。写真閲覧機能ではGoogle Photos APIの制約を回避するため、Googleフォトのみを対象にした増分エクスポート（2ヶ月おき自動）をGoogle Driveへ送信する方式を採用する（Issue #23） | 特定のコード上の識別子は無し（外部サービスの機能名） |
 | 取り込み（Ingest） | Google Drive上のTakeoutエクスポート（zip）から、写真の撮影日時・位置情報等のメタデータを読み取り`photos`テーブルへ保存する処理。写真の実バイナリ自体は保存しない。あわせて月別アーカイブへの再構成も同一パイプライン内で行う | `PhotoIngestService`、`POST /photos/ingest` |
 | 月別アーカイブ | 取り込み時にTakeoutエクスポート（zip）内の写真を撮影年月（`YYYY-MM`）ごとに振り分けて再構成し、Google Drive上に保存し直すzipファイル。元のTakeoutエクスポートは撮影時期が数年〜十数年分混在しうるため、写真閲覧機能が表示に必要な期間の写真だけを効率よく遅延取得できるようにするための単位 | `MonthlyPhotoArchiveEntity`、`MonthlyPhotoArchiveService`、`monthly_photo_archives`テーブル |
+| 写真ローカルバックフィル | Takeoutエクスポート（zip）が大容量（Node.jsの`Buffer`上限を超える規模）で通常の取り込み（`POST /photos/ingest`）を使えない場合に、ユーザーが事前にローカルへ展開・集約した写真とJSONサイドカーを一括で取り込む開発者向けスクリプト機能。自転車ログの「バックフィル」（Strava APIからの初期取得）とは対象・仕組みが異なる別機能のため、文脈が曖昧な場合は必ず「写真ローカルバックフィル」と表記し「バックフィル」単体では使わない | `backfill-photos-from-local.ts`、`scanLocalPhotoDirectory` |

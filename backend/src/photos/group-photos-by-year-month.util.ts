@@ -16,7 +16,12 @@ export type PhotoWithMetadata = {
 export type YearMonthGroup = {
   /** 撮影年月。'YYYY-MM'形式（UTC基準） */
   yearMonth: string;
-  /** 該当年月の写真一覧 */
+  /**
+   * 1つの年月をサイズ超過により複数zipへ分割する場合の連番（0始まり）。省略時は0として扱う
+   * （`splitPhotosIntoSizedParts`・`backfill-photos-from-local.ts`参照、Issue #23）
+   */
+  part?: number;
+  /** 該当年月（該当partが指定されている場合はそのpartのみ）の写真一覧 */
   photos: PhotoWithMetadata[];
 };
 

@@ -11,6 +11,7 @@ vi.mock('../../api/activitiesApi', () => ({
   startBackfill: vi.fn().mockResolvedValue({ started: true }),
   startForceRefetch: vi.fn().mockResolvedValue({ started: true }),
   fetchPassedMunicipalities: vi.fn().mockResolvedValue([]),
+  fetchPhotos: vi.fn().mockResolvedValue([]),
   getBackfillStatus: vi.fn().mockResolvedValue({
     isRunning: false,
     totalCount: 0,

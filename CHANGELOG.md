@@ -14,6 +14,297 @@
 
 ## 変更履歴
 
+### [2026-07-24] usePhotos.tsが削除済みのuseErrorReporterをimportしたままになりmainのフロントエンドビルドが壊れていたのを修正した
+* **修正の動機・概要**:
+  - PR #84（写真グリッド表示、`usePhotos.ts`が`useErrorReporter`を使用）とPR #88（`errorsAtom`のカプセル化に伴い`useErrorReporter.ts`を削除し、既知の呼び出し元4箇所を`useSetAtom(addErrorAtom)`へ置き換え）は、互いに他方のブランチの変更を知らない状態で独立に作成されたため、どちらもGit上は無競合でmainへマージできた。しかし両方がマージされた結果、PR #88が把握していなかった`usePhotos.ts`（PR #84由来）が、削除済みの`useErrorReporter.ts`を依然としてimportしたままとなり、mainのフロントエンドビルド・テストが失敗する状態になっていた（finish-reviewでPR #89の準備中、`main`をマージした際のテスト実行で発覚）。
+  - ファイル単位のテキスト差分としては競合しない「他ファイルからの参照が壊れる」という意味的な競合は、Gitのマージでは検出できないため、レビュー完了後・次のPR着手前に必ずテストスイート全体を実行して確認する重要性を再認識した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `frontend/src/hooks/usePhotos.ts`の`useErrorReporter()`呼び出しを、PR #88で確立済みのパターンと同じ`useSetAtom(addErrorAtom)`へ置き換え。単体テスト（フロントエンド全34ファイル306件）・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化は無いため）。
+
+### [2026-07-23] 月別アーカイブをサイズ上限ごとの複数partへ分割し、メモリ不足によるプロセス強制終了を解消した（自律モード）
+* **修正の動機・概要**:
+  - timeout追加後も同じ月（写真729件・約16.6GiB）の処理開始直後にプロセスが（`ps aux`から消える形で、エラーも出さず）停止する事象が再発した。今回はnohup/disownで実行環境（バックグラウンドタスクの追跡）から完全に切り離した上で再実行したが、同じ地点で同様に停止したため、実行環境由来の外的要因（ハーネス側のタスク存続期間の制約等）ではないと判断した。
+  - 実機のメモリ量（16GB）を確認したところ、`readLocalPhotoData`で月グループ全写真の実バイナリ（約16.6GiB）をメモリに保持した状態のまま、`AdmZip.toBuffer()`がさらに同程度のサイズのzip結合バッファをもう1つ生成するため、ピークメモリ使用量が実機の物理メモリを大きく超えることが判明した。カーネルのメモリ不足によるプロセス強制終了（OOM kill）はアプリケーション側からは検知できず、エラーも出ないまま進行が止まって見える、という観測された症状と一致する。
+  - 対応として、1つの年月の写真を`MAX_ARCHIVE_PART_SIZE_BYTES`（1GiB）ごとの複数「part」に分割し、それぞれ独立したzipファイルとしてGoogle Driveへ保存する方式へ変更した。既存の`monthly_photo_archives`テーブル（48件、本対応より前に一括処理済み）は分割という概念が存在しなかった時代のデータのため、マイグレーションで`part = -1`（`LEGACY_WHOLE_MONTH_PART`）を設定し、サイズに関わらず常に処理済みとして扱うことで、再分割・重複アップロードを防いだ。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/migrations/1784788434237-AddPartToMonthlyPhotoArchives.ts`（新規）: `monthly_photo_archives`に`part`列を追加（既存行は-1で初期化）し、一意制約を`year_month`単独から`(year_month, part)`の組へ変更。実DBに対して適用済み（適用前に`monthly_photo_archives`・`photos`テーブルをバックアップ済み）。
+    - `backend/src/photos/entities/monthly-photo-archive.entity.ts`: `part`列を追加。
+    - `backend/src/photos/group-photos-by-year-month.util.ts`: `YearMonthGroup`に任意の`part`フィールドを追加（省略時は0）。
+    - `backend/src/photos/split-photos-into-sized-parts.util.ts`（新規）: 写真一覧を累積サイズ上限ごとに分割する純粋関数。単体テストを新規追加。
+    - `backend/src/photos/monthly-photo-archive.service.ts`: `reorganize`が`(yearMonth, part)`の組でアーカイブを検索・作成するよう変更。ファイル名はpart>0の場合`-partN`を付与。
+    - `backend/src/photos/backfill-photos-from-local.ts`: 年月ごとの処理を、`part = -1`の既存行がある年月は丸ごとスキップ、それ以外はpartごとに分割してpart単位でスキップ判定・処理するよう変更。
+    - 単体テスト（バックエンド全41ファイル241件）・lint・typecheckは全てGreen。biome --writeの適用によりNestJSのDIコンストラクタ引数（`GoogleDriveApiClient`）が`import type`化されDIが壊れる既知の罠が再発したため、手動で通常のimportへ戻した。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、part分割の経緯・スキップ判定の2段階化・タイムアウト追加が保険的対策であり真因はメモリ不足だったことを追記。
+
+### [2026-07-23] GoogleDriveApiClientの全リクエストにtimeoutを追加し、進行状況ログを同期出力へ変更した（自律モード）
+* **修正の動機・概要**:
+  - STORED（無圧縮）への変更後に再実行したが、依然として48/178グループから進捗しなかった。今回はプロセスが完全に終了（`ps aux`に存在せず、exit code 0、ただし最終的な「完了しました」ログは出ないまま）していることを確認した。macOSのシステムログ・クラッシュレポート・sleep/wakeログを調査したが、OOM kill・システムスリープ・クラッシュのいずれの痕跡も見当たらなかった。
+  - `GoogleDriveApiClient`の全HTTPリクエスト（`getFileMetadata`/`downloadFile`/`createFileMetadata`/`updateFileContent`/`refreshToken`）に`timeout`が一切設定されていないことに気づいた。axiosは`timeout`未指定の場合、ネットワーク接続がスタックしても応答を無限に待ち続けエラーにもならない。今回のような外部ネットワーク要因（実行環境が外付けHDD経由・長時間実行）でTCP接続が停止した場合、エラーも出ずCPUも使わずプロセスが無音のまま進行しなくなる、という観測された症状と一致する。
+  - あわせて、`console.log`は標準出力がパイプ（`tee`）に接続されている場合Node.jsによって非同期にバッファリングされることがあり、プロセスが外部要因で停止した場合にバッファ済みだが未フラッシュのログ行が失われる可能性があると判明した。次回以降の診断のため、`backfill-photos-from-local.ts`のログ出力を`fs.writeSync`による同期出力へ変更し、月グループごとの処理開始（写真件数・合計バイト数）・Google Driveへのアップロード完了のログを追加した。これにより、次回以降万が一同様の停止が再発した場合、どの月のどの段階で停止したかログから正確に特定できるようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/google-drive/google-drive-api.client.ts`の全リクエストに`timeout`を追加（メタデータ取得・アップロードセッション開始・トークンリフレッシュ等の軽量リクエストは30秒、既存アーカイブのダウンロードは5分、アップロードチャンク1回あたりは2分）。対応する単体テストを更新（TDD、Red-Green）。
+    - `backend/src/photos/backfill-photos-from-local.ts`のログ出力を`console.log`から`fs.writeSync`による同期出力（`log`ヘルパー）へ変更し、月グループの処理開始・完了ログを追加。
+    - 単体テスト（バックエンド全40ファイル235件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、timeout追加の経緯と同期ログ出力への変更を追記。
+
+### [2026-07-23] mergeMonthlyArchiveの新規zipエントリをSTORED（無圧縮）に変更した（自律モード）
+* **修正の動機・概要**:
+  - 処理状況の可視化ログを追加した結果、対象178グループ中48件処理済み・130件未処理と判明したが、その後複数回再実行しても48件から進捗しなかった。再実行の都度プロセスがCPUを高く使用したまま（81%程度）進捗ログが出ないことを確認し、Google Driveへのアップロード（ネットワークI/O）ではなくCPUバウンドな処理（zip圧縮）で長時間停止している可能性を疑った。
+  - `mergeMonthlyArchive`は`adm-zip`の既定であるDEFLATE圧縮でzipエントリを追加していたが、写真・動画は既に圧縮済みの形式でありDEFLATE圧縮によるサイズ削減効果はほぼ無い一方、DEFLATE圧縮自体はCPUバウンドな処理のため、GB規模になりうる月別アーカイブ（動画を多く含む月等）では圧縮だけで長時間かかりうると判断した。新規エントリをSTORED（無圧縮）へ変更し、単純なバッファコピーのみで済むようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/monthly-archive.util.ts`の`mergeMonthlyArchive`で、`addFile`後に`entry.header.method`をSTORED（`0`）へ明示的に設定するよう変更。対応する単体テストを追加（TDD、Red-Green）。単体テスト（バックエンド全40ファイル235件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、STORED（無圧縮）採用の経緯を追記。
+
+### [2026-07-23] 写真ローカルバックフィルスクリプトに、対象年月グループの処理済み/未処理件数を可視化するログを追加した（自律モード）
+* **修正の動機・概要**:
+  - チャンク分割アップロード修正後に実行したところ、エラー無く終了（exit code 0）したが「完了しました」の最終ログが出力されず、Phase Bで報告された保存対象件数（49,658件）と実際に保存された件数（23,302件）に大きな乖離があった。再実行しても新たな進捗が見られなかった。
+  - 原因調査のため、`groupPhotosByYearMonth`が実際に何グループへ分類したか・そのうち何件が処理済み/未処理かを可視化するログを追加した。対象規模が大きく1回の実行では全グループを処理しきれない可能性があり、月単位のスキップ機構により複数回の再実行で徐々に完了へ近づく設計のため、進捗の見える化が必要と判断した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/backfill-photos-from-local.ts`に、年月グループの総数・処理済み件数・未処理件数を出力するログを追加。単体テスト（バックエンド全40ファイル234件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（診断用ログ出力のみのため）。
+
+### [2026-07-23] GoogleDriveApiClient.updateFileContentを真のチャンク分割アップロードへ変更した（自律モード）
+* **修正の動機・概要**:
+  - 診断用ログを追加して再実行したところ、実際のエラーは502ではなく`AxiosError: write EPROTO`（TLS書き込みエラー）で、リクエストの`Content-Length`が約4.15GB（3.87GiB）だったことが判明した。「502」は`toGoogleDriveApiException`が原因不明のエラーに対して固定で使っていたフォールバック値であり、実際にGoogleから返された応答ではなかった。
+  - 月別アーカイブzip（動画を含む月）が数GB規模になり、これを1回のPUTで送信しようとしたことがTLS層での書き込み失敗の原因と判断した。レジューマブルアップロード自体は正しい方式だったが、実際のバイナリ送信を1回の巨大なPUTで行っていた実装が不十分だった。
+  - `UPLOAD_CHUNK_SIZE_BYTES`（16MiB）ごとに分割し`Content-Range`ヘッダーを付けて順にPUTする、真のチャンク分割アップロードへ変更した。中間チャンクはHTTPステータス308（Resume Incomplete）を返すため、axiosの`validateStatus`で308も正常応答として扱い、308をリダイレクトとして追従してしまわないよう`maxRedirects: 0`も指定した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/google-drive/google-drive-api.client.ts`の`updateFileContent`を、`content`を`UPLOAD_CHUNK_SIZE_BYTES`単位で分割し順にPUTする実装へ変更（`chunkSizeBytes`引数はテストで小さい値に差し替えるためのもの、通常は省略）。対応する単体テストを更新（TDD、Red-Green）。単体テスト（バックエンド全40ファイル234件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、真のチャンク分割へ変更した経緯・実装内容を追記。
+
+### [2026-07-23] toGoogleDriveApiExceptionが原因不明のエラー時に元のエラー詳細をログ出力するようにした（自律モード）
+* **修正の動機・概要**:
+  - ユーザーからの依頼を受け、写真ローカルバックフィルスクリプトが成功するまで自律的に実行・修正・再実行するループで対応中。再実行しても`updateFileContent`で同じ`GOOGLE_DRIVE_API_ERROR`（502）が再現した。
+  - `toGoogleDriveApiException`はHTTPステータスのみでエラー種別を判定し、判別できない場合は元のエラー（レスポンス本体・ヘッダー等）を全て握りつぶして汎用メッセージに変換していたため、502の実際の原因（Googleが具体的に何を拒否したか）が一切分からない状態だった。これ以上憶測でレジューマブルアップロードの実装を変更するのは非生産的と判断し、まず原因不明なエラー時に限り元のエラー詳細をログ出力するようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/common/errors/google-drive-api.exception.ts`の`createGenericGoogleDriveApiException`（HTTPステータスから種別を判別できない場合のフォールバック）で、`console.error`により元のエラー詳細を出力するよう変更。単体テスト（バックエンド全40ファイル233件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（診断用ログ出力のみで挙動・設計に変化は無いため）。
+
+### [2026-07-23] 写真ローカルバックフィルのメタデータ解決を、写真本体の遅延読み込みへ変更し不要なI/Oを削減した
+* **修正の動機・概要**:
+  - ユーザーから「スクリプト実行からエラーが起こるまで数時間かかるため、途中から再開できないか」との相談を受けた。調査の結果、メタデータ解決処理（Phase B）が`readLocalPhotoData`で全55,461件の写真本体を無条件に（JSONサイドカーで解決できる場合も）読み込んでおり、外付けHDD上の数万件規模（動画含む）に対してこれを行うと不要なディスクI/Oが大量に発生し、これが実行時間の大部分を占めていたと判明した。
+  - `resolvePhotoMetadata`はJSONサイドカーで解決できた場合、写真本体のdataには一切アクセスしない実装になっているため、`createLazyPhotoData`（新規、`local-photo-directory.util.ts`）でdataアクセス自体を遅延させたエントリを渡すよう変更した。これにより、JSONサイドカーで解決できる大多数の写真は本体を一切読み込まなくなる。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/local-photo-directory.util.ts`: `createLazyPhotoData`（新規）を追加。`data`プロパティをgetterにして実際にアクセスされた時点まで`readFileSync`を遅延させる。
+    - `backend/src/photos/backfill-photos-from-local.ts`: メタデータ解決時の`readLocalPhotoData`呼び出しを`createLazyPhotoData`へ変更。
+    - 対応する単体テストを追加（TDD、Red-Green）。単体テスト（バックエンド全40ファイル233件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向けスクリプトの内部最適化のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所を、遅延読み込みへの変更内容・変更理由に合わせて更新。
+
+### [2026-07-22] GoogleDriveApiClient.updateFileContentのレジューマブルアップロードのセッション開始リクエストを仕様により厳密に沿う形に修正した
+* **修正の動機・概要**:
+  - レジューマブルアップロード方式へ変更後に再実行したところ、同一箇所（`updateFileContent`）で再び`GOOGLE_DRIVE_API_ERROR`（502）が発生した。DBを確認したところ`monthly_photo_archives`は依然として0件で、最初の年月グループから失敗していた。
+  - 初回実装のセッション開始リクエストはボディなし・`Content-Type`等のヘッダーなしだったが、Google公式ドキュメントは空のJSONボディ（`Content-Type: application/json; charset=UTF-8`）と`X-Upload-Content-Type`/`X-Upload-Content-Length`ヘッダーの付与を推奨している。仕様により厳密に沿う形に修正した。
+  - なお、本環境ではGoogle Drive実APIへの疎通確認ができないため、この修正で解消するかはユーザーの実行結果を待って判断する。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/google-drive/google-drive-api.client.ts`の`updateFileContent`のセッション開始リクエストに、空のJSONボディ・`Content-Type`・`X-Upload-Content-Type`・`X-Upload-Content-Length`ヘッダーを追加。対応する単体テストを更新（TDD、Red-Green）。単体テスト（バックエンド全40ファイル231件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、セッション開始リクエストの詳細（ボディ・ヘッダー）を追記。
+
+### [2026-07-22] GoogleDriveApiClient.updateFileContentをレジューマブルアップロード方式へ変更した
+* **修正の動機・概要**:
+  - 2GiB超ファイルのスキップ対応後に再実行したところ、`monthly_photo_archives`が0件のまま`errorCode: GOOGLE_DRIVE_API_ERROR`（HTTP 502）でクラッシュした。DBを確認したところ最初の年月グループのアップロードから失敗しており、たまたま巨大な月に当たったのではなく構造的な問題だと判明した。
+  - 調査の結果、`updateFileContent`が使っていた「シンプルアップロード」（`uploadType=media`）はGoogle Drive APIの仕様上数MB程度までしか信頼できる動作を保証しておらず、写真数十件以上をまとめた月別アーカイブzipは通常この範囲を超えるため、どの月のアップロードも失敗しうる状態だったことが分かった。ユーザーと協議の上、「レジューマブルアップロード」方式（セッション開始→取得したURLへPUT、チャンク分割は行わない）へ変更する方針で合意した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/google-drive/google-drive-api.client.ts`の`updateFileContent`を、`uploadType=resumable`でのセッション開始（`Location`ヘッダーからアップロード先URLを取得）→取得したURLへの1回のPUT、という2段階の方式に変更。対応する単体テストを更新（TDD、Red-Green）。単体テスト（バックエンド全40ファイル231件）・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章に、レジューマブルアップロード方式への変更経緯を追記。
+
+### [2026-07-22] backfill-photos-from-local.tsで、2GiB超のファイル（動画）でクラッシュする不具合を修正した
+* **修正の動機・概要**:
+  - ユーザーが実際に約55,000件規模のGoogle Photosライブラリ（写真＋動画）に対してスクリプトを実行したところ、Phase A（55,461件検出）は成功したが、Phase B（メタデータ解決、EXIFフォールバックのための実バイナリ読み込み）で2.51GBの動画ファイルを読み込もうとした際に`RangeError: File size is greater than 2 GiB`でクラッシュした。
+  - 調査の結果、Node.jsの`fs.readFileSync`は実行環境のメモリ量に関わらず2GiB（`2 ** 31 - 1`バイト）を超えるファイルを読み込めないというハード制限が原因と判明した。DBを確認したところ`monthly_photo_archives`は0件のままで、Phase C（Google Driveへのアップロード・DB保存）には未到達であり、実害（重複データ等）は無いことを確認した。
+  - この写真取り込みパイプラインは動画を想定していない設計だったため、ユーザーと対応方針を協議し、「2GiB超のファイルは読み込みを試みずスキップし、完了時にパス一覧を出力（手動での個別対応用）」という方針で合意した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/backfill-photos-from-local.ts`のメタデータ解決ループに、写真本体の実バイナリを読み込む直前の`statSync`によるサイズチェックを追加。2GiB（`MAX_READABLE_FILE_SIZE_BYTES`）を超える場合は読み込みを試みずスキップし、完了時にスキップしたファイルのパス一覧をログ出力するようにした。単体テスト（バックエンド全12ファイル63件）・lint・typecheckは全てGreen。実際に2GiB超のファイル（sparse file）を用意し、Node.jsの`readFileSync`が同じ境界値で例外を投げること・サイズ判定が正しく機能することを確認済み。
+  * **README.md**: 「既存写真の一括取り込み（写真ローカルバックフィル、任意）」節に、2GiB超のファイルは自動スキップされる旨を追記。
+  * **仕様書**: 変更なし（開発者向けツールの制約対応のため）。
+  * **設計書**: `designs/technical_design.md`の「既存写真の一括取り込み（写真ローカルバックフィル）」節に、Node.jsのファイルサイズ制約とスキップ対応を追記。
+
+### [2026-07-21] test_rules.mdに、スタンドアロンCLIスクリプトのリリース前動作確認に関するルールを追加した
+* **修正の動機・概要**:
+  - `flatten-local-photo-directory.ts`（Issue #23）で、ユーザーが実際に`pnpm --filter backend run flatten:photos-local -- <入力> <出力>`を実行したところ`ENOENT`が発生した。原因は`pnpm --filter <package> run <script> -- <args>`が区切りの`--`を除去せずそのまま`process.argv`へ渡すことだったが、単体テストはエクスポートされた関数を直接呼び出す形だったため、`process.argv`から引数を取り出すCLIエントリポイント部分はテストを一切通っておらず、単体テスト・lint・typecheckが全てGreenの状態で見過ごしていた。
+  - ユーザーから「実際に動かして検証はしなかったのか」との指摘を受け、単体テスト・lint・typecheckのGreenだけでは、このプロジェクトの既存方針（`seed-municipalities.ts`等のスタンドアロンCLIスクリプトは専用の単体テストファイルを持たない）のもとではCLIエントリポイント自体の正しさを担保できないことを教訓として明文化した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `test_rules.md`のバックエンド節に、スタンドアロンCLIスクリプトはリリース前に実際の呼び出しコマンドで動作確認することを明記。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（テスト運用ルールの追記のみのため）。
+
+### [2026-07-21] backfill-photos-from-local.tsで、pnpm経由の実行時に区切りの--が引数として渡ってしまう不具合を修正した
+* **修正の動機・概要**:
+  - 別スクリプト`flatten-local-photo-directory.ts`（Issue #23対応、写真ディレクトリのフラット化ツール）で、ユーザーが`pnpm --filter backend run flatten:photos-local -- <入力> <出力>`を実行した際に`ENOENT`（`path: '--'`）が発生することが判明した。原因は、`pnpm --filter <package> run <script> -- <args>`がnpm scriptsの一般的な挙動と異なり区切りの`--`自体を除去せずそのまま`process.argv`へ渡すことだった。
+  - `backfill-photos-from-local.ts`も同じ`process.argv[2]`による位置引数の取り出し方をしており、`pnpm --filter backend run backfill:photos-local -- <ディレクトリパス>`のように`--`を挟んで実行すると同じ不具合が起きることが分かったため、予防的に同じ修正を適用した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/backfill-photos-from-local.ts`のCLIエントリポイントで、位置引数取り出し前に`'--'`をフィルタするよう修正。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（開発者向けツールの引数解析の修正のみのため）。
+
+### [2026-07-21] flatten-local-photo-directory.tsで、pnpm経由の実行時に区切りの--が引数として渡ってしまう不具合を修正した
+* **修正の動機・概要**:
+  - ユーザーが実際に`pnpm --filter backend run flatten:photos-local -- <入力> <出力>`を実行したところ、`ENOENT`（`path: '--'`）でエラーになった。
+  - `pnpm --filter <package> run <script> -- <args>`は、npm scriptsの一般的な挙動と異なり区切りの`--`自体を除去せずそのまま`process.argv`へ渡すため、`process.argv[2]`が`'--'`、`process.argv[3]`が本来の1つ目の引数になっていたことが原因と判明した。
+  - `process.argv.slice(2)`から`'--'`を除去してから位置引数を取り出すよう修正し、実際に`--`付きで実行して動作することを確認した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/flatten-local-photo-directory.ts`のCLIエントリポイントで、位置引数取り出し前に`'--'`をフィルタするよう修正。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（開発者向けツールの引数解析の修正のみのため）。
+
+### [2026-07-21] Issue #23対応として、Google Takeoutのネストした写真ディレクトリをフラット化するツールを実装した
+* **修正の動機・概要**:
+  - Google Photoの全写真をローカルストレージへ移して展開したところ、アルバム単位等でディレクトリが細かくネストされた状態になっており、既存写真の一括取り込み（写真ローカルバックフィル、別途対応）の入力形式（サブディレクトリの無いフラットな1ディレクトリ）に合わないという相談を受けた。
+  - Google Takeoutは1枚の写真が複数のアルバムに属する場合、同一内容のファイルが複数ディレクトリに重複して含まれる仕様があるため、単純にファイル名衝突時へ連番を振るだけでは同一写真が重複してカウントされてしまう。ユーザーと相談の上、コピー方式（元データは保持）・内容ハッシュによる重複検知（完全一致は1件に集約）を採用した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/flatten-local-photo-directory.ts`（新規）: `flattenPhotoDirectory`。ネストしたディレクトリを再帰走査し、ファイル名衝突時はSHA-256ハッシュ（ストリーム計算）で内容が完全一致するものは1件に集約、異なる場合は連番を付けて別ファイルとしてコピーする。
+    - `backend/src/photos/monthly-archive.util.ts`: 既存のprivate関数`resolveUniquePath`（同名衝突時の連番解決）をexportし、上記スクリプトと共通利用できるようにした（DRY）。
+    - `backend/package.json`: `flatten:photos-local`スクリプトを追加。
+    - 対応する単体テストを新規追加（TDD、Red-Green）。単体テスト（バックエンド全40ファイル229件）・lint・typecheckは全てGreen。
+  * **README.md**: 「Google Takeoutの写真データのフラット化（任意）」節を追加。
+  * **仕様書**: 変更なし（開発者向けの前処理ツールのため）。
+  * **設計書**: `designs/technical_design.md`に「写真ローカルフラット化ツール」節を追加。
+
+### [2026-07-21] 写真ローカルバックフィルスクリプトに、中断・再実行時の重複登録防止とアクセストークン失効対策を追加した
+* **修正の動機・概要**:
+  - PR #85のレビュー中、対象件数が多く実行に長時間かかる想定であることを踏まえ、ユーザーから「スクリプトが途中で中断された場合どうなるか」との質問を受けた。当時の実装には中断・再実行時の状態管理が無く、単純に再実行すると`monthly_photo_archives`・`photos`の完了済み分も含めて全写真がゼロから再処理され、同一写真がDrive上の月別アーカイブzip・`photos`テーブルの双方で重複登録されるという実運用上の欠陥があることが判明した。
+  - 対応方針をユーザーと協議し、「月単位のスキップを実装する」案（`monthly_photo_archives`に既存レコードがある年月は丸ごとスキップ）を採用した。実装コストが小さく、月境界で中断すれば安全に再開できる一方、1つの月の処理途中で中断した場合は自動スキップされず手動確認が必要という限界がある旨を明記した。
+  - あわせて、アクセストークンを実行開始時に1回だけ取得し使い回していたため、対象件数が多く実行が長時間に及ぶとアクセストークンが途中で失効しうる別の潜在バグにも気づき、月のグループごとに取得し直すよう修正した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/backfill-photos-from-local.ts`: 処理開始時に`monthly_photo_archives`の既存年月一覧を取得し、月ごとの処理ループの先頭でスキップ判定を追加。アクセストークンの取得をループ外から月ごとのループ内へ移動。
+    - lint・typecheck・単体テスト（本スクリプトは`seed-municipalities.ts`と同様に専用テストを持たない方針のため対象外。`backend/src/photos/`配下の既存テストは全てGreenのまま）を確認済み。
+  * **README.md**: 「既存写真の一括取り込み（写真ローカルバックフィル、任意）」節に、中断・再実行時は完了済みの年月が自動スキップされる旨を追記。
+  * **仕様書**: 変更なし（開発者向けスクリプトの内部挙動のため）。
+  * **設計書**: `designs/technical_design.md`の「既存写真の一括取り込み（写真ローカルバックフィル）」節に、月単位スキップの判定方法・限界、アクセストークン再取得の理由を追記。
+
+### [2026-07-21] PR #40のレビュー対応(errorsAtomのsetterカプセル化)がmainに反映されていなかったのを復元し、react_rules.mdへルール化した
+* **修正の動機・概要**:
+  - マージ済みPRのレビューコメントを調査した際、PR #40（Issue #28、Jotaiグローバルステート導入）で「setterを外部に出さないでください」「ルールにも追加してください」という明示的な指摘・依頼があり、対応コミット（`57240b4`）自体はGitHub上のPR #40に含まれ`merged_at`も記録されているにもかかわらず、`main`の実際の履歴にはこのコミットが含まれておらず、`errorsAtom.ts`は未カプセル化のまま・`useErrorReporter`も削除されないまま残っていたことが判明した。
+  - `issue_review_notes.md`観点4で記録済みの「スタック構成PRのbase整合性事故」（PR #41/#42/#43で発生）と同種の失敗パターンが、それ以前のPR #40でも発生していた可能性が高い（PR #40のbaseもmainではなくPR #39のブランチだった）。
+  - ユーザーの判断により、当時のコミット内容（`errorsStateAtom`による内部状態の隠蔽、読み取り専用の`errorsAtom`、書き込み専用の`addErrorAtom`/`dismissErrorAtom`、`useErrorReporter`の削除）をTDD（Red-Green）で復元した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/atoms/errorsAtom.ts`: 内部状態`errorsStateAtom`を非export化し、`errorsAtom`を読み取り専用の派生atomに変更。書き込み専用の`addErrorAtom`/`dismissErrorAtom`を新設。
+    - `frontend/src/atoms/__tests__/errorsAtom.tests.ts`（新規）。
+    - `frontend/src/components/ErrorDialog.tsx`: `useAtom(errorsAtom)`を`useAtomValue(errorsAtom)`+`useSetAtom(dismissErrorAtom)`へ変更。
+    - `frontend/src/components/__tests__/ErrorDialog.tests.tsx`: `useHydrateAtoms`によるSeedコンポーネントを、専用ストア＋`addErrorAtom`経由の初期値注入へ変更。
+    - `frontend/src/test-utils/renderWithChakra.tsx`: 任意の`store`を渡せるオプションを追加。
+    - `frontend/src/hooks/useErrorReporter.ts`・`__tests__/useErrorReporter.tests.ts`（削除）。呼び出し元4箇所（`MapView.tsx`・`usePassedMunicipalities.ts`・`useBackfillStatus.ts`・`useCyclingActivities.ts`）は`useSetAtom(addErrorAtom)`を直接使うよう変更。
+    - 単体テスト（フロントエンド全32ファイル296件）・lint・typecheck・型キャストチェックは全てGreen。E2Eテストも実行し（`bicycle-log.spec.ts`の1件は既知の環境依存フレーキーテスト、Issue #86参照、単体再実行でGreenを確認済み）回帰の無いことを確認した。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化は無いため）。
+  * **設計書**: `react_rules.md`に「グローバルステート（Jotai atom）の生の値・setterを外部へ公開しない」章を新設し、`errorsAtom.ts`を実例として明記。
+
+### [2026-07-21] CHANGELOG.mdの履歴からユーザーの判断傾向を分析し、依存関係追加の判断基準と段階的ロールアウトの観点をルール化した
+* **修正の動機・概要**:
+  - 「ループエンジニアリングの比率を増やしたいが、人間ゲートで判断していることの多くが言語化・ルール化できていない」というユーザーの問題意識を受け、CHANGELOG.md全77エントリを通読し、繰り返し同じ方向に判断されているが未文書化のパターンを抽出した。
+  - 当初提示した「新規ライブラリより自前実装を優先する」というパターンは、根拠として挙げたPR #80等の判断が実際にはユーザーの確認を経ていない、自律モードでのAI自身の判断だったことが判明した。ユーザーから「既存ライブラリがあれば自分ならそちらを使う」との訂正を受け、**逆方向**（新規機能実装時はまず既存の確立されたライブラリを優先し、自前実装をデフォルトにしない）でルール化した。自律モードの記録を安易に「ユーザーの判断」として扱ってはならないという教訓でもある。
+  - 「大規模データ・複数コンポーネントに跨る機能はまず1単位分で検証してから広げる」というパターン（Issue #34フェーズ2・Issue #23初期スコープ等）は、ユーザーからルール化の合意を得た。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `design_principles.md`: 「車輪の再発明を避ける」章に、新規サードパーティ依存の追加是非（既存ライブラリ優先、自前実装をデフォルトにしない、判断に迷う場合はユーザーに確認）を追記。Issue #77・PR #80での誤った自律判断を教訓として明記。
+    - `issue_review_notes.md`: 観点6「大規模データ・複数コンポーネントに跨る機能は、まず最小の1スライスで通してから段階的に広げることを提案する」を新設。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（AIエージェントの内部運用ルールであり、アプリケーションの機能仕様には影響しないため）。
+
+### [2026-07-21] finish-reviewスキルのIssueクローズ手順で、issue_writeのbodyによるIssue本文消失事故を防ぐルールを追加した
+* **修正の動機・概要**:
+  - PR #81のfinish-review実行中、手順2「マージ済みPRへの参照を添えたコメントも残す」を、`issue_write`の`body`パラメータにコメント文言を渡す形で実施してしまった。`issue_write`の`body`はIssue本文全体を置き換える仕様であることを見落としており、結果としてIssue #77の元の本文（「現状/要望」）が丸ごと消失する事故が発生した。
+  - ユーザーからの指摘を受け、PR #81の説明文をもとにIssue #77の本文を復元した上で、同じ事故が再発しないよう`.agents/skills/finish-review/SKILL.md`にルールを追加した。他のスキルファイル（`auto-commit`・`issue-implement`・`issue-review`・`pr-review-respond`）には`issue_write`/`add_issue_comment`の記述が無いことを確認済みで、影響範囲はfinish-reviewのみ。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `.agents/skills/finish-review/SKILL.md`の手順2に、Issueクローズ時は`issue_write`を`state`/`state_reason`のみで呼び出し`body`は絶対に指定しないこと、PRへの参照コメントは別途`add_issue_comment`で行うことを明記。今回の事故を教訓として追記。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（AIエージェントの内部運用スキルであり、アプリケーションの機能仕様には影響しないため）。
+
+### [2026-07-20] 設計書のサイドバー写真グリッド表示に関する記述が実装と乖離していたのを修正した
+* **修正の動機・概要**:
+  - ユーザーからの質問（写真閲覧機能の残作業確認）に回答する過程で、`designs/technical_design.md`の「位置情報付きメディア表示機能」章冒頭が「サイドバーのグリッド表示は未実装」のままになっており、実際にはPR #84（`d9db6d0`）で実装済みであることに気づいた。乖離を修正した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: 変更なし。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし。
+  * **設計書**: `designs/technical_design.md`冒頭の記述を「サイドバーのグリッド表示は実装済み、地図上の吹き出し表示は未実装」に修正。
+
+### [2026-07-20] Issue #23対応として既存写真の一括取り込み用の写真ローカルバックフィルスクリプトを実装した
+* **修正の動機・概要**:
+  - サイドバーのグリッド表示の動作確認中、既存のPicker UI経由の取り込み方式（`POST /photos/ingest`、Takeout zip全体を一度にメモリへ展開する方式）では、実際のエクスポート規模（最大50GB・複数ファイル）を扱えないことが判明した。Node.jsの`Buffer`には約2〜4GBの上限があり、zip全体をメモリへ展開する現行方式ではこの規模のファイルを扱うとクラッシュする。
+  - Google Driveをまたぐ再構成（Drive上でzipを解凍・振り分け）を伴う案も検討したが、API呼び出し回数・レート制限の観点からユーザー側で「事前にローカルへ展開・フラットな1ディレクトリへ集約」した上で、それ以降の年月ごとの振り分け・DB投入のみを自動化するスクリプト方式を採用することにした（ユーザーとの協議の結果、複数の代替案の中から選定）。
+  - 既存の取り込みパイプライン（`PhotoIngestService.ingest`）とロジックを重複させないよう、`resolvePhotoMetadata`（JSON優先・EXIFフォールバック）を`takeout-metadata.util.ts`へ、`toPhotoEntity`を`photo-ingest.service.ts`のexport関数へそれぞれ切り出し、新旧両方のパイプラインから共通で呼び出す形にリファクタリングした（TDD、Red-Green）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/takeout-metadata.util.ts`: `PhotoIngestService`の private関数だった`resolvePhotoMetadata`をexport関数として移設。
+    - `backend/src/photos/photo-ingest.service.ts`: privateメソッドだった`toPhotoEntity`をexport関数化し、`resolvePhotoMetadata`は移設先からimportして使用するよう変更。
+    - `backend/src/photos/local-photo-directory.util.ts`（新規）: ローカルディレクトリ（フラット構成）を走査し写真本体・JSONサイドカーへ分類する`scanLocalPhotoDirectory`、写真本体の実バイナリを遅延読み込みする`readLocalPhotoData`。
+    - `backend/src/photos/backfill-photos-from-local.ts`（新規）: `seed-municipalities.ts`と同じくDIコンテナを経由せず手動で各サービスを組み立てるオーケストレーションスクリプト。ファイル名マッチング→メタデータ解決（EXIFフォールバック時のみ対象写真1件分を都度読み込み）→年月ごとのグループ化→月ごとに1グループずつ月別アーカイブへ振り分け・保存、という3段階で処理し、いずれの段階でも全写真の実バイナリを同時にメモリへ保持しないようにした。
+    - `backend/package.json`: `backfill:photos-local`スクリプトを追加。
+    - 対応する単体テストを新規・変更ファイルへ追加（TDD、Red-Green）。単体テスト（バックエンド全40ファイル230件）・lint・typecheckは全てGreen。
+  * **README.md**: 「既存写真の一括取り込み（写真ローカルバックフィル、任意）」節を追加し、手順（ローカルへの展開・集約→スクリプト実行）を記載。
+  * **仕様書**: 変更なし（このスクリプトはユーザーから見た機能ではなく開発者向けの一括投入手段のため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章に「既存写真の一括取り込み（写真ローカルバックフィル）」節を追加し、Bufferサイズ制約の背景・設計判断・処理段階を記載。
+
+### [2026-07-20] Issue #23対応として右サイドバーの写真グリッド表示を実装した
+* **修正の動機・概要**:
+  - Issue #23「写真閲覧機能」の残りスコープ（右サイドバーのグリッド表示・地図上の吹き出し表示・Google Picker UI）のうち、写真バイナリの遅延取得API（直前の対応）に続けて「右サイドバーのグリッド表示」に対話モードで対応した。
+  - Issue本文が要望する「ChakraUIに既存の写真をグリッド上にプレビューできるコンポーネントがあればそれをそのまま使う」を検討したが、専用コンポーネントは無いため、`SimpleGrid`+`Image`のプリミティブを組み合わせて実装した。「横長・縦長の写真は両端を均等にカットしてプレビュー表示する」はCSSの`object-fit: cover`標準の挙動そのものであり、独自のクロップ処理は不要と判断した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/api/photosApi.ts`（新規）: `resolvePhotoImageUrl`（`GET /photos/:id/image`のURLを組み立てる）。
+    - `frontend/src/api/activitiesApi.ts`: `Photo`型・`fetchPhotos`（`GET /activities/:id/photos`）を追加。
+    - `frontend/src/hooks/usePhotos.ts`（新規）: `usePassedMunicipalities`と同型の取得フック。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: `PhotoGrid`コンポーネント（新規）を追加し、通過自治体一覧の下に表示。
+    - 対応する単体テストを各ファイルへ追加（TDD、Red-Green）。単体テスト（フロントエンド全33ファイル290件）・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「位置情報付きメディア表示機能」章（従来WIPのみだった箇所）を、実装済みの内容（グリッド表示の仕様、地図上表示・取り込みUIは未実装である旨）で更新。
+  * **設計書**: `designs/technical_design.md`に「位置情報付きメディア表示機能（サイドバーのグリッド表示、Issue #23）」章を新設。
+
+### [2026-07-20] Issue #23対応として写真バイナリの遅延取得APIを実装した
+* **修正の動機・概要**:
+  - Issue #23「写真閲覧機能」の残りスコープのうち、対話モードで「写真バイナリの遅延取得API」に着手した。地図上の吹き出し表示・サイドバーのグリッド表示いずれも実際の画像バイナリの取得が前提となるため、既存の写真取得API（`GET /activities/:id/photos`、メタデータのみ返す）に続く優先度の高いピースとして選定した。
+  - `PhotoEntity`のコメントに既に「実バイナリは表示機能実装時に、`source_file_id`（月別アーカイブzipのfileId）・`archive_path`（zip内のパス）を使って遅延取得する想定」と設計意図が明記されており、その通りに実装した。
+  - 1つのアクティビティに紐づく写真は撮影年月が近接することが多く、写真ごとに同じ月別アーカイブzipを再ダウンロードすると無駄が大きいと判断し、直前のPR #80（行政区画フォーカスのパフォーマンス問題）と同種の問題を未然に防ぐため、実装時点からメモリ内キャッシュ（簡易LRU、上限5件）を組み込んだ。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/image-content-type.util.ts`（新規）: ファイル名の拡張子からHTTP Content-Typeを解決する`resolveImageContentType`。
+    - `backend/src/photos/photos.service.ts`: `findImageByPhotoId`（新規）を追加。`GoogleDriveAuthService`/`GoogleDriveApiClient`を新たに注入し、月別アーカイブzipのダウンロード結果をメモリキャッシュする。
+    - `backend/src/photos/photos.controller.ts`: `GET /photos/:id/image`（新規、`getImage`）を追加。`StreamableFile`でバイナリを返し、見つからない場合は404。
+    - `backend/src/photos/photos.constants.ts`: `PHOTOS_IMAGE_ROUTE`（`:id/image`）を追加。
+    - 対応する単体テストを各ファイルへ追加（TDD、Red-Green）。単体テスト（バックエンド全39ファイル225件）・lint・typecheck・型キャストチェックは全てGreen。実アプリ起動でのDI解決・ルーティング登録、実DB・実Google Drive環境を使った疎通確認（実写真での200応答・Content-Type/サイズの一致・キャッシュによる再ダウンロード抑制・存在しないIDでの404）も実施済み。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（`POST /photos/ingest`と同様、このAPIを呼び出すユーザー向けUI・表示機能はまだ実装していないため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章に、`GET /photos/:id/image`の実装内容とキャッシュ方針を追記。
+
+### [2026-07-20] PR #80の動作確認・レビュー対応として、行政区画フォーカス機能のパフォーマンス改善と地図中心合わせを行った
+* **修正の動機・概要**:
+  - PR #80の動作確認で、行政区画をクリックしてからフォーカス表示されるまでの遅延・操作中のカクつきについて指摘を受けた。原因を調査したところ、`MapView.tsx`の1つの`useEffect`が「境界データ(hit-test用含む)の取得・反映」と「フォーカス対象の反映」を兼ねており、依存配列に`focusedMunicipality`を含んでいたため、クリックのたびに変化していないはずの全国分の境界データを毎回`setData`し直していたことが判明した。effectを「境界データの取得・反映（年代のみに依存）」「フォーカス対象の反映（フォーカス対象のみに依存、setDataを伴わない取得専用経路を使用）」の2つへ分割して解消した。
+  - 続けて、「行政区画または通過自治体をクリックしたとき、その行政区画の中心点（重心）へ地図の中心をジャンプさせてほしい（ズームレベルは維持）」という仕様追加の要望を受けた。フォーカス対象のジオメトリ（Polygon/MultiPolygon）からシューレース公式による面積重み付き重心を算出し、`map.panTo`で中心を合わせる処理を追加した。既存のIssue #77（線上の距離算出）と同様の方針で、新規ジオメトリライブラリ（turf等）は導入せず自前実装とした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/mapLayerSetup.ts`: `getOrFetchMunicipalityBoundaries`（新規、setDataを伴わない取得専用経路）を追加し、`applyAdminBoundaryData`が内部で使うよう変更。
+    - `frontend/src/components/MapView.tsx`: 行政区画データ取得・反映のeffectと、フォーカス対象反映のeffectを分割。後者で`panToMunicipalityCentroid`を呼び出すよう追加。
+    - `frontend/src/utils/polygonCentroid.ts`（新規）: `calculatePolygonCentroid`（Polygon/MultiPolygonの面積重み付き重心を算出）。
+    - `frontend/src/utils/mapLayerInteraction.ts`: `applyFocusedMunicipalityLayer`が発見したfeatureを返すよう変更。`panToMunicipalityCentroid`（新規）を追加。
+    - 対応する単体テストを各ファイルへ追加・更新（TDD、Red-Green）。単体テスト（フロントエンド全31ファイル280件・バックエンド全38ファイル211件）・lint・typecheck・型キャストチェックは全てGreen。E2Eテストは既知の環境依存フレーキーテスト（並列実行時のバックフィル完了待ちタイムアウト、既存メモ`e2e_backfill_flakiness_aerial_photo_sequence.md`と同一事象）を除き全てGreenで、修正前のコード（stash）でも同じ失敗が再現することを確認し回帰でないことを確認済み。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「行政区画フォーカス機能」章に、地図の中心合わせに関する記述を追加。
+  * **設計書**: `designs/technical_design.md`の「行政区画フォーカス機能（Issue #76）」章に、パフォーマンス対策・地図中心合わせの設計内容を追記。
+
 ### [2026-07-20] Issue #78対応として過去年代の行政区画表示中に現在の細かい地名が表示されてしまう不具合を修正した
 * **修正の動機・概要**:
   - Issue #78「表示している行政区画が現在以外のとき、現在における都道府県や市町村は表示されないが、現在の行政区、大字、小字、番地、号などが表示されてしまう」に、Issue #77に続けて自律モードで対応した。
@@ -60,6 +351,24 @@
   * **README.md**: 変更なし。
   * **仕様書**: `specs/system_specification.md`に「行政区画フォーカス機能」の章を新設。`specs/glossary.md`に「フォーカス（行政区画の）」を追加（既存の「フォーカス（フォーカス中）」＝アクティビティ用と別概念であることを明記）。
   * **設計書**: `designs/technical_design.md`の「行政区画レイヤー（年代選択）」章を関数改名に合わせて更新し、「行政区画フォーカス機能（Issue #76）」章を新設。
+
+### [2026-07-20] Issue #23対応として写真取得API（アクティビティの開始・終了日時による検索）を実装した
+* **修正の動機・概要**:
+  - Issue #23「写真閲覧機能」の残りスコープ（写真取得API・バイナリ遅延取得API・地図/サイドバー表示・Google Picker UI）のうち、他の要素の前提となる「写真取得API」に対話モードで着手した。issue-reviewの観点1（外部サービス連携の認証情報）は既に解消済み、観点2（大規模Issueの境界の判断基準）に該当したため、着手前にユーザーへ次に実装する範囲を確認し合意を得た。
+  - 設計中に、Issue本文が要望する「位置情報が無い写真をアクティビティの軌跡と照合して撮影時の位置を推定する」機能について、既存の`cycling_activities.path`が各点の通過時刻を持たない（Strava詳細APIの軌跡データのみを使用しており、時刻付き「ストリーム」データは未取得）ため実現できないことが判明した。ユーザーに確認し、今回は位置情報が無い写真は`location: null`のまま返す（照合ロジックは実装しない）方針で合意した。
+  - `GET /activities/:id/photos`（`ActivitiesController.getPhotos`）を、既存の`GET /activities/:id/municipalities`（`MunicipalitiesService`をコントローラーへ直接注入するパターン）を踏襲する形で実装した。`PhotosService.findByActivity`が対象アクティビティの`start_date`・`elapsed_time_seconds`から終了日時を算出し、その範囲内の`taken_at`を持つ写真をTypeORMの`Between`で検索して撮影日時昇順で返す。
+  - TDD（Red-Green-Refactor）で、`PhotosService`→`toPhotoDto`（Entity→DTO変換）→`ActivitiesController.getPhotos`の順に実装した。実際にDB（Docker Compose、写真221件・アクティビティ複数件）へ接続し、写真が実在する期間のアクティビティに対して`curl`で疎通確認（4件の写真が撮影日時順・位置情報付きで返ることを確認）した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/photos.service.ts`（新規）・`__tests__/photos.service.tests.ts`（新規、2件）: `findByActivity`。
+    - `backend/src/photos/types/photo.dto.ts`（新規）・`photo-dto.util.ts`（新規）・`__tests__/photo-dto.util.tests.ts`（新規、2件）: `PhotoDto`・`toPhotoDto`。
+    - `backend/src/photos/photos.module.ts`: `CyclingActivityEntity`を`TypeOrmModule.forFeature`へ追加登録し、`PhotosService`をproviders・exportsへ追加。
+    - `backend/src/activities/activities.module.ts`: `PhotosModule`をimport。
+    - `backend/src/activities/activities.constants.ts`・`activities.controller.ts`: `ACTIVITIES_PHOTOS_ROUTE`（`:id/photos`）・`getPhotos`メソッドを追加。既存の`activities.controller.tests.ts`にも`PhotosService`モックを追加し新規テスト1件を追加。
+    - 単体テスト（バックエンド全38ファイル211件）・lint・typecheckは全てGreen。実アプリ起動でのDI解決・ルーティング登録、実DBを使った疎通確認も実施済み。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（`POST /photos/ingest`と同様、このAPIを呼び出すユーザー向けUIはまだ実装していないため）。
+  * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章の該当行を、実装済みの内容（エンドポイント・位置情報照合を見送った理由）に更新。`designs/class_diagram.md`のバックエンド図は、既存のgoogle-drive/photosモジュール追加時と同様に更新対象としなかった（Issue #29時点のスコープに限定した図として運用されているため）。
 
 ### [2026-07-20] PR #72（Issue #67）とPR #71（mapLayerInteraction切り出し）のマージコンフリクトを解消した
 * **修正の動機・概要**:
