@@ -3,6 +3,7 @@ import { ApiError } from '../../utils/apiError';
 import {
   fetchCyclingActivities,
   fetchPassedMunicipalities,
+  fetchPhotos,
   getBackfillStatus,
   startBackfill,
   syncCyclingActivities
@@ -176,5 +177,40 @@ describe('fetchPassedMunicipalitiesに関するテスト', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(fetchPassedMunicipalities('123')).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe('fetchPhotosに関するテスト', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test('レスポンスが正常なとき、写真配列をそのまま返す', async () => {
+    const photos = [
+      { id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null },
+      {
+        id: 2,
+        fileName: 'b.jpg',
+        takenAt: '2026-07-01T00:40:00.000Z',
+        location: { type: 'Point', coordinates: [139.7, 35.6] }
+      }
+    ];
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(photos)
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await fetchPhotos('123');
+
+    expect(fetchMock).toHaveBeenCalledWith('http://localhost:3000/activities/123/photos');
+    expect(result).toEqual(photos);
+  });
+
+  test('レスポンスが異常なとき、ApiErrorを投げる', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.reject(new Error()) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchPhotos('123')).rejects.toBeInstanceOf(ApiError);
   });
 });

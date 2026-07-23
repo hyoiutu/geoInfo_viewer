@@ -158,3 +158,17 @@ Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの
   - 写真の実バイナリ自体は返さない（`file_name`・`taken_at`・`location`のみを含む`PhotoDto`）。プレビュー表示に必要な実バイナリは、後述の`GET /photos/:id/image`で別途遅延取得する
 - 写真バイナリの遅延取得は`GET /photos/:id/image`（`PhotosController.getImage`、`PhotosService.findImageByPhotoId`）で実現する。対象写真の`source_file_id`（月別アーカイブzipのGoogle Drive fileId）をダウンロードし、`adm-zip`で`archive_path`のエントリを取り出してレスポンスする（NestJSの`StreamableFile`、Content-Typeは`file_name`の拡張子から`resolveImageContentType`で解決する`image-content-type.util.ts`）。写真・エントリのいずれかが見つからない場合は404を返す
   - 月別アーカイブzipのダウンロード結果は`PhotosService`インスタンス内のメモリ（`Map<sourceFileId, Buffer>`、挿入順を利用した簡易LRU、上限5件）へキャッシュする。1つのアクティビティに紐づく写真は撮影年月が近接することが多く、写真ごとに同じ月別アーカイブを再ダウンロードすると無駄が大きいため（Issue #80のパフォーマンス対応時の教訓を踏まえ、実装時点から対策した）
+
+# 位置情報付きメディア表示機能（サイドバーのグリッド表示、Issue #23）
+- フロントエンドの取得は`usePhotos`フック（`frontend/src/hooks/usePhotos.ts`、`fetchPhotos`＝`GET /activities/:id/photos`）が担い、`usePassedMunicipalities`と同じ「activityIdが変わるたびに再取得し、アンマウント/依存値変化時にキャンセルフラグで古い結果の上書きを防ぐ」パターンを踏襲する
+- 表示は`ActivityDetailSidebar.tsx`の`PhotoGrid`コンポーネント（`ActivityDetail`内、通過自治体一覧の下に配置）が担う。ChakraUIに写真ギャラリー専用のコンポーネントは無いため、`SimpleGrid`（3列）+`Image`の組み合わせで実現する
+  - 正方形プレビュー・はみ出た部分の均等カットは、`Image`に`aspectRatio="1"`・`objectFit="cover"`を指定するのみで実現している（`object-fit: cover`は中央基準で両端を均等にクロップするCSS標準の挙動のため、独自のクロップ処理は実装していない）
+  - 各`Image`の`src`は`resolvePhotoImageUrl`（`frontend/src/api/photosApi.ts`）が返す`GET /photos/:id/image`のURLをそのまま指定する。画像はバイナリで返るためJSON用の`fetch`ラッパーは持たず、ブラウザの`<img>`に直接URLを渡して読み込ませる
+- 地図上の吹き出し表示（位置情報をもとにした表示、Issue本文の要望）は本対応の対象外で未実装
+
+## 写真ローカルフラット化ツール
+Google Takeoutで一括ダウンロードした写真をローカルへ展開すると、アルバム単位・年月単位等でディレクトリが細かくネストされた状態になる。既存写真の一括取り込み（写真ローカルバックフィル、別途対応）は入力としてサブディレクトリの無い1つのフラットなディレクトリを前提とするため、ネストされた展開データをフラット化する前処理ツール`backend/src/photos/flatten-local-photo-directory.ts`（`pnpm --filter backend run flatten:photos-local -- <展開済みディレクトリ> <出力先ディレクトリ>`）を用意した。
+
+- `seed-municipalities.ts`と同様、DIコンテナを経由しない独立スクリプトとして実装（DB接続も不要な純粋なファイル操作のため、`DataSource`の初期化も行わない）。
+- 対象ディレクトリを再帰的に走査し、見つかった全ファイル（写真・JSONサイドカーを問わない）を出力先ディレクトリへコピーする。元のディレクトリ構造・ファイルは変更しない（コピーのみ）。
+- Google Takeoutは、1枚の写真が複数のアルバムに属する場合、同一内容のファイルが複数のディレクトリに重複して含まれることがある。ファイル名が衝突した際は内容のSHA-256ハッシュ（`node:crypto`、動画等の大きいファイルでもメモリを圧迫しないようストリームで計算）を比較し、内容が完全に一致する場合は重複とみなしコピーをスキップして1件に集約する。内容が異なる場合は、`mergeMonthlyArchive`（月別アーカイブ内での同名衝突回避）と共通の`resolveUniquePath`（`monthly-archive.util.ts`からexport）で拡張子の直前へ連番（`-2`, `-3`, ...）を付けて別ファイルとして保存する。

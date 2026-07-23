@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { useHydrateAtoms } from 'jotai/utils';
+import { createStore } from 'jotai';
 import { describe, expect, test } from 'vitest';
-import { errorsAtom } from '../../atoms/errorsAtom';
+import { addErrorAtom } from '../../atoms/errorsAtom';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import type { AppErrorInfo } from '../../types/apiError';
 import { ErrorDialog } from '../ErrorDialog';
@@ -13,19 +13,14 @@ const ERROR_A = {
 };
 const ERROR_B = { errorCode: 'INTERNAL_ERROR' as const, message: '予期しないエラー', hint: null };
 
-/** テストごとに、グローバルなエラースタック（errorsAtom）の初期値を注入するヘルパー */
-const Seed = ({ errors }: { errors: AppErrorInfo[] }) => {
-  useHydrateAtoms([[errorsAtom, errors]]);
-  return null;
+/** テスト専用のストアを作り、addErrorAtom経由でグローバルなエラースタック（errorsAtom）の初期値を注入した上でレンダリングする */
+const renderDialog = (errors: AppErrorInfo[]) => {
+  const store = createStore();
+  for (const error of errors) {
+    store.set(addErrorAtom, error);
+  }
+  return renderWithChakra(<ErrorDialog />, { store });
 };
-
-const renderDialog = (errors: AppErrorInfo[]) =>
-  renderWithChakra(
-    <>
-      <Seed errors={errors} />
-      <ErrorDialog />
-    </>
-  );
 
 describe('ErrorDialogに関するテスト', () => {
   test('errorsが空の場合、ダイアログは表示されない', () => {
