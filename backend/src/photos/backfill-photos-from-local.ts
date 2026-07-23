@@ -92,6 +92,10 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
 
   const groups = groupPhotosByYearMonth(photosWithMetadata);
   const processedYearMonths = new Set((await monthlyPhotoArchiveRepository.find()).map((archive) => archive.yearMonth));
+  const remainingGroups = groups.filter((group) => !processedYearMonths.has(group.yearMonth));
+  console.log(
+    `撮影年月で${groups.length}グループに分類しました（処理済み: ${groups.length - remainingGroups.length}件、未処理: ${remainingGroups.length}件）`
+  );
 
   let savedCount = 0;
   for (const group of groups) {
