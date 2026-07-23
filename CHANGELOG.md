@@ -14,6 +14,15 @@
 
 ## 変更履歴
 
+### [2026-07-21] finish-reviewスキルのIssueクローズ手順で、issue_writeのbodyによるIssue本文消失事故を防ぐルールを追加した
+* **修正の動機・概要**:
+  - PR #81のfinish-review実行中、手順2「マージ済みPRへの参照を添えたコメントも残す」を、`issue_write`の`body`パラメータにコメント文言を渡す形で実施してしまった。`issue_write`の`body`はIssue本文全体を置き換える仕様であることを見落としており、結果としてIssue #77の元の本文（「現状/要望」）が丸ごと消失する事故が発生した。
+  - ユーザーからの指摘を受け、PR #81の説明文をもとにIssue #77の本文を復元した上で、同じ事故が再発しないよう`.agents/skills/finish-review/SKILL.md`にルールを追加した。他のスキルファイル（`auto-commit`・`issue-implement`・`issue-review`・`pr-review-respond`）には`issue_write`/`add_issue_comment`の記述が無いことを確認済みで、影響範囲はfinish-reviewのみ。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `.agents/skills/finish-review/SKILL.md`の手順2に、Issueクローズ時は`issue_write`を`state`/`state_reason`のみで呼び出し`body`は絶対に指定しないこと、PRへの参照コメントは別途`add_issue_comment`で行うことを明記。今回の事故を教訓として追記。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（AIエージェントの内部運用スキルであり、アプリケーションの機能仕様には影響しないため）。
+
 ### [2026-07-20] Issue #23対応として右サイドバーの写真グリッド表示を実装した
 * **修正の動機・概要**:
   - Issue #23「写真閲覧機能」の残りスコープ（右サイドバーのグリッド表示・地図上の吹き出し表示・Google Picker UI）のうち、写真バイナリの遅延取得API（直前の対応）に続けて「右サイドバーのグリッド表示」に対話モードで対応した。
@@ -59,6 +68,20 @@
   * **README.md**: 変更なし。
   * **仕様書**: `specs/system_specification.md`の「行政区画フォーカス機能」章に、地図の中心合わせに関する記述を追加。
   * **設計書**: `designs/technical_design.md`の「行政区画フォーカス機能（Issue #76）」章に、パフォーマンス対策・地図中心合わせの設計内容を追記。
+
+### [2026-07-20] Issue #77対応としてフォーカス中アクティビティの線ホバーで走行距離を表示する機能を実装した
+* **修正の動機・概要**:
+  - Issue #77「フォーカスされたアクティビティの線上をマウスオーバーすると何Km地点が表示される」に、Issue #76に続けて自律モードで対応した。issue-reviewの観点に照らし特段のブロッカー・大きな曖昧さは無いと判断し、実装を進めた。
+  - 軌跡（`path`、位置飛びで分割済みのMultiLineString）上でカーソルに最も近い点までの、始点からの累積距離を求める処理が必要になった。バックエンドには`splitPathAtJumps`にHaversine距離計算の実装があるが、フロントエンド・バックエンド間でコードを共有する仕組みがプロジェクトに無いため、フロントエンド側に個別の実装（`findDistanceAlongPathAtPoint`）を追加した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/findDistanceAlongPathAtPoint.ts`（新規）: 軌跡上の最近点までの累積距離を求める純粋関数。区間ごとのベクトル射影＋Haversine距離比較で最近区間を求める。
+    - `frontend/src/utils/mapLayerInteraction.ts`: `registerFocusedActivityHoverHandler`（新規）を追加。クリック検出と同じバウンディングボックス方式でフォーカス中の線上のホバーを検出する。
+    - `frontend/src/components/MapView.tsx`: マウント時に上記ハンドラを登録し、`maplibregl.Popup`（1インスタンスを使い回し）で距離を吹き出し表示する処理を追加。
+    - 対応する単体テストを追加（TDD、Red-Green）。単体テスト（フロントエンド全31ファイル284件・バックエンド全36ファイル206件）・lint・typecheck・型キャストチェック・E2Eテスト（4件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`に「走行距離表示機能（マウスオーバー）」の章を新設。
+  * **設計書**: `designs/technical_design.md`に「走行距離表示機能（マウスオーバー、Issue #77）」章を新設。
 
 ### [2026-07-20] Issue #76対応として行政区画クリック・通過自治体一覧クリックによる範囲フォーカス機能を実装した
 * **修正の動機・概要**:

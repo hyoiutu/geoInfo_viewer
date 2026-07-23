@@ -115,6 +115,22 @@ type MarkerMockInstance = {
   remove: ReturnType<typeof vi.fn>;
 };
 
+/** maplibregl.Popupモックのインスタンス形状 */
+type PopupMockInstance = {
+  /** setLngLatで設定された座標 */
+  lngLat: [number, number] | null;
+  /** setTextで設定されたテキスト */
+  text: string | null;
+  /** 座標を設定するモックメソッド */
+  setLngLat: (lngLat: [number, number]) => PopupMockInstance;
+  /** テキストを設定するモックメソッド */
+  setText: (text: string) => PopupMockInstance;
+  /** 地図へ追加するモックメソッド */
+  addTo: () => PopupMockInstance;
+  /** Popupを取り除くモックメソッド */
+  remove: ReturnType<typeof vi.fn>;
+};
+
 vi.mock('maplibre-gl', () => {
   const remove = vi.fn();
   const once = vi.fn((event: string, callback: () => void) => {
@@ -166,14 +182,37 @@ vi.mock('maplibre-gl', () => {
     };
     return instance;
   });
+  const PopupMock = vi.fn().mockImplementation(function MockPopup() {
+    const instance: PopupMockInstance = {
+      lngLat: null,
+      text: null,
+      setLngLat(lngLat: [number, number]) {
+        instance.lngLat = lngLat;
+        return instance;
+      },
+      setText(text: string) {
+        instance.text = text;
+        return instance;
+      },
+      addTo() {
+        return instance;
+      },
+      remove: vi.fn()
+    };
+    return instance;
+  });
   const AttributionControlMock = vi.fn();
-  // biome-ignore lint/style/useNamingConvention: maplibre-glの実APIに合わせクラス名(Map/Marker/AttributionControl)をPascalCaseのまま公開する
-  return { default: { Map: MapMock, Marker: MarkerMock, AttributionControl: AttributionControlMock } };
+  return {
+    // biome-ignore lint/style/useNamingConvention: maplibre-glの実APIに合わせクラス名(Map/Marker/Popup/AttributionControl)をPascalCaseのまま公開する
+    default: { Map: MapMock, Marker: MarkerMock, Popup: PopupMock, AttributionControl: AttributionControlMock }
+  };
 });
 
 const getMapInstance = () => vi.mocked(maplibregl.Map).mock.results[0].value;
 /** テスト中に生成された全てのMarkerモックインスタンスを取得する */
 const getMarkerInstances = () => vi.mocked(maplibregl.Marker).mock.results.map((result) => result.value);
+/** テスト中に生成された全てのPopupモックインスタンスを取得する */
+const getPopupInstances = () => vi.mocked(maplibregl.Popup).mock.results.map((result) => result.value);
 
 /** mapInstance.onで登録された、自転車ログ用の'click'ハンドラ(map.on('click', handler)形式)を取り出す */
 const getClickHandler = (mapInstance: ReturnType<typeof getMapInstance>) => {
@@ -189,6 +228,12 @@ const getAdminBoundaryClickHandler = (mapInstance: ReturnType<typeof getMapInsta
     ([event, layerId]: [string, unknown]) => event === 'click' && layerId === ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID
   );
   return call?.[2];
+};
+
+/** mapInstance.onで登録された'mousemove'ハンドラを取り出す */
+const getMouseMoveHandler = (mapInstance: ReturnType<typeof getMapInstance>) => {
+  const call = mapInstance.on.mock.calls.find(([event]: [string]) => event === 'mousemove');
+  return call?.[1];
 };
 
 const getSetDataMock = (sourceId: string) => setDataMocksBySourceId[sourceId];
@@ -980,6 +1025,75 @@ describe('MapViewに関するテスト', () => {
           features: []
         });
       });
+    });
+  });
+
+  describe('フォーカス中アクティビティの線ホバーによる距離表示に関するテスト（Issue #77）', () => {
+    const activityWithPath: CyclingActivity = {
+      id: '1',
+      name: 'ライド1',
+      distanceMeters: 1000,
+      movingTimeSeconds: 600,
+      elapsedTimeSeconds: 650,
+      elevationGainMeters: 50,
+      startDate: '2026-07-01T00:00:00Z',
+      path: [
+        [
+          [139.0, 35.0],
+          [139.0, 35.01]
+        ]
+      ]
+    };
+
+    test('フォーカス中アクティビティの線上をホバーすると、距離を示すPopupが表示される', () => {
+      renderWithChakra(
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          selectedActivities={[activityWithPath]}
+          focusedActivity={activityWithPath}
+        />
+      );
+      const mapInstance = getMapInstance();
+      mapInstance.queryRenderedFeatures.mockReturnValue([{ properties: { id: '1' } }]);
+      const handleMouseMove = getMouseMoveHandler(mapInstance);
+
+      handleMouseMove({ point: { x: 100, y: 200 }, lngLat: { lng: 139.0, lat: 35.005 } });
+
+      expect(getPopupInstances()).toHaveLength(1);
+      expect(getPopupInstances()[0].lngLat).toEqual([139.0, 35.005]);
+      expect(getPopupInstances()[0].text).toMatch(/km地点$/);
+    });
+
+    test('線から外れるとPopupが取り除かれる', () => {
+      renderWithChakra(
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          selectedActivities={[activityWithPath]}
+          focusedActivity={activityWithPath}
+        />
+      );
+      const mapInstance = getMapInstance();
+      mapInstance.queryRenderedFeatures.mockReturnValue([{ properties: { id: '1' } }]);
+      const handleMouseMove = getMouseMoveHandler(mapInstance);
+      handleMouseMove({ point: { x: 100, y: 200 }, lngLat: { lng: 139.0, lat: 35.005 } });
+      const popup = getPopupInstances()[0];
+
+      mapInstance.queryRenderedFeatures.mockReturnValue([]);
+      handleMouseMove({ point: { x: 300, y: 400 }, lngLat: { lng: 140.0, lat: 36.0 } });
+
+      expect(popup.remove).toHaveBeenCalledTimes(1);
+    });
+
+    test('フォーカス中のアクティビティが無い場合、ホバーしてもPopupは表示されない', () => {
+      renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} />);
+      const mapInstance = getMapInstance();
+      const handleMouseMove = getMouseMoveHandler(mapInstance);
+
+      handleMouseMove({ point: { x: 100, y: 200 }, lngLat: { lng: 139.0, lat: 35.005 } });
+
+      expect(getPopupInstances()).toHaveLength(0);
     });
   });
 });
