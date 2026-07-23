@@ -11,6 +11,7 @@
     "migration:run": "typeorm-ts-node-commonjs migration:run -d src/data-source.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts",
     "seed:municipalities": "ts-node src/municipalities/seed-municipalities.ts",
+    "flatten:photos-local": "ts-node src/photos/flatten-local-photo-directory.ts",
     "backfill:photos-local": "ts-node src/photos/backfill-photos-from-local.ts"
   },
   "dependencies": {

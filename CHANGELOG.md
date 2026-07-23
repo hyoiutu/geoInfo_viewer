@@ -14,6 +14,15 @@
 
 ## 変更履歴
 
+### [2026-07-24] usePhotos.tsが削除済みのuseErrorReporterをimportしたままになりmainのフロントエンドビルドが壊れていたのを修正した
+* **修正の動機・概要**:
+  - PR #84（写真グリッド表示、`usePhotos.ts`が`useErrorReporter`を使用）とPR #88（`errorsAtom`のカプセル化に伴い`useErrorReporter.ts`を削除し、既知の呼び出し元4箇所を`useSetAtom(addErrorAtom)`へ置き換え）は、互いに他方のブランチの変更を知らない状態で独立に作成されたため、どちらもGit上は無競合でmainへマージできた。しかし両方がマージされた結果、PR #88が把握していなかった`usePhotos.ts`（PR #84由来）が、削除済みの`useErrorReporter.ts`を依然としてimportしたままとなり、mainのフロントエンドビルド・テストが失敗する状態になっていた（finish-reviewでPR #89の準備中、`main`をマージした際のテスト実行で発覚）。
+  - ファイル単位のテキスト差分としては競合しない「他ファイルからの参照が壊れる」という意味的な競合は、Gitのマージでは検出できないため、レビュー完了後・次のPR着手前に必ずテストスイート全体を実行して確認する重要性を再認識した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `frontend/src/hooks/usePhotos.ts`の`useErrorReporter()`呼び出しを、PR #88で確立済みのパターンと同じ`useSetAtom(addErrorAtom)`へ置き換え。単体テスト（フロントエンド全34ファイル306件）・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化は無いため）。
+
 ### [2026-07-23] 月別アーカイブをサイズ上限ごとの複数partへ分割し、メモリ不足によるプロセス強制終了を解消した（自律モード）
 * **修正の動機・概要**:
   - timeout追加後も同じ月（写真729件・約16.6GiB）の処理開始直後にプロセスが（`ps aux`から消える形で、エラーも出さず）停止する事象が再発した。今回はnohup/disownで実行環境（バックグラウンドタスクの追跡）から完全に切り離した上で再実行したが、同じ地点で同様に停止したため、実行環境由来の外的要因（ハーネス側のタスク存続期間の制約等）ではないと判断した。
@@ -130,6 +139,15 @@
   * **仕様書**: 変更なし（開発者向けツールの制約対応のため）。
   * **設計書**: `designs/technical_design.md`の「既存写真の一括取り込み（写真ローカルバックフィル）」節に、Node.jsのファイルサイズ制約とスキップ対応を追記。
 
+### [2026-07-21] test_rules.mdに、スタンドアロンCLIスクリプトのリリース前動作確認に関するルールを追加した
+* **修正の動機・概要**:
+  - `flatten-local-photo-directory.ts`（Issue #23）で、ユーザーが実際に`pnpm --filter backend run flatten:photos-local -- <入力> <出力>`を実行したところ`ENOENT`が発生した。原因は`pnpm --filter <package> run <script> -- <args>`が区切りの`--`を除去せずそのまま`process.argv`へ渡すことだったが、単体テストはエクスポートされた関数を直接呼び出す形だったため、`process.argv`から引数を取り出すCLIエントリポイント部分はテストを一切通っておらず、単体テスト・lint・typecheckが全てGreenの状態で見過ごしていた。
+  - ユーザーから「実際に動かして検証はしなかったのか」との指摘を受け、単体テスト・lint・typecheckのGreenだけでは、このプロジェクトの既存方針（`seed-municipalities.ts`等のスタンドアロンCLIスクリプトは専用の単体テストファイルを持たない）のもとではCLIエントリポイント自体の正しさを担保できないことを教訓として明文化した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `test_rules.md`のバックエンド節に、スタンドアロンCLIスクリプトはリリース前に実際の呼び出しコマンドで動作確認することを明記。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（テスト運用ルールの追記のみのため）。
+
 ### [2026-07-21] backfill-photos-from-local.tsで、pnpm経由の実行時に区切りの--が引数として渡ってしまう不具合を修正した
 * **修正の動機・概要**:
   - 別スクリプト`flatten-local-photo-directory.ts`（Issue #23対応、写真ディレクトリのフラット化ツール）で、ユーザーが`pnpm --filter backend run flatten:photos-local -- <入力> <出力>`を実行した際に`ENOENT`（`path: '--'`）が発生することが判明した。原因は、`pnpm --filter <package> run <script> -- <args>`がnpm scriptsの一般的な挙動と異なり区切りの`--`自体を除去せずそのまま`process.argv`へ渡すことだった。
@@ -138,6 +156,30 @@
   * **実装**: `backend/src/photos/backfill-photos-from-local.ts`のCLIエントリポイントで、位置引数取り出し前に`'--'`をフィルタするよう修正。
   * **README.md**: 変更なし。
   * **仕様書・設計書**: 変更なし（開発者向けツールの引数解析の修正のみのため）。
+
+### [2026-07-21] flatten-local-photo-directory.tsで、pnpm経由の実行時に区切りの--が引数として渡ってしまう不具合を修正した
+* **修正の動機・概要**:
+  - ユーザーが実際に`pnpm --filter backend run flatten:photos-local -- <入力> <出力>`を実行したところ、`ENOENT`（`path: '--'`）でエラーになった。
+  - `pnpm --filter <package> run <script> -- <args>`は、npm scriptsの一般的な挙動と異なり区切りの`--`自体を除去せずそのまま`process.argv`へ渡すため、`process.argv[2]`が`'--'`、`process.argv[3]`が本来の1つ目の引数になっていたことが原因と判明した。
+  - `process.argv.slice(2)`から`'--'`を除去してから位置引数を取り出すよう修正し、実際に`--`付きで実行して動作することを確認した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `backend/src/photos/flatten-local-photo-directory.ts`のCLIエントリポイントで、位置引数取り出し前に`'--'`をフィルタするよう修正。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（開発者向けツールの引数解析の修正のみのため）。
+
+### [2026-07-21] Issue #23対応として、Google Takeoutのネストした写真ディレクトリをフラット化するツールを実装した
+* **修正の動機・概要**:
+  - Google Photoの全写真をローカルストレージへ移して展開したところ、アルバム単位等でディレクトリが細かくネストされた状態になっており、既存写真の一括取り込み（写真ローカルバックフィル、別途対応）の入力形式（サブディレクトリの無いフラットな1ディレクトリ）に合わないという相談を受けた。
+  - Google Takeoutは1枚の写真が複数のアルバムに属する場合、同一内容のファイルが複数ディレクトリに重複して含まれる仕様があるため、単純にファイル名衝突時へ連番を振るだけでは同一写真が重複してカウントされてしまう。ユーザーと相談の上、コピー方式（元データは保持）・内容ハッシュによる重複検知（完全一致は1件に集約）を採用した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/flatten-local-photo-directory.ts`（新規）: `flattenPhotoDirectory`。ネストしたディレクトリを再帰走査し、ファイル名衝突時はSHA-256ハッシュ（ストリーム計算）で内容が完全一致するものは1件に集約、異なる場合は連番を付けて別ファイルとしてコピーする。
+    - `backend/src/photos/monthly-archive.util.ts`: 既存のprivate関数`resolveUniquePath`（同名衝突時の連番解決）をexportし、上記スクリプトと共通利用できるようにした（DRY）。
+    - `backend/package.json`: `flatten:photos-local`スクリプトを追加。
+    - 対応する単体テストを新規追加（TDD、Red-Green）。単体テスト（バックエンド全40ファイル229件）・lint・typecheckは全てGreen。
+  * **README.md**: 「Google Takeoutの写真データのフラット化（任意）」節を追加。
+  * **仕様書**: 変更なし（開発者向けの前処理ツールのため）。
+  * **設計書**: `designs/technical_design.md`に「写真ローカルフラット化ツール」節を追加。
 
 ### [2026-07-21] 写真ローカルバックフィルスクリプトに、中断・再実行時の重複登録防止とアクセストークン失効対策を追加した
 * **修正の動機・概要**:
@@ -151,6 +193,45 @@
   * **README.md**: 「既存写真の一括取り込み（写真ローカルバックフィル、任意）」節に、中断・再実行時は完了済みの年月が自動スキップされる旨を追記。
   * **仕様書**: 変更なし（開発者向けスクリプトの内部挙動のため）。
   * **設計書**: `designs/technical_design.md`の「既存写真の一括取り込み（写真ローカルバックフィル）」節に、月単位スキップの判定方法・限界、アクセストークン再取得の理由を追記。
+
+### [2026-07-21] PR #40のレビュー対応(errorsAtomのsetterカプセル化)がmainに反映されていなかったのを復元し、react_rules.mdへルール化した
+* **修正の動機・概要**:
+  - マージ済みPRのレビューコメントを調査した際、PR #40（Issue #28、Jotaiグローバルステート導入）で「setterを外部に出さないでください」「ルールにも追加してください」という明示的な指摘・依頼があり、対応コミット（`57240b4`）自体はGitHub上のPR #40に含まれ`merged_at`も記録されているにもかかわらず、`main`の実際の履歴にはこのコミットが含まれておらず、`errorsAtom.ts`は未カプセル化のまま・`useErrorReporter`も削除されないまま残っていたことが判明した。
+  - `issue_review_notes.md`観点4で記録済みの「スタック構成PRのbase整合性事故」（PR #41/#42/#43で発生）と同種の失敗パターンが、それ以前のPR #40でも発生していた可能性が高い（PR #40のbaseもmainではなくPR #39のブランチだった）。
+  - ユーザーの判断により、当時のコミット内容（`errorsStateAtom`による内部状態の隠蔽、読み取り専用の`errorsAtom`、書き込み専用の`addErrorAtom`/`dismissErrorAtom`、`useErrorReporter`の削除）をTDD（Red-Green）で復元した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/atoms/errorsAtom.ts`: 内部状態`errorsStateAtom`を非export化し、`errorsAtom`を読み取り専用の派生atomに変更。書き込み専用の`addErrorAtom`/`dismissErrorAtom`を新設。
+    - `frontend/src/atoms/__tests__/errorsAtom.tests.ts`（新規）。
+    - `frontend/src/components/ErrorDialog.tsx`: `useAtom(errorsAtom)`を`useAtomValue(errorsAtom)`+`useSetAtom(dismissErrorAtom)`へ変更。
+    - `frontend/src/components/__tests__/ErrorDialog.tests.tsx`: `useHydrateAtoms`によるSeedコンポーネントを、専用ストア＋`addErrorAtom`経由の初期値注入へ変更。
+    - `frontend/src/test-utils/renderWithChakra.tsx`: 任意の`store`を渡せるオプションを追加。
+    - `frontend/src/hooks/useErrorReporter.ts`・`__tests__/useErrorReporter.tests.ts`（削除）。呼び出し元4箇所（`MapView.tsx`・`usePassedMunicipalities.ts`・`useBackfillStatus.ts`・`useCyclingActivities.ts`）は`useSetAtom(addErrorAtom)`を直接使うよう変更。
+    - 単体テスト（フロントエンド全32ファイル296件）・lint・typecheck・型キャストチェックは全てGreen。E2Eテストも実行し（`bicycle-log.spec.ts`の1件は既知の環境依存フレーキーテスト、Issue #86参照、単体再実行でGreenを確認済み）回帰の無いことを確認した。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化は無いため）。
+  * **設計書**: `react_rules.md`に「グローバルステート（Jotai atom）の生の値・setterを外部へ公開しない」章を新設し、`errorsAtom.ts`を実例として明記。
+
+### [2026-07-21] CHANGELOG.mdの履歴からユーザーの判断傾向を分析し、依存関係追加の判断基準と段階的ロールアウトの観点をルール化した
+* **修正の動機・概要**:
+  - 「ループエンジニアリングの比率を増やしたいが、人間ゲートで判断していることの多くが言語化・ルール化できていない」というユーザーの問題意識を受け、CHANGELOG.md全77エントリを通読し、繰り返し同じ方向に判断されているが未文書化のパターンを抽出した。
+  - 当初提示した「新規ライブラリより自前実装を優先する」というパターンは、根拠として挙げたPR #80等の判断が実際にはユーザーの確認を経ていない、自律モードでのAI自身の判断だったことが判明した。ユーザーから「既存ライブラリがあれば自分ならそちらを使う」との訂正を受け、**逆方向**（新規機能実装時はまず既存の確立されたライブラリを優先し、自前実装をデフォルトにしない）でルール化した。自律モードの記録を安易に「ユーザーの判断」として扱ってはならないという教訓でもある。
+  - 「大規模データ・複数コンポーネントに跨る機能はまず1単位分で検証してから広げる」というパターン（Issue #34フェーズ2・Issue #23初期スコープ等）は、ユーザーからルール化の合意を得た。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `design_principles.md`: 「車輪の再発明を避ける」章に、新規サードパーティ依存の追加是非（既存ライブラリ優先、自前実装をデフォルトにしない、判断に迷う場合はユーザーに確認）を追記。Issue #77・PR #80での誤った自律判断を教訓として明記。
+    - `issue_review_notes.md`: 観点6「大規模データ・複数コンポーネントに跨る機能は、まず最小の1スライスで通してから段階的に広げることを提案する」を新設。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（AIエージェントの内部運用ルールであり、アプリケーションの機能仕様には影響しないため）。
+
+### [2026-07-21] finish-reviewスキルのIssueクローズ手順で、issue_writeのbodyによるIssue本文消失事故を防ぐルールを追加した
+* **修正の動機・概要**:
+  - PR #81のfinish-review実行中、手順2「マージ済みPRへの参照を添えたコメントも残す」を、`issue_write`の`body`パラメータにコメント文言を渡す形で実施してしまった。`issue_write`の`body`はIssue本文全体を置き換える仕様であることを見落としており、結果としてIssue #77の元の本文（「現状/要望」）が丸ごと消失する事故が発生した。
+  - ユーザーからの指摘を受け、PR #81の説明文をもとにIssue #77の本文を復元した上で、同じ事故が再発しないよう`.agents/skills/finish-review/SKILL.md`にルールを追加した。他のスキルファイル（`auto-commit`・`issue-implement`・`issue-review`・`pr-review-respond`）には`issue_write`/`add_issue_comment`の記述が無いことを確認済みで、影響範囲はfinish-reviewのみ。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `.agents/skills/finish-review/SKILL.md`の手順2に、Issueクローズ時は`issue_write`を`state`/`state_reason`のみで呼び出し`body`は絶対に指定しないこと、PRへの参照コメントは別途`add_issue_comment`で行うことを明記。今回の事故を教訓として追記。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（AIエージェントの内部運用スキルであり、アプリケーションの機能仕様には影響しないため）。
 
 ### [2026-07-20] 設計書のサイドバー写真グリッド表示に関する記述が実装と乖離していたのを修正した
 * **修正の動機・概要**:
@@ -177,6 +258,21 @@
   * **README.md**: 「既存写真の一括取り込み（写真ローカルバックフィル、任意）」節を追加し、手順（ローカルへの展開・集約→スクリプト実行）を記載。
   * **仕様書**: 変更なし（このスクリプトはユーザーから見た機能ではなく開発者向けの一括投入手段のため）。
   * **設計書**: `designs/technical_design.md`の「位置情報付きメディア表示機能（写真データ取り込み基盤）」章に「既存写真の一括取り込み（写真ローカルバックフィル）」節を追加し、Bufferサイズ制約の背景・設計判断・処理段階を記載。
+
+### [2026-07-20] Issue #23対応として右サイドバーの写真グリッド表示を実装した
+* **修正の動機・概要**:
+  - Issue #23「写真閲覧機能」の残りスコープ（右サイドバーのグリッド表示・地図上の吹き出し表示・Google Picker UI）のうち、写真バイナリの遅延取得API（直前の対応）に続けて「右サイドバーのグリッド表示」に対話モードで対応した。
+  - Issue本文が要望する「ChakraUIに既存の写真をグリッド上にプレビューできるコンポーネントがあればそれをそのまま使う」を検討したが、専用コンポーネントは無いため、`SimpleGrid`+`Image`のプリミティブを組み合わせて実装した。「横長・縦長の写真は両端を均等にカットしてプレビュー表示する」はCSSの`object-fit: cover`標準の挙動そのものであり、独自のクロップ処理は不要と判断した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/api/photosApi.ts`（新規）: `resolvePhotoImageUrl`（`GET /photos/:id/image`のURLを組み立てる）。
+    - `frontend/src/api/activitiesApi.ts`: `Photo`型・`fetchPhotos`（`GET /activities/:id/photos`）を追加。
+    - `frontend/src/hooks/usePhotos.ts`（新規）: `usePassedMunicipalities`と同型の取得フック。
+    - `frontend/src/components/ActivityDetailSidebar.tsx`: `PhotoGrid`コンポーネント（新規）を追加し、通過自治体一覧の下に表示。
+    - 対応する単体テストを各ファイルへ追加（TDD、Red-Green）。単体テスト（フロントエンド全33ファイル290件）・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「位置情報付きメディア表示機能」章（従来WIPのみだった箇所）を、実装済みの内容（グリッド表示の仕様、地図上表示・取り込みUIは未実装である旨）で更新。
+  * **設計書**: `designs/technical_design.md`に「位置情報付きメディア表示機能（サイドバーのグリッド表示、Issue #23）」章を新設。
 
 ### [2026-07-20] Issue #23対応として写真バイナリの遅延取得APIを実装した
 * **修正の動機・概要**:
@@ -208,6 +304,20 @@
   * **README.md**: 変更なし。
   * **仕様書**: `specs/system_specification.md`の「行政区画フォーカス機能」章に、地図の中心合わせに関する記述を追加。
   * **設計書**: `designs/technical_design.md`の「行政区画フォーカス機能（Issue #76）」章に、パフォーマンス対策・地図中心合わせの設計内容を追記。
+
+### [2026-07-20] Issue #77対応としてフォーカス中アクティビティの線ホバーで走行距離を表示する機能を実装した
+* **修正の動機・概要**:
+  - Issue #77「フォーカスされたアクティビティの線上をマウスオーバーすると何Km地点が表示される」に、Issue #76に続けて自律モードで対応した。issue-reviewの観点に照らし特段のブロッカー・大きな曖昧さは無いと判断し、実装を進めた。
+  - 軌跡（`path`、位置飛びで分割済みのMultiLineString）上でカーソルに最も近い点までの、始点からの累積距離を求める処理が必要になった。バックエンドには`splitPathAtJumps`にHaversine距離計算の実装があるが、フロントエンド・バックエンド間でコードを共有する仕組みがプロジェクトに無いため、フロントエンド側に個別の実装（`findDistanceAlongPathAtPoint`）を追加した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/utils/findDistanceAlongPathAtPoint.ts`（新規）: 軌跡上の最近点までの累積距離を求める純粋関数。区間ごとのベクトル射影＋Haversine距離比較で最近区間を求める。
+    - `frontend/src/utils/mapLayerInteraction.ts`: `registerFocusedActivityHoverHandler`（新規）を追加。クリック検出と同じバウンディングボックス方式でフォーカス中の線上のホバーを検出する。
+    - `frontend/src/components/MapView.tsx`: マウント時に上記ハンドラを登録し、`maplibregl.Popup`（1インスタンスを使い回し）で距離を吹き出し表示する処理を追加。
+    - 対応する単体テストを追加（TDD、Red-Green）。単体テスト（フロントエンド全31ファイル284件・バックエンド全36ファイル206件）・lint・typecheck・型キャストチェック・E2Eテスト（4件）は全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`に「走行距離表示機能（マウスオーバー）」の章を新設。
+  * **設計書**: `designs/technical_design.md`に「走行距離表示機能（マウスオーバー、Issue #77）」章を新設。
 
 ### [2026-07-20] Issue #76対応として行政区画クリック・通過自治体一覧クリックによる範囲フォーカス機能を実装した
 * **修正の動機・概要**:

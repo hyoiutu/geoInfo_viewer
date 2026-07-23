@@ -72,6 +72,14 @@ root/
 - スタート・ゴールマーカーは`lucide-react`のアイコン（スタート: `Play`、ゴール: `Flag`）を`react-dom/server`の`renderToStaticMarkup`で静的にレンダリングし、`maplibregl.Marker`のDOM要素として表示する（`createStartMarkerElement`/`createGoalMarkerElement`）
   - 開始地点と終了地点が同じ座標の場合に手前へ描画されるよう、ゴールのマーカーを先に、スタートのマーカーを後に地図へ追加する（MapLibreの`Marker`はDOM要素として描画されるため、後から追加した方がDOM上で後に来ることを利用している）
 
+# 走行距離表示機能（マウスオーバー、Issue #77）
+- フォーカス中の線上のマウス位置から、始点（走行開始地点）までの軌跡に沿った距離を求める処理は、クリック検出と同じ理由（線が細く正確なホバーが難しい）でカーソル位置を中心としたバウンディングボックスでヒットテストした上で、実際の距離計算は取得済みの`focusedActivity.path`（既にフロントエンドが保持しているデータ）に対して行う（`registerFocusedActivityHoverHandler`、`frontend/src/utils/mapLayerInteraction.ts`）
+- 「軌跡上でカーソルに最も近い点」は、区間（2点間の線分）ごとにベクトル射影で最近点を求め、全区間中で最小のもの（Haversine距離で比較）を採用する。経度・緯度をそのまま平面座標とみなす近似計算であり、正確な測地線上の最近点計算は行わない（ホバー表示の精度としては十分なため。`findDistanceAlongPathAtPoint`、`frontend/src/utils/findDistanceAlongPathAtPoint.ts`）
+  - 2点間の距離算出（Haversine公式）は、バックエンドの`splitPathAtJumps`（`backend/src/activities/split-path-at-jumps.util.ts`）と同じ計算式だが、フロントエンド・バックエンド間でコードを共有する仕組みがこのプロジェクトに無いため個別に持つ
+- 始点からの累積距離は、区間グループ（位置飛びで分割済み、[自転車ログ表示機能](#自転車ログ表示機能)参照）内の区間を順に積算して求める。区間グループ間（位置飛びの箇所）の距離は実際には走行していない区間のため累積距離に含めない
+- 吹き出し表示は`maplibregl.Popup`（`closeButton: false`、`closeOnClick: false`、`anchor: 'bottom'`でカーソル上部に表示）を1つだけ使い回し、ホバー地点ごとに`setLngLat`/`setText`で内容を更新する。線から外れると`Popup.remove()`で非表示にする
+- スタート・ゴールマーカーとは異なり、この吹き出しはReact管理下の状態（props）と紐付かない純粋にイベント駆動のUIのため、`MapView`内で直接（`useRef`で保持する`maplibregl.Popup`インスタンス1つを介して）管理する。地図操作としての「カーソル位置からの検出」ロジックのみを`registerFocusedActivityHoverHandler`として`mapLayerInteraction.ts`へ切り出している
+
 # 通過自治体表示機能
 - 全国の市区町村境界データ（[政府統計の総合窓口(e-Stat)地図で見る統計(統計GIS)提供の市区町村界データ、GeoShapeリポジトリ、高解像度版、政令指定都市統合版ではない方](https://geoshape.ex.nii.ac.jp/city/choropleth/)）をバックエンドのDB（`municipalities`テーブル、PostGIS）へ投入しておく（`pnpm --filter backend run seed:municipalities`、詳細はREADME.md参照）
   - `municipalities`テーブルは`era`列（年代識別子。現行データは`'current'`、過去データはGeoShapeの基準日をそのまま文字列で保持。例:`'2000-10-01'`）を持ち、複数年代分のデータを同じテーブルに格納する（Issue #34）。現行データは`'20230101'`（国土数値情報(N03)の最新基準日）、`2000-10-01`は`'20001001'`（平成の大合併前）をそれぞれGeoShapeのtopojson基準日として使う。`scripts/seed-municipalities.ts`（`backend/src/municipalities/era.constants.ts`の`MUNICIPALITY_ERAS`で定義された年代分）が、年代ごとに既存行のみを洗い替えて投入する
@@ -155,6 +163,20 @@ Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの
   - 写真の実バイナリ自体は返さない（`file_name`・`taken_at`・`location`のみを含む`PhotoDto`）。プレビュー表示に必要な実バイナリは、後述の`GET /photos/:id/image`で別途遅延取得する
 - 写真バイナリの遅延取得は`GET /photos/:id/image`（`PhotosController.getImage`、`PhotosService.findImageByPhotoId`）で実現する。対象写真の`source_file_id`（月別アーカイブzipのGoogle Drive fileId）をダウンロードし、`adm-zip`で`archive_path`のエントリを取り出してレスポンスする（NestJSの`StreamableFile`、Content-Typeは`file_name`の拡張子から`resolveImageContentType`で解決する`image-content-type.util.ts`）。写真・エントリのいずれかが見つからない場合は404を返す
   - 月別アーカイブzipのダウンロード結果は`PhotosService`インスタンス内のメモリ（`Map<sourceFileId, Buffer>`、挿入順を利用した簡易LRU、上限5件）へキャッシュする。1つのアクティビティに紐づく写真は撮影年月が近接することが多く、写真ごとに同じ月別アーカイブを再ダウンロードすると無駄が大きいため（Issue #80のパフォーマンス対応時の教訓を踏まえ、実装時点から対策した）
+
+# 位置情報付きメディア表示機能（サイドバーのグリッド表示、Issue #23）
+- フロントエンドの取得は`usePhotos`フック（`frontend/src/hooks/usePhotos.ts`、`fetchPhotos`＝`GET /activities/:id/photos`）が担い、`usePassedMunicipalities`と同じ「activityIdが変わるたびに再取得し、アンマウント/依存値変化時にキャンセルフラグで古い結果の上書きを防ぐ」パターンを踏襲する
+- 表示は`ActivityDetailSidebar.tsx`の`PhotoGrid`コンポーネント（`ActivityDetail`内、通過自治体一覧の下に配置）が担う。ChakraUIに写真ギャラリー専用のコンポーネントは無いため、`SimpleGrid`（3列）+`Image`の組み合わせで実現する
+  - 正方形プレビュー・はみ出た部分の均等カットは、`Image`に`aspectRatio="1"`・`objectFit="cover"`を指定するのみで実現している（`object-fit: cover`は中央基準で両端を均等にクロップするCSS標準の挙動のため、独自のクロップ処理は実装していない）
+  - 各`Image`の`src`は`resolvePhotoImageUrl`（`frontend/src/api/photosApi.ts`）が返す`GET /photos/:id/image`のURLをそのまま指定する。画像はバイナリで返るためJSON用の`fetch`ラッパーは持たず、ブラウザの`<img>`に直接URLを渡して読み込ませる
+- 地図上の吹き出し表示（位置情報をもとにした表示、Issue本文の要望）は本対応の対象外で未実装
+
+## 写真ローカルフラット化ツール
+Google Takeoutで一括ダウンロードした写真をローカルへ展開すると、アルバム単位・年月単位等でディレクトリが細かくネストされた状態になる。既存写真の一括取り込み（写真ローカルバックフィル、別途対応）は入力としてサブディレクトリの無い1つのフラットなディレクトリを前提とするため、ネストされた展開データをフラット化する前処理ツール`backend/src/photos/flatten-local-photo-directory.ts`（`pnpm --filter backend run flatten:photos-local -- <展開済みディレクトリ> <出力先ディレクトリ>`）を用意した。
+
+- `seed-municipalities.ts`と同様、DIコンテナを経由しない独立スクリプトとして実装（DB接続も不要な純粋なファイル操作のため、`DataSource`の初期化も行わない）。
+- 対象ディレクトリを再帰的に走査し、見つかった全ファイル（写真・JSONサイドカーを問わない）を出力先ディレクトリへコピーする。元のディレクトリ構造・ファイルは変更しない（コピーのみ）。
+- Google Takeoutは、1枚の写真が複数のアルバムに属する場合、同一内容のファイルが複数のディレクトリに重複して含まれることがある。ファイル名が衝突した際は内容のSHA-256ハッシュ（`node:crypto`、動画等の大きいファイルでもメモリを圧迫しないようストリームで計算）を比較し、内容が完全に一致する場合は重複とみなしコピーをスキップして1件に集約する。内容が異なる場合は、`mergeMonthlyArchive`（月別アーカイブ内での同名衝突回避）と共通の`resolveUniquePath`（`monthly-archive.util.ts`からexport）で拡張子の直前へ連番（`-2`, `-3`, ...）を付けて別ファイルとして保存する。
 
 ## 既存写真の一括取り込み（写真ローカルバックフィル）
 `PhotoIngestService.ingest`（`POST /photos/ingest`）はTakeout zip全体を一度にメモリへ展開する方式（`adm-zip`、Buffer型）のため、Node.jsの`Buffer`最大サイズ（64bit環境で約2〜4GB）を超えるzipを扱えない。実データでは1エクスポートあたり最大50GB・複数ファイルという規模になることが判明し、既存写真をまとめて取り込むにはこの方式が使えないことがIssue #23の対応中に分かった（詳細な検討経緯はIssue #23のコメント参照）。この制約に対応するため、ユーザーが事前にTakeout zipを手元で展開し写真本体・JSONサイドカーをサブディレクトリなしの1フラットディレクトリへ集約した上で、それ以降（年月ごとの振り分け・DBへの投入）を自動化する`backend/src/photos/backfill-photos-from-local.ts`（`pnpm --filter backend run backfill:photos-local -- <ディレクトリパス>`）を用意した。

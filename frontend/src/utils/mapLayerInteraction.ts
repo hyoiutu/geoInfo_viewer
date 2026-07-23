@@ -13,6 +13,7 @@ import {
 import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
 import { cyclingActivityToGeoJson } from './cyclingActivityToGeoJson';
+import { findDistanceAlongPathAtPoint } from './findDistanceAlongPathAtPoint';
 import { resolveStyleLayerIds, resolveUnusedAdminBoundaryLayerIds } from './mapLayerCategory';
 import { calculatePolygonCentroid } from './polygonCentroid';
 import { createGoalMarkerElement, createStartMarkerElement } from './startGoalMarkerElement';
@@ -54,6 +55,49 @@ export const registerBicycleLogClickHandler = (
     if (ids.length > 0) {
       onSelectActivities(ids);
     }
+  });
+};
+
+/**
+ * フォーカス中のアクティビティの線上をマウスオーバーしたとき、始点からその地点までの軌跡に沿った距離を
+ * コールバックへ渡す（Issue #77）。クリックと同様に線が細く正確なホバーが難しいため、カーソル位置を中心とした
+ * バウンディングボックスでヒットテストする。フォーカス中のアクティビティが無い、線上でない、または軌跡
+ * （GPSルート）を持たない場合はonHoverEndを呼ぶ
+ * @param map マウス移動を監視するMapLibre地図インスタンス
+ * @param getFocusedActivity 呼び出し時点でフォーカス中のアクティビティを返す関数。未フォーカスの場合はnull
+ * @param onHover 検出した地点(経度緯度)と、始点からその地点までの軌跡に沿った距離(メートル)を渡すコールバック
+ * @param onHoverEnd 線上から外れた（またはフォーカス無し・軌跡無し）ときに呼ばれるコールバック
+ */
+export const registerFocusedActivityHoverHandler = (
+  map: maplibregl.Map,
+  getFocusedActivity: () => CyclingActivity | null,
+  onHover: (point: [number, number], distanceMeters: number) => void,
+  onHoverEnd: () => void
+) => {
+  map.on('mousemove', (event) => {
+    const focusedActivity = getFocusedActivity();
+    if (!focusedActivity?.path) {
+      onHoverEnd();
+      return;
+    }
+
+    const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
+      [event.point.x - HIT_TEST_RADIUS_PX, event.point.y - HIT_TEST_RADIUS_PX],
+      [event.point.x + HIT_TEST_RADIUS_PX, event.point.y + HIT_TEST_RADIUS_PX]
+    ];
+    const features = map.queryRenderedFeatures(bbox, { layers: [BICYCLE_LOG_FOCUSED_LAYER_ID] });
+    if (features.length === 0) {
+      onHoverEnd();
+      return;
+    }
+
+    const point: [number, number] = [event.lngLat.lng, event.lngLat.lat];
+    const distanceMeters = findDistanceAlongPathAtPoint(focusedActivity.path, point);
+    if (distanceMeters === null) {
+      onHoverEnd();
+      return;
+    }
+    onHover(point, distanceMeters);
   });
 };
 

@@ -25,12 +25,14 @@ export type MergedMonthlyArchive = {
 
 /**
  * 指定したファイル名が既存パス集合と衝突しない場合はそのまま、衝突する場合は
- * 拡張子の直前に連番（-2, -3, ...）を付けて衝突しない名前を求める
+ * 拡張子の直前に連番（-2, -3, ...）を付けて衝突しない名前を求める。
+ * `mergeMonthlyArchive`（月別アーカイブ内での衝突回避）・写真ローカルフラット化スクリプト
+ * （フラットディレクトリ内での衝突回避）の両方から使う（Issue #23）
  * @param fileName 希望するファイル名
  * @param usedPaths 既に使用済みのパス集合
  * @returns 衝突しないファイル名
  */
-const resolveUniquePath = (fileName: string, usedPaths: Set<string>): string => {
+export const resolveUniquePath = (fileName: string, usedPaths: Set<string>): string => {
   if (!usedPaths.has(fileName)) {
     return fileName;
   }
