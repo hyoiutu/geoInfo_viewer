@@ -14,6 +14,15 @@
 
 ## 変更履歴
 
+### [2026-07-24] usePhotos.tsが削除済みのuseErrorReporterをimportしたままになりmainのフロントエンドビルドが壊れていたのを修正した
+* **修正の動機・概要**:
+  - PR #84（写真グリッド表示、`usePhotos.ts`が`useErrorReporter`を使用）とPR #88（`errorsAtom`のカプセル化に伴い`useErrorReporter.ts`を削除し、既知の呼び出し元4箇所を`useSetAtom(addErrorAtom)`へ置き換え）は、互いに他方のブランチの変更を知らない状態で独立に作成されたため、どちらもGit上は無競合でmainへマージできた。しかし両方がマージされた結果、PR #88が把握していなかった`usePhotos.ts`（PR #84由来）が、削除済みの`useErrorReporter.ts`を依然としてimportしたままとなり、mainのフロントエンドビルド・テストが失敗する状態になっていた（finish-reviewでPR #89の準備中、`main`をマージした際のテスト実行で発覚）。
+  - ファイル単位のテキスト差分としては競合しない「他ファイルからの参照が壊れる」という意味的な競合は、Gitのマージでは検出できないため、レビュー完了後・次のPR着手前に必ずテストスイート全体を実行して確認する重要性を再認識した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: `frontend/src/hooks/usePhotos.ts`の`useErrorReporter()`呼び出しを、PR #88で確立済みのパターンと同じ`useSetAtom(addErrorAtom)`へ置き換え。単体テスト（フロントエンド全34ファイル306件）・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし。
+  * **仕様書・設計書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化は無いため）。
+
 ### [2026-07-21] PR #40のレビュー対応(errorsAtomのsetterカプセル化)がmainに反映されていなかったのを復元し、react_rules.mdへルール化した
 * **修正の動機・概要**:
   - マージ済みPRのレビューコメントを調査した際、PR #40（Issue #28、Jotaiグローバルステート導入）で「setterを外部に出さないでください」「ルールにも追加してください」という明示的な指摘・依頼があり、対応コミット（`57240b4`）自体はGitHub上のPR #40に含まれ`merged_at`も記録されているにもかかわらず、`main`の実際の履歴にはこのコミットが含まれておらず、`errorsAtom.ts`は未カプセル化のまま・`useErrorReporter`も削除されないまま残っていたことが判明した。
