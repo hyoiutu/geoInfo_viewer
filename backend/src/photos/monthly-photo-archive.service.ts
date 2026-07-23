@@ -33,30 +33,32 @@ export class MonthlyPhotoArchiveService {
   /**
    * 年月ごとの写真グループをそれぞれ対応する月別アーカイブzipへ振り分けて保存する
    * @param accessToken Google Driveのアクセストークン
-   * @param groups 撮影年月ごとの写真グループ一覧
+   * @param groups 撮影年月（・任意でpart）ごとの写真グループ一覧。partを省略した場合は0として扱う
    * @returns 振り分け後の写真ごとの保存先情報一覧
    */
   async reorganize(accessToken: string, groups: YearMonthGroup[]): Promise<ReorganizedPhoto[]> {
     const reorganized: ReorganizedPhoto[] = [];
 
     for (const group of groups) {
-      const archive = await this.monthlyPhotoArchiveRepository.findOneBy({ yearMonth: group.yearMonth });
+      const part = group.part ?? 0;
+      const archive = await this.monthlyPhotoArchiveRepository.findOneBy({ yearMonth: group.yearMonth, part });
       const existingZipBuffer =
         archive !== null ? await this.googleDriveApiClient.downloadFile(accessToken, archive.driveFileId) : null;
 
       const { zipBuffer, entries } = mergeMonthlyArchive(existingZipBuffer, group.photos);
 
+      const fileName =
+        part > 0
+          ? `${group.yearMonth}-part${part + 1}${MONTHLY_ARCHIVE_FILE_EXTENSION}`
+          : `${group.yearMonth}${MONTHLY_ARCHIVE_FILE_EXTENSION}`;
       const driveFileId =
-        archive?.driveFileId ??
-        (await this.googleDriveApiClient.createFileMetadata(
-          accessToken,
-          `${group.yearMonth}${MONTHLY_ARCHIVE_FILE_EXTENSION}`
-        ));
+        archive?.driveFileId ?? (await this.googleDriveApiClient.createFileMetadata(accessToken, fileName));
       await this.googleDriveApiClient.updateFileContent(accessToken, driveFileId, zipBuffer);
 
       if (archive === null) {
         const newArchive = new MonthlyPhotoArchiveEntity();
         newArchive.yearMonth = group.yearMonth;
+        newArchive.part = part;
         newArchive.driveFileId = driveFileId;
         await this.monthlyPhotoArchiveRepository.save(newArchive);
       }

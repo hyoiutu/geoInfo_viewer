@@ -17,6 +17,7 @@ import {
 } from './local-photo-directory.util';
 import { MonthlyPhotoArchiveService } from './monthly-photo-archive.service';
 import { toPhotoEntity } from './photo-ingest.service';
+import { splitPhotosIntoSizedParts } from './split-photos-into-sized-parts.util';
 import { resolvePhotoMetadata } from './takeout-metadata.util';
 import { matchPhotosWithJsonSidecars } from './takeout-photo-matcher.util';
 
@@ -25,6 +26,16 @@ import { matchPhotosWithJsonSidecars } from './takeout-photo-matcher.util';
 // 大容量ファイルが対象ディレクトリに含まれる場合に備え、この上限を超えるファイルは
 // 読み込み自体を試みずスキップする（Issue #23、実際にGoogle Takeoutの動画で発生）
 const MAX_READABLE_FILE_SIZE_BYTES = 2 ** 31 - 1;
+
+// 1つの年月をこのバイト数ごとの複数part（zip）へ分割する。動画を多く含む月では
+// 元データ＋zip化後のバッファを同時に保持する必要があり、1つの月を丸ごと1つのzipにまとめようとすると
+// 実行環境の物理メモリ（実機は16GB）を超えてプロセスが強制終了される不具合が実際に発生した（Issue #23）
+const MAX_ARCHIVE_PART_SIZE_BYTES = 1 * 1024 * 1024 * 1024;
+
+// part列が存在しなかった時代（本対応より前）に「その年月の全写真を含む唯一のzip」として作成された
+// 既存行を表す特別な値。マイグレーション（AddPartToMonthlyPhotoArchives）が既存行にこの値を設定する。
+// これらの年月はサイズに関わらず常に処理済みとして扱い、再分割の対象にしない（Issue #23）
+const LEGACY_WHOLE_MONTH_PART = -1;
 
 // console.logはパイプ(tee等)へ出力する際、Node.jsによって非同期にバッファリングされることがあり、
 // プロセスが（ハング等により）外部から強制終了された場合、バッファ済みだが未フラッシュのログ行が
@@ -44,9 +55,11 @@ const log = (message: string): void => {
  *     実際にdataへアクセスされた時のみ読み込む。JSONで解決できる大多数の写真は本体を一切読み込まない）
  *   - 月別アーカイブへの再構成時（1ヶ月分のグループごとに読み込む。全件を同時には保持しない）
  * 対象件数が多く実行に長時間かかることを想定し、途中で中断され再実行された場合に備えて、
- * `monthly_photo_archives`テーブルに既にレコードがある年月（＝前回の実行で最後まで処理済みの月）は
- * 丸ごとスキップする。処理の途中（アップロード直後〜DB保存の間等）で中断された場合、その月の
- * レコードが無い・不完全な状態になりうるため、その場合は自動スキップされず再処理される（Issue #23）。
+ * `monthly_photo_archives`テーブルに`part: LEGACY_WHOLE_MONTH_PART`のレコードがある年月
+ * （＝本対応より前に一括で処理済みの月）は丸ごとスキップする。
+ * それ以外の年月は`MAX_ARCHIVE_PART_SIZE_BYTES`ごとの複数partへ分割して処理し、既に
+ * レコードがあるpartはスキップする。処理の途中（アップロード直後〜DB保存の間等）で中断された場合、
+ * そのpartのレコードが無い・不完全な状態になりうるため、その場合は自動スキップされず再処理される（Issue #23）。
  * `MAX_READABLE_FILE_SIZE_BYTES`（2GiB）を超えるファイル（動画等）は読み込み自体を試みずスキップし、
  * 完了時にパス一覧を出力する（手動での個別対応用）
  * @param directoryPath 走査対象のローカルディレクトリパス
@@ -99,7 +112,11 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
   }
 
   const groups = groupPhotosByYearMonth(photosWithMetadata);
-  const processedYearMonths = new Set((await monthlyPhotoArchiveRepository.find()).map((archive) => archive.yearMonth));
+  const archives = await monthlyPhotoArchiveRepository.find();
+  const processedYearMonths = new Set(
+    archives.filter((archive) => archive.part === LEGACY_WHOLE_MONTH_PART).map((archive) => archive.yearMonth)
+  );
+  const processedParts = new Set(archives.map((archive) => `${archive.yearMonth}:${archive.part}`));
   const remainingGroups = groups.filter((group) => !processedYearMonths.has(group.yearMonth));
   log(
     `撮影年月で${groups.length}グループに分類しました（処理済み: ${groups.length - remainingGroups.length}件、未処理: ${remainingGroups.length}件）`
@@ -112,33 +129,58 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
       continue;
     }
 
-    // 対象件数が多いと全体の実行に長時間かかりアクセストークンが失効しうるため、月ごとに取得し直す
-    // （GoogleDriveAuthServiceが有効期限内であればキャッシュを返すため、都度呼び出すコストは小さい）
-    const accessToken = await googleDriveAuthService.getAccessToken();
-
-    const groupWithData = {
-      yearMonth: group.yearMonth,
-      photos: group.photos.map((photo) => {
+    const photoSizeBytesByPath = new Map(
+      group.photos.map((photo) => {
         const localEntry = localEntryByPath.get(photo.entry.path);
         if (localEntry === undefined) {
           throw new Error(`写真エントリの読み込みに失敗しました: ${photo.entry.path}`);
         }
-        return { entry: readLocalPhotoData(localEntry), metadata: photo.metadata };
+        return [photo.entry.path, statSync(localEntry.absolutePath).size];
       })
-    };
+    );
+    const parts = splitPhotosIntoSizedParts(
+      group.photos,
+      (photo) => photoSizeBytesByPath.get(photo.entry.path) ?? 0,
+      MAX_ARCHIVE_PART_SIZE_BYTES
+    );
 
-    const totalBytes = groupWithData.photos.reduce((sum, photo) => sum + photo.entry.data.length, 0);
-    const totalMebibytes = (totalBytes / (1024 * 1024)).toFixed(1);
-    log(`[${group.yearMonth}] 処理開始（写真${groupWithData.photos.length}件、合計約${totalMebibytes}MiB）`);
+    for (const [partIndex, partPhotos] of parts.entries()) {
+      if (processedParts.has(`${group.yearMonth}:${partIndex}`)) {
+        log(`[${group.yearMonth} part${partIndex}] 前回の実行で処理済みのためスキップします`);
+        continue;
+      }
 
-    const reorganized = await monthlyPhotoArchiveService.reorganize(accessToken, [groupWithData]);
-    log(`[${group.yearMonth}] Google Driveへの振り分け・アップロードが完了しました`);
-    const entities = reorganized.map((photo) => toPhotoEntity(photo));
-    if (entities.length > 0) {
-      await photoRepository.save(entities);
-      savedCount += entities.length;
+      // 対象件数が多いと全体の実行に長時間かかりアクセストークンが失効しうるため、partごとに取得し直す
+      // （GoogleDriveAuthServiceが有効期限内であればキャッシュを返すため、都度呼び出すコストは小さい）
+      const accessToken = await googleDriveAuthService.getAccessToken();
+
+      const groupWithData = {
+        yearMonth: group.yearMonth,
+        part: partIndex,
+        photos: partPhotos.map((photo) => {
+          const localEntry = localEntryByPath.get(photo.entry.path);
+          if (localEntry === undefined) {
+            throw new Error(`写真エントリの読み込みに失敗しました: ${photo.entry.path}`);
+          }
+          return { entry: readLocalPhotoData(localEntry), metadata: photo.metadata };
+        })
+      };
+
+      const totalBytes = groupWithData.photos.reduce((sum, photo) => sum + photo.entry.data.length, 0);
+      const totalMebibytes = (totalBytes / (1024 * 1024)).toFixed(1);
+      log(
+        `[${group.yearMonth} part${partIndex}] 処理開始（写真${groupWithData.photos.length}件、合計約${totalMebibytes}MiB）`
+      );
+
+      const reorganized = await monthlyPhotoArchiveService.reorganize(accessToken, [groupWithData]);
+      log(`[${group.yearMonth} part${partIndex}] Google Driveへの振り分け・アップロードが完了しました`);
+      const entities = reorganized.map((photo) => toPhotoEntity(photo));
+      if (entities.length > 0) {
+        await photoRepository.save(entities);
+        savedCount += entities.length;
+      }
+      log(`[${group.yearMonth} part${partIndex}] ${entities.length}件を月別アーカイブへ振り分け・保存しました`);
     }
-    log(`[${group.yearMonth}] ${entities.length}件を月別アーカイブへ振り分け・保存しました`);
   }
 
   await dataSource.destroy();

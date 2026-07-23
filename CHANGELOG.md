@@ -14,6 +14,24 @@
 
 ## 変更履歴
 
+### [2026-07-23] 月別アーカイブをサイズ上限ごとの複数partへ分割し、メモリ不足によるプロセス強制終了を解消した（自律モード）
+* **修正の動機・概要**:
+  - timeout追加後も同じ月（写真729件・約16.6GiB）の処理開始直後にプロセスが（`ps aux`から消える形で、エラーも出さず）停止する事象が再発した。今回はnohup/disownで実行環境（バックグラウンドタスクの追跡）から完全に切り離した上で再実行したが、同じ地点で同様に停止したため、実行環境由来の外的要因（ハーネス側のタスク存続期間の制約等）ではないと判断した。
+  - 実機のメモリ量（16GB）を確認したところ、`readLocalPhotoData`で月グループ全写真の実バイナリ（約16.6GiB）をメモリに保持した状態のまま、`AdmZip.toBuffer()`がさらに同程度のサイズのzip結合バッファをもう1つ生成するため、ピークメモリ使用量が実機の物理メモリを大きく超えることが判明した。カーネルのメモリ不足によるプロセス強制終了（OOM kill）はアプリケーション側からは検知できず、エラーも出ないまま進行が止まって見える、という観測された症状と一致する。
+  - 対応として、1つの年月の写真を`MAX_ARCHIVE_PART_SIZE_BYTES`（1GiB）ごとの複数「part」に分割し、それぞれ独立したzipファイルとしてGoogle Driveへ保存する方式へ変更した。既存の`monthly_photo_archives`テーブル（48件、本対応より前に一括処理済み）は分割という概念が存在しなかった時代のデータのため、マイグレーションで`part = -1`（`LEGACY_WHOLE_MONTH_PART`）を設定し、サイズに関わらず常に処理済みとして扱うことで、再分割・重複アップロードを防いだ。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/migrations/1784788434237-AddPartToMonthlyPhotoArchives.ts`（新規）: `monthly_photo_archives`に`part`列を追加（既存行は-1で初期化）し、一意制約を`year_month`単独から`(year_month, part)`の組へ変更。実DBに対して適用済み（適用前に`monthly_photo_archives`・`photos`テーブルをバックアップ済み）。
+    - `backend/src/photos/entities/monthly-photo-archive.entity.ts`: `part`列を追加。
+    - `backend/src/photos/group-photos-by-year-month.util.ts`: `YearMonthGroup`に任意の`part`フィールドを追加（省略時は0）。
+    - `backend/src/photos/split-photos-into-sized-parts.util.ts`（新規）: 写真一覧を累積サイズ上限ごとに分割する純粋関数。単体テストを新規追加。
+    - `backend/src/photos/monthly-photo-archive.service.ts`: `reorganize`が`(yearMonth, part)`の組でアーカイブを検索・作成するよう変更。ファイル名はpart>0の場合`-partN`を付与。
+    - `backend/src/photos/backfill-photos-from-local.ts`: 年月ごとの処理を、`part = -1`の既存行がある年月は丸ごとスキップ、それ以外はpartごとに分割してpart単位でスキップ判定・処理するよう変更。
+    - 単体テスト（バックエンド全41ファイル241件）・lint・typecheckは全てGreen。biome --writeの適用によりNestJSのDIコンストラクタ引数（`GoogleDriveApiClient`）が`import type`化されDIが壊れる既知の罠が再発したため、手動で通常のimportへ戻した。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（開発者向け実装の内部変更のため）。
+  * **設計書**: `designs/technical_design.md`の該当箇所に、part分割の経緯・スキップ判定の2段階化・タイムアウト追加が保険的対策であり真因はメモリ不足だったことを追記。
+
 ### [2026-07-23] GoogleDriveApiClientの全リクエストにtimeoutを追加し、進行状況ログを同期出力へ変更した（自律モード）
 * **修正の動機・概要**:
   - STORED（無圧縮）への変更後に再実行したが、依然として48/178グループから進捗しなかった。今回はプロセスが完全に終了（`ps aux`に存在せず、exit code 0、ただし最終的な「完了しました」ログは出ないまま）していることを確認した。macOSのシステムログ・クラッシュレポート・sleep/wakeログを調査したが、OOM kill・システムスリープ・クラッシュのいずれの痕跡も見当たらなかった。

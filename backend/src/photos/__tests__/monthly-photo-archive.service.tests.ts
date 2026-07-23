@@ -59,7 +59,7 @@ describe('MonthlyPhotoArchiveServiceに関するテスト', () => {
 
     const result = await service.reorganize('token-xyz', [{ yearMonth: '2026-07', photos: [photo] }]);
 
-    expect(findOneBy).toHaveBeenCalledWith({ yearMonth: '2026-07' });
+    expect(findOneBy).toHaveBeenCalledWith({ yearMonth: '2026-07', part: 0 });
     expect(downloadFile).toHaveBeenCalledWith('token-xyz', 'existing-file-1');
     expect(mergeMonthlyArchive).toHaveBeenCalledWith(Buffer.from('existing-zip'), [photo]);
     expect(createFileMetadata).not.toHaveBeenCalled();
@@ -87,8 +87,32 @@ describe('MonthlyPhotoArchiveServiceに関するテスト', () => {
     expect(mergeMonthlyArchive).toHaveBeenCalledWith(null, [photo]);
     expect(createFileMetadata).toHaveBeenCalledWith('token-xyz', '2026-08.zip');
     expect(updateFileContent).toHaveBeenCalledWith('token-xyz', 'new-file-1', Buffer.from('new-zip'));
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ yearMonth: '2026-08', driveFileId: 'new-file-1' }));
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ yearMonth: '2026-08', part: 0, driveFileId: 'new-file-1' })
+    );
     expect(result).toEqual([{ photo, sourceFileId: 'new-file-1', archivePath: 'IMG_2.jpg' }]);
+  });
+
+  test('partが1以上の場合、ファイル名にpart番号を含めて新規zipを作成する', async () => {
+    const downloadFile = vi.fn();
+    const createFileMetadata = vi.fn().mockResolvedValue('new-file-2');
+    const updateFileContent = vi.fn().mockResolvedValue(undefined);
+    const findOneBy = vi.fn().mockResolvedValue(null);
+    const save = vi.fn().mockResolvedValue(undefined);
+    const photo = createPhoto('album/IMG_3.jpg');
+    vi.mocked(mergeMonthlyArchive).mockReturnValue({
+      zipBuffer: Buffer.from('new-zip-2'),
+      entries: [{ photo, archivePath: 'IMG_3.jpg' }]
+    });
+    const service = await createService({ downloadFile, createFileMetadata, updateFileContent, findOneBy, save });
+
+    await service.reorganize('token-xyz', [{ yearMonth: '2026-08', part: 1, photos: [photo] }]);
+
+    expect(findOneBy).toHaveBeenCalledWith({ yearMonth: '2026-08', part: 1 });
+    expect(createFileMetadata).toHaveBeenCalledWith('token-xyz', '2026-08-part2.zip');
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ yearMonth: '2026-08', part: 1, driveFileId: 'new-file-2' })
+    );
   });
 
   test('複数年月のグループをそれぞれ処理し、結果を1つの配列にまとめる', async () => {
