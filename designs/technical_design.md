@@ -139,7 +139,7 @@ Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの
   6. `MonthlyPhotoArchiveService.reorganize`が、年月グループごとに以下を行う
      - `monthly_photo_archives`テーブルを年月で検索し、対応する月別アーカイブが既存か確認する
      - 既存の場合は`GoogleDriveApiClient.downloadFile`でその月別アーカイブzipをダウンロードし、無ければ新規（未作成）として扱う
-     - `mergeMonthlyArchive`（`monthly-archive.util.ts`）が、ダウンロードした（または空の）zipへ当該年月の新規写真を追記する。zip内の配置はTakeout側のディレクトリ構造を捨てファイル名（basename）のみを使い、異なる元zip由来で同名ファイルが衝突する場合は拡張子の直前へ連番（`-2`, `-3`, ...）を付けて回避する
+     - `mergeMonthlyArchive`（`monthly-archive.util.ts`）が、ダウンロードした（または空の）zipへ当該年月の新規写真を追記する。zip内の配置はTakeout側のディレクトリ構造を捨てファイル名（basename）のみを使い、異なる元zip由来で同名ファイルが衝突する場合は拡張子の直前へ連番（`-2`, `-3`, ...）を付けて回避する。追加するエントリはSTORED（無圧縮）とする。`adm-zip`の既定であるDEFLATE圧縮は写真・動画（既に圧縮済みの形式でサイズ削減効果がほぼ無い）に対してもCPUバウンドな圧縮処理を行うため、GB規模になりうる月別アーカイブでは圧縮自体が実行時間を大きく圧迫することが写真ローカルバックフィルの実行時に判明したため（Issue #23）
      - 既存アーカイブが無い場合は`GoogleDriveApiClient.createFileMetadata`で新規zipファイルを作成し、`monthly_photo_archives`テーブルへ`year_month`・`drive_file_id`の対応を保存する。既存・新規いずれの場合も`GoogleDriveApiClient.updateFileContent`でzip本体をアップロードする
        - `updateFileContent`はGoogle Drive APIの「レジューマブルアップロード」方式（`uploadType=resumable`）を使う。当初は「シンプルアップロード」（`uploadType=media`）だったが、Google Drive APIはこの方式を数MB程度までしか信頼できる動作を保証しておらず、実際に月別アーカイブzip（写真・動画を含む場合は数十MB〜になりうる）のアップロードでエラーが発生した（写真ローカルバックフィルの実行時に発覚、Issue #23）。レジューマブル方式は、セッション開始リクエストでレスポンスの`Location`ヘッダーからアップロード先セッションURLを取得し、そのURLへ実際のバイナリ本体をアップロードする2段階で行う
          - セッション開始リクエストは、Google公式ドキュメントの推奨に従いボディを空のJSON（`Content-Type: application/json; charset=UTF-8`）とし、`X-Upload-Content-Type`（アップロードするバイナリのMIMEタイプ）・`X-Upload-Content-Length`（バイト数）を明示する
