@@ -169,6 +169,8 @@ Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの
 - 表示は`ActivityDetailSidebar.tsx`の`PhotoGrid`コンポーネント（`ActivityDetail`内、通過自治体一覧の下に配置）が担う。ChakraUIに写真ギャラリー専用のコンポーネントは無いため、`SimpleGrid`（3列）+`Image`の組み合わせで実現する
   - 正方形プレビュー・はみ出た部分の均等カットは、`Image`に`aspectRatio="1"`・`objectFit="cover"`を指定するのみで実現している（`object-fit: cover`は中央基準で両端を均等にクロップするCSS標準の挙動のため、独自のクロップ処理は実装していない）
   - 各`Image`の`src`は`resolvePhotoImageUrl`（`frontend/src/api/photosApi.ts`）が返す`GET /photos/:id/image`のURLをそのまま指定する。画像はバイナリで返るためJSON用の`fetch`ラッパーは持たず、ブラウザの`<img>`に直接URLを渡して読み込ませる
+  - `usePhotos`の`isLoading`（「写真を取得中...」表示の切り替え）は、メタデータ取得（`GET /activities/:id/photos`、撮影日時等のみを返す軽量なDBクエリ）の完了のみを表し、写真の実バイナリ取得（`GET /photos/:id/image`、月別アーカイブzipのダウンロードを伴いうる重い処理）の完了は含まない。当初この2つを区別していなかったため、メタデータ取得完了時点で「取得中...」表示が消えるにもかかわらず、実際に写真が表示されるまでには（月別アーカイブzipが未キャッシュの場合、Google Driveからのダウンロードを伴い）数十秒かかることがあり、ユーザーから「表示準備ができる前にローディング表示が消える」という指摘を受けて改善した（Issue #23フォローアップ）
+  - 改善後は、メタデータ取得完了後ただちに写真の枚数分の`PhotoGridItem`（新規、`ActivityDetailSidebar.tsx`）を表示する。各`PhotoGridItem`は`isImageLoaded`（`useState`）で自身の画像の読み込み完了を個別に管理し、未完了の間は`Image`を`visibility="hidden"`にしつつファイル名＋`Spinner`（ChakraUI）を重ねて表示、`Image`の`onLoad`（`onError`時も同様に扱い、読み込み失敗時にスピナーが表示され続けることを防ぐ）で読み込み済みへ切り替える。全件の読み込み完了を待たず、写真ごとに読み込めたものから順に表示される
 - 地図上の吹き出し表示（位置情報をもとにした表示、Issue本文の要望）は本対応の対象外で未実装
 
 ## 写真ローカルフラット化ツール
