@@ -14,6 +14,23 @@
 
 ## 変更履歴
 
+### [2026-07-25] 既存の月別アーカイブzipから動画を削除し、part分割された年月を統合する一括処理を実装した（自律モード）
+* **修正の動機・概要**:
+  - 写真グリッドの読み込みが遅い原因（Issue #23フォローアップ）についてユーザーと調査した結果、動画が写真グリッド表示（静止画プレビューのみ）には使われておらず容量のみを圧迫していることが判明した。今後、元サイズの写真を表示する機能を追加予定で、その際にグリッド表示時点で裏側で元サイズzipのダウンロードを進めておく方針とすることも踏まえ、動画は削除する方針でユーザーと合意した（Issue #97）。
+  - ユーザーからの依頼により、既存296件の月別アーカイブzip（Google Drive上）から動画を削除し、part分割されていた年月を単一のzipへ統合する一括処理を自律的に実装・実行した。実データへの破壊的な変更のため、以下の安全策を講じた: (1)古いDriveファイルの削除は新しいzip・DB更新が全て成功した後のベストエフォートな後始末とし、失敗しても整合性は壊れない設計にした、(2)1年月の合計サイズが2GiBを超える場合は今回スキップし完了時に一覧を出力する（写真ローカルバックフィル時に発生したメモリ不足クラッシュと同種の問題を避けるため）、(3)DBスキーマ変更前にバックアップを取得した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/video-file.util.ts`（新規）: `isVideoFile`。拡張子から動画ファイルかどうかを判定する。
+    - `backend/src/photos/consolidate-monthly-archive.util.ts`（新規）: `consolidateArchiveWithoutVideos`。複数アーカイブ由来のエントリから動画を除外し1つのzipへ統合する純粋関数。
+    - `backend/src/photos/monthly-archive.util.ts`: 既存のprivate定数`ZIP_COMPRESSION_METHOD_STORED`をexportし、上記と共通利用できるようにした（DRY）。
+    - `backend/src/google-drive/google-drive-api.client.ts`: `deleteFile`（新規）を追加。
+    - `backend/src/photos/entities/video-stripped-year-month.entity.ts`（新規）・`backend/src/migrations/1784914200748-CreateVideoStrippedYearMonths.ts`（新規）: 処理済み年月を記録する専用テーブル。実DBに適用済み（適用前にバックアップ取得済み）。
+    - `backend/src/photos/strip-videos-and-consolidate-archives.ts`（新規）: オーケストレーションスクリプト（`pnpm --filter backend run strip-videos:photos`）。
+    - 対応する単体テストを新規追加（TDD、Red-Green）。単体テスト（バックエンド全44ファイル264件）・lint・typecheck・型キャストチェックは全てGreen。biome --writeの適用によりNestJSのDIコンストラクタ引数（`HttpService`）が`import type`化されDIが壊れる既知の罠が再発したため、手動で通常のimportへ戻した。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化は無いため）。
+  * **設計書**: `designs/technical_design.md`に「月別アーカイブからの動画削除・part統合（Issue #97）」節を新設。
+
 ### [2026-07-24] 写真グリッドの「写真を取得中...」表示が、実際の画像表示準備より早く消えてしまう不具合を修正した
 * **修正の動機・概要**:
   - ユーザーから、アクティビティをフォーカスした際「写真を取得中...」の表示がすぐに消えるにもかかわらず、実際に写真が表示されるまで数十秒かかるとの指摘を受けた。

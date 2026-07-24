@@ -21,14 +21,21 @@ describe('GoogleDriveApiClientに関するテスト', () => {
     httpServiceGet: ReturnType<typeof vi.fn>,
     httpServicePost: ReturnType<typeof vi.fn>,
     httpServicePatch: ReturnType<typeof vi.fn> = vi.fn(),
-    httpServicePut: ReturnType<typeof vi.fn> = vi.fn()
+    httpServicePut: ReturnType<typeof vi.fn> = vi.fn(),
+    httpServiceDelete: ReturnType<typeof vi.fn> = vi.fn()
   ) => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         GoogleDriveApiClient,
         {
           provide: HttpService,
-          useValue: { get: httpServiceGet, post: httpServicePost, patch: httpServicePatch, put: httpServicePut }
+          useValue: {
+            get: httpServiceGet,
+            post: httpServicePost,
+            patch: httpServicePatch,
+            put: httpServicePut,
+            delete: httpServiceDelete
+          }
         }
       ]
     }).compile();
@@ -305,6 +312,35 @@ describe('GoogleDriveApiClientに関するテスト', () => {
         expect(error.getResponse()).toEqual(
           expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveAuthFailed })
         );
+      }
+    });
+  });
+
+  describe('deleteFile', () => {
+    test('アクセストークンをAuthorizationヘッダーに含め、指定したファイルを削除する', async () => {
+      const httpServiceDelete = vi.fn().mockReturnValue(of({ data: undefined }));
+      const client = await createClient(vi.fn(), vi.fn(), vi.fn(), vi.fn(), httpServiceDelete);
+
+      await client.deleteFile('token-xyz', 'file-1');
+
+      expect(httpServiceDelete).toHaveBeenCalledWith(
+        expect.stringContaining('/files/file-1'),
+        expect.objectContaining({ headers: { Authorization: 'Bearer token-xyz' } })
+      );
+    });
+
+    test('失敗した場合、errorCode: GOOGLE_DRIVE_API_ERRORのAppExceptionを投げる', async () => {
+      const httpServiceDelete = vi
+        .fn()
+        .mockReturnValue(throwError(() => ({ isAxiosError: true, response: { status: 500 } })));
+      const client = await createClient(vi.fn(), vi.fn(), vi.fn(), vi.fn(), httpServiceDelete);
+
+      try {
+        await client.deleteFile('token-xyz', 'file-1');
+        expect.unreachable('例外が投げられるはず');
+      } catch (error) {
+        assertIsAppException(error);
+        expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
       }
     });
   });
