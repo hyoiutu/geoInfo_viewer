@@ -288,6 +288,34 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     expect(screen.getByAltText('b.jpg')).toHaveAttribute('src', resolvePhotoImageUrl(2));
   });
 
+  test('写真表示直後は各写真にファイル名とローディングアイコンを表示し、画像の読み込み完了後に消える', async () => {
+    const photos = [{ id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null }];
+    vi.mocked(fetchPhotos).mockResolvedValue(photos);
+    const activity = createActivity({ id: '42' });
+
+    renderWithChakra(
+      <ActivityDetailSidebar
+        activities={[activity]}
+        focusedActivity={activity}
+        onFocus={vi.fn()}
+        onBackFromDetail={vi.fn()}
+        onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByAltText('a.jpg')).toBeInTheDocument();
+    });
+    expect(screen.getByText('a.jpg')).toBeInTheDocument();
+
+    fireEvent.load(screen.getByAltText('a.jpg'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('a.jpg')).not.toBeInTheDocument();
+    });
+  });
+
   test('写真が無い場合、その旨を表示する', async () => {
     vi.mocked(fetchPhotos).mockResolvedValue([]);
     const activity = createActivity({});
