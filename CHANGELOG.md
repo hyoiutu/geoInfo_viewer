@@ -14,6 +14,22 @@
 
 ## 変更履歴
 
+### [2026-07-25] 動画削除・part統合処理をストリーミング化し、2GiB超でスキップされていた残り年月も処理できるようにした（Issue #99、自律モード）
+* **修正の動機・概要**:
+  - Issue #97の一括処理は全178年月中141件が完了したが、月合計サイズが2GiBを超える37年月（実データで最大約16.28GiB）は、zip全体をメモリ上へ保持する実装のままだとメモリ枯渇を招く恐れがあるため、安全のため未処理のままスキップしていた。
+  - ユーザーから「残った年月の動画も処理してほしい」との依頼を受け、GitHub Issue #99を起票し、ダウンロード・zip統合・アップロードの全工程をディスク経由のストリーミング処理へ置き換えることで、月合計サイズに関わらず一定のメモリ使用量で処理できるようにした。あわせて、グリッド/吹き出し表示用の300px幅サムネイルZip生成（Issue #100）の依頼も受けたが、こちらは本Issueの完了後（全年月が単一アーカイブ・動画なしの状態になってから）着手する。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/consolidate-monthly-archive-streaming.util.ts`（新規）: `consolidateArchiveFilesWithoutVideosStreaming`。`yauzl`でディスク上の元アーカイブzipをエントリ単位に逐次読み込み、動画を除外して`yazl`でディスク上の新規zipへ逐次書き込む。
+    - `backend/src/photos/consolidate-monthly-archive.util.ts`: バッファ全体を一度に保持する旧実装（`consolidateArchiveWithoutVideos`・`ArchiveSourceEntry`・`ConsolidatedArchive`）を削除し、ストリーミング版と共有する型（`ConsolidatedKeptEntry`・`RemovedVideoEntry`）のみを残した。
+    - `backend/src/google-drive/google-drive-api.client.ts`: `downloadFileToPath`・`uploadFileFromPath`（いずれも新規）を追加。既存の`downloadFile`/`updateFileContent`（写真取り込み等の他処理で引き続き使用するため変更していない）とは別に、ファイル内容をディスクへストリーミング転送する。アップロードのチャンク読み出しはファイルサイズに関わらずチャンク1つ分のバッファのみを使う。
+    - `backend/src/photos/strip-videos-and-consolidate-archives.ts`: ダウンロード・統合・アップロードをストリーミング方式へ置き換え、2GiBの安全弁（サイズ超過スキップ）を撤廃した。年月ごとの一時作業ディレクトリは`finally`で必ず削除する。
+    - `backend/package.json`: `yauzl`/`yazl`（および型定義）を追加。
+    - 対応する単体テストを新規追加（TDD、Red-Green）。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化は無いため）。
+  * **設計書**: `designs/technical_design.md`の「月別アーカイブからの動画削除・part統合」節をストリーミング化の内容に更新（見出しをIssue #97 / #99に変更）。
+
 ### [2026-07-25] 既存の月別アーカイブzipから動画を削除し、part分割された年月を統合する一括処理を実装した（自律モード）
 * **修正の動機・概要**:
   - 写真グリッドの読み込みが遅い原因（Issue #23フォローアップ）についてユーザーと調査した結果、動画が写真グリッド表示（静止画プレビューのみ）には使われておらず容量のみを圧迫していることが判明した。今後、元サイズの写真を表示する機能を追加予定で、その際にグリッド表示時点で裏側で元サイズzipのダウンロードを進めておく方針とすることも踏まえ、動画は削除する方針でユーザーと合意した（Issue #97）。

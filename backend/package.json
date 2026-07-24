@@ -31,7 +31,9 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
     "topojson-client": "^3.1.0",
-    "typeorm": "^1.0.0"
+    "typeorm": "^1.0.0",
+    "yauzl": "^3.4.0",
+    "yazl": "^3.3.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.10",
@@ -43,6 +45,8 @@
     "@types/pg": "^8.20.0",
     "@types/topojson-client": "^3.1.5",
     "@types/topojson-specification": "1.0.5",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1",
     "dotenv": "^17.4.2",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",

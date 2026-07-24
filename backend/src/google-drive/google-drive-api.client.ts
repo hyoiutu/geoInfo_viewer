@@ -1,3 +1,6 @@
+import { createWriteStream } from 'node:fs';
+import { open } from 'node:fs/promises';
+import type { Readable } from 'node:stream';
 import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { firstValueFrom } from 'rxjs';
@@ -101,6 +104,39 @@ export class GoogleDriveApiClient {
   }
 
   /**
+   * 指定したファイルの実体（バイナリ）を、メモリ上へ全体を保持せずディスク上の指定パスへ
+   * ストリーミングでダウンロードする。`downloadFile`（Bufferとして全体をメモリへ返す）と異なり、
+   * 月合計サイズが数GB〜十数GBになりうる月別アーカイブzipの動画削除・part統合処理
+   * （`strip-videos-and-consolidate-archives.ts`）で、Node.jsプロセスのメモリ枯渇を避けるために使う（Issue #99）
+   * @param accessToken Google Driveのアクセストークン
+   * @param fileId 対象のDriveファイルID
+   * @param destPath ダウンロード先のファイルパス
+   */
+  async downloadFileToPath(accessToken: string, fileId: string, destPath: string): Promise<void> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<Readable>(`${GOOGLE_DRIVE_API_BASE_URL}/files/${fileId}`, {
+          // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
+          headers: { Authorization: `Bearer ${accessToken}` },
+          params: { alt: 'media' },
+          responseType: 'stream',
+          timeout: GOOGLE_DRIVE_DOWNLOAD_TIMEOUT_MS
+        })
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        const writeStream = createWriteStream(destPath);
+        response.data.on('error', reject);
+        writeStream.on('error', reject);
+        writeStream.on('finish', resolve);
+        response.data.pipe(writeStream);
+      });
+    } catch (error) {
+      throw toGoogleDriveApiException(error);
+    }
+  }
+
+  /**
    * 空のファイルメタデータ（ファイル名のみ）を新規作成する。コンテンツ本体は
    * updateFileContentで別途アップロードする（Google Drive APIの仕様上、作成とアップロードが分離しているため）
    * @param accessToken Google Driveのアクセストークン
@@ -192,6 +228,74 @@ export class GoogleDriveApiClient {
       }
     } catch (error) {
       throw toGoogleDriveApiException(error);
+    }
+  }
+
+  /**
+   * ディスク上のファイルを、内容全体をメモリへ読み込まずチャンク単位で逐次読み出しながら
+   * レジューマブルアップロードする。`updateFileContent`（Bufferを丸ごと受け取る）と異なり、
+   * 月合計サイズが数GB〜十数GBになりうる月別アーカイブzipの動画削除・part統合処理
+   * （`strip-videos-and-consolidate-archives.ts`）で、Node.jsプロセスのメモリ枯渇を避けるために使う。
+   * チャンクの読み出しには同一サイズのバッファを使い回すため、ファイル全体のサイズに関わらず
+   * 常にチャンク1つ分のメモリ使用量で済む（Issue #99）
+   * @param accessToken Google Driveのアクセストークン
+   * @param fileId 更新対象のDriveファイルID
+   * @param sourcePath アップロードするファイルのパス
+   * @param chunkSizeBytes 1チャンクあたりのサイズ。テストで小さい値へ差し替えられるよう引数化しているが、
+   * 通常は省略しデフォルト（`UPLOAD_CHUNK_SIZE_BYTES`）を使うこと
+   */
+  async uploadFileFromPath(
+    accessToken: string,
+    fileId: string,
+    sourcePath: string,
+    chunkSizeBytes: number = UPLOAD_CHUNK_SIZE_BYTES
+  ): Promise<void> {
+    const fileHandle = await open(sourcePath, 'r');
+    try {
+      const { size: totalSizeBytes } = await fileHandle.stat();
+
+      const sessionResponse = await firstValueFrom(
+        this.httpService.patch(
+          `${GOOGLE_DRIVE_UPLOAD_BASE_URL}/files/${fileId}`,
+          {},
+          {
+            headers: {
+              // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization/Content-Type)に合わせる
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json; charset=UTF-8',
+              'X-Upload-Content-Type': 'application/zip',
+              'X-Upload-Content-Length': String(totalSizeBytes)
+            },
+            params: { uploadType: 'resumable' },
+            timeout: GOOGLE_DRIVE_REQUEST_TIMEOUT_MS
+          }
+        )
+      );
+
+      const uploadSessionUrl: string = sessionResponse.headers.location;
+      for (let start = 0; start < totalSizeBytes; start += chunkSizeBytes) {
+        const end = Math.min(start + chunkSizeBytes, totalSizeBytes);
+        // チャンクごとに新規Bufferを確保する。1本のBufferを使い回すと、そのビュー(subarray)を
+        // 引数に渡した後続処理（テストのモック記録やリトライ処理等）が実行される時点で
+        // 既に次のチャンクの内容へ上書きされてしまう恐れがあるため
+        const chunkBuffer = Buffer.alloc(end - start);
+        const { bytesRead } = await fileHandle.read(chunkBuffer, 0, end - start, start);
+        await firstValueFrom(
+          this.httpService.put(uploadSessionUrl, chunkBuffer.subarray(0, bytesRead), {
+            headers: {
+              'Content-Type': 'application/zip',
+              'Content-Range': `bytes ${start}-${end - 1}/${totalSizeBytes}`
+            },
+            maxRedirects: 0,
+            validateStatus: isValidUploadChunkStatus,
+            timeout: UPLOAD_CHUNK_TIMEOUT_MS
+          })
+        );
+      }
+    } catch (error) {
+      throw toGoogleDriveApiException(error);
+    } finally {
+      await fileHandle.close();
     }
   }
 

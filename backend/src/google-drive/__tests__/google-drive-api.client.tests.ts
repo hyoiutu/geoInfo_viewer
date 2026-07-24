@@ -1,8 +1,12 @@
 // biome-ignore-all lint/style/useNamingConvention: Google APIレスポンス形式(snake_case)に合わせたテストダブル
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
 import { HttpService } from '@nestjs/axios';
 import { Test } from '@nestjs/testing';
 import { of, throwError } from 'rxjs';
-import { describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { APP_ERROR_CODE } from '../../common/errors/app-error-code.constants';
 import { assertIsAppException } from '../../test-utils/assert-is-app-exception';
 import { GoogleDriveApiClient } from '../google-drive-api.client';
@@ -265,6 +269,159 @@ describe('GoogleDriveApiClientに関するテスト', () => {
 
       try {
         await client.updateFileContent('token-xyz', 'file-1', Buffer.from('zip-content'));
+        expect.unreachable('例外が投げられるはず');
+      } catch (error) {
+        assertIsAppException(error);
+        expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
+      }
+    });
+  });
+
+  describe('downloadFileToPath', () => {
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'google-drive-download-test-'));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    test('アクセストークンをAuthorizationヘッダーに含めstream形式でダウンロードし、指定パスへ書き込む', async () => {
+      const httpServiceGet = vi.fn().mockReturnValue(of({ data: Readable.from([Buffer.from('zip-content')]) }));
+      const client = await createClient(httpServiceGet, vi.fn());
+      const destPath = join(dir, 'downloaded.zip');
+
+      await client.downloadFileToPath('token-xyz', 'file-1', destPath);
+
+      expect(readFileSync(destPath).toString()).toBe('zip-content');
+      expect(httpServiceGet).toHaveBeenCalledWith(
+        expect.stringContaining('/files/file-1'),
+        expect.objectContaining({
+          headers: { Authorization: 'Bearer token-xyz' },
+          params: { alt: 'media' },
+          responseType: 'stream',
+          timeout: expect.any(Number)
+        })
+      );
+    });
+
+    test('失敗した場合、errorCode: GOOGLE_DRIVE_API_ERRORのAppExceptionを投げる', async () => {
+      const httpServiceGet = vi.fn().mockReturnValue(throwError(() => new Error('network error')));
+      const client = await createClient(httpServiceGet, vi.fn());
+      const destPath = join(dir, 'downloaded.zip');
+
+      try {
+        await client.downloadFileToPath('token-xyz', 'file-1', destPath);
+        expect.unreachable('例外が投げられるはず');
+      } catch (error) {
+        assertIsAppException(error);
+        expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
+      }
+    });
+  });
+
+  describe('uploadFileFromPath', () => {
+    let dir: string;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), 'google-drive-upload-test-'));
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    test('レジューマブルアップロードのセッションを開始し、ファイルサイズを事前に指定して送信する', async () => {
+      const httpServicePatch = vi
+        .fn()
+        .mockReturnValue(of({ headers: { location: 'https://upload.example/session-1' } }));
+      const httpServicePut = vi.fn().mockReturnValue(of({ data: createFileMetadata({ id: 'file-1' }) }));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch, httpServicePut);
+      const sourcePath = join(dir, 'source.zip');
+      writeFileSync(sourcePath, Buffer.from('zip-content'));
+
+      await client.uploadFileFromPath('token-xyz', 'file-1', sourcePath);
+
+      expect(httpServicePatch).toHaveBeenCalledWith(
+        expect.stringContaining('/files/file-1'),
+        {},
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-Upload-Content-Length': String(Buffer.from('zip-content').length)
+          })
+        })
+      );
+      expect(httpServicePut).toHaveBeenCalledTimes(1);
+      expect(httpServicePut).toHaveBeenCalledWith('https://upload.example/session-1', Buffer.from('zip-content'), {
+        headers: {
+          'Content-Type': 'application/zip',
+          'Content-Range': `bytes 0-${Buffer.from('zip-content').length - 1}/${Buffer.from('zip-content').length}`
+        },
+        maxRedirects: 0,
+        validateStatus: expect.any(Function),
+        timeout: expect.any(Number)
+      });
+    });
+
+    test('ファイルサイズがチャンクサイズを超える場合、ディスクから逐次読み込みながら複数回に分けてPUTする', async () => {
+      const httpServicePatch = vi
+        .fn()
+        .mockReturnValue(of({ headers: { location: 'https://upload.example/session-1' } }));
+      const httpServicePut = vi
+        .fn()
+        .mockReturnValueOnce(of({ status: 308, data: undefined }))
+        .mockReturnValueOnce(of({ status: 200, data: createFileMetadata({ id: 'file-1' }) }));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch, httpServicePut);
+      const sourcePath = join(dir, 'source.zip');
+      const content = Buffer.from('abcde');
+      writeFileSync(sourcePath, content);
+      const testChunkSizeBytes = 4;
+
+      await client.uploadFileFromPath('token-xyz', 'file-1', sourcePath, testChunkSizeBytes);
+
+      expect(httpServicePut).toHaveBeenCalledTimes(2);
+      expect(httpServicePut).toHaveBeenNthCalledWith(
+        1,
+        'https://upload.example/session-1',
+        content.subarray(0, testChunkSizeBytes),
+        {
+          headers: {
+            'Content-Type': 'application/zip',
+            'Content-Range': `bytes 0-${testChunkSizeBytes - 1}/${content.length}`
+          },
+          maxRedirects: 0,
+          validateStatus: expect.any(Function),
+          timeout: expect.any(Number)
+        }
+      );
+      expect(httpServicePut).toHaveBeenNthCalledWith(
+        2,
+        'https://upload.example/session-1',
+        content.subarray(testChunkSizeBytes),
+        {
+          headers: {
+            'Content-Type': 'application/zip',
+            'Content-Range': `bytes ${testChunkSizeBytes}-${content.length - 1}/${content.length}`
+          },
+          maxRedirects: 0,
+          validateStatus: expect.any(Function),
+          timeout: expect.any(Number)
+        }
+      );
+    });
+
+    test('セッション開始が失敗した場合、errorCode: GOOGLE_DRIVE_API_ERRORのAppExceptionを投げる', async () => {
+      const httpServicePatch = vi
+        .fn()
+        .mockReturnValue(throwError(() => ({ isAxiosError: true, response: { status: 500 } })));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch);
+      const sourcePath = join(dir, 'source.zip');
+      writeFileSync(sourcePath, Buffer.from('zip-content'));
+
+      try {
+        await client.uploadFileFromPath('token-xyz', 'file-1', sourcePath);
         expect.unreachable('例外が投げられるはず');
       } catch (error) {
         assertIsAppException(error);
