@@ -218,3 +218,19 @@ Google Takeoutで一括ダウンロードした写真をローカルへ展開す
   5. 古いDriveファイルの削除は上記4の後に行うベストエフォートな後始末とする（失敗してもDB側の整合性は既に保たれているため、この年月の処理自体は成功として扱う。失敗時はDrive容量が無駄になるのみで手動削除が必要）
   6. 年月ごとの一時作業ディレクトリは、処理の成否に関わらず`finally`で必ず削除する（disk容量を圧迫し続けないため）
 - 中断・再実行時の重複防止は、専用の`video_stripped_year_months`テーブル（マイグレーション`CreateVideoStrippedYearMonths`、年月のみを保持する進捗管理専用テーブル）で行う。`monthly_photo_archives`本体のスキーマ・スキップ判定ロジックは変更しない（本処理による統合後のアーカイブも`part = LEGACY_WHOLE_MONTH_PART`という同じ状態になるため、既存のスキップ判定とは独立した専用の記録が必要だった）
+- **既知の制約（レガシー単一アーカイブのZIP64非対応）**: `part`列導入以前（part分割の概念が存在しなかった時代）に作成された一部の既存アーカイブ（`part = LEGACY_WHOLE_MONTH_PART`）は、合計サイズが4GiBを超える場合に読み込めない（`yauzl`はもちろん標準の`unzip`コマンドでも「End of central directory record signature not found」となる）ことが実データ処理で判明した。標準ZIP形式は32bitオフセットで4GiBが上限のため、これらのファイルを書き込んだ当時の`adm-zip`がZIP64拡張に対応しておらず、書き込み時点で既に壊れた状態だった可能性が高い（ダウンロード自体はContent-Lengthと完全一致しており、ダウンロードや本処理起因の破損ではないことを確認済み）。オーケストレーションは1年月の処理失敗（この種のアーカイブ破損を含む）で全体を止めず、失敗した年月をログへ記録した上で次の年月へ処理を継続する。該当年月は`video_stripped_year_months`に記録されないため未処理のまま残り、復旧要否は別途判断が必要（自動修復は行わない）
+
+## グリッド・吹き出し表示用サムネイルZipの生成（Issue #100）
+写真グリッド・吹き出し表示は、動画削除・part統合済みのフルサイズ月別アーカイブzip（`monthly_photo_archives`）をGoogle Driveから丸ごとダウンロードして表示しており、写真枚数が多い月ほど表示が遅い。グリッド・吹き出し表示では小さいサムネイルで十分なため、年月ごとに横300px（縦横比維持）のサムネイル画像のみを集めた専用zip（`<年月>-thumbnails.zip`）を`backend/src/photos/generate-thumbnail-archives.ts`（`pnpm --filter backend run generate-thumbnails:photos`）で生成し、既存のフルサイズzipとは別にGoogle Drive上へ保存する。
+
+- `zip-streaming.util.ts`は、動画削除・part統合のストリーミング処理（Issue #99）で使っていたyauzl/yazlの低レベルなzip逐次読み書きヘルパー（`forEachZipEntry`・`openEntryReadStream`・`writeYazlOutput`・`addStreamEntryAndWait`）を、`consolidate-monthly-archive-streaming.util.ts`と本機能とで共有できるよう切り出したもの（DRY）。
+- `generateThumbnailArchiveStreaming`（`generate-thumbnail-archive-streaming.util.ts`）は、ディスク上の元アーカイブzip（1つ、動画削除・part統合済みのため常に単一）を`zip-streaming.util.ts`のヘルパーでエントリ単位に逐次読み込み、各エントリの読み込みストリームを`sharp().resize({ width: 300 })`のリサイズ変換ストリームへパイプしてから出力zipへ追加する。写真1件分の全バイナリを同時にメモリへ保持せず、画像データがストリームとして流れる過程でリサイズされる。縦横比は`sharp`の`resize`の既定動作（幅のみ指定時は高さを維持したままスケール）により自動的に維持される。
+- オーケストレーション（`generate-thumbnail-archives.ts`）は年月ごとに以下を行う
+  1. 生成対象は`video_stripped_year_months`に記録済みの年月のみに限定する（動画削除・part統合が完了し、常に単一アーカイブ・動画なしという前提を満たす年月のみを対象とすることで、サムネイル生成側の実装をシンプルに保てる）。未処理・失敗（レガシーアーカイブ破損等、前節参照）の年月は対象外とする
+  2. 対象アーカイブをディスクへダウンロードし、`generateThumbnailArchiveStreaming`でサムネイルzipを生成する
+  3. 生成したサムネイルzipを`<年月>-thumbnails.zip`という名前で新規Driveファイルとしてアップロードする
+  4. `monthly_photo_thumbnail_archives`（マイグレーション`CreateMonthlyPhotoThumbnailArchives`、年月とサムネイルzipのDriveファイルIDのみを保持する専用テーブル）へ記録する。既存の`monthly_photo_archives`（フルサイズ写真用）のスキーマ・データは変更しない（サムネイルzipはフルサイズzipと完全に独立した別ファイルとして扱う）
+  5. 年月ごとの一時作業ディレクトリは、処理の成否に関わらず`finally`で必ず削除する
+- 中断・再実行時の重複防止・1年月の失敗で全体を止めない設計は、いずれも`strip-videos-and-consolidate-archives.ts`（Issue #99）と同じパターンを踏襲する
+- サムネイルzip内のエントリパスは、元アーカイブと同じファイル名（衝突時は`resolveUniquePath`で連番）とする。将来グリッド/吹き出し表示側で実際にサムネイルzipを参照する際は、`photos.archive_path`（元アーカイブ内でのファイル名）と`photos.taken_at`から求めた年月に対応する`monthly_photo_thumbnail_archives.drive_file_id`を組み合わせれば、対応するサムネイルエントリを特定できる（`photos`テーブル自体にサムネイル専用のカラムを追加する必要はない）
+- グリッド/吹き出し表示側の実際の切り替え（サムネイルzipを先に読み込み、フルサイズzipは裏で先読みする方式への変更）は本Issueのスコープ外とし、別Issueで対応する

@@ -1,10 +1,9 @@
-import { createWriteStream } from 'node:fs';
 import { basename } from 'node:path';
-import yauzl from 'yauzl';
 import yazl from 'yazl';
 import type { ConsolidatedKeptEntry, RemovedVideoEntry } from './consolidate-monthly-archive.util';
 import { resolveUniquePath } from './monthly-archive.util';
 import { isVideoFile } from './video-file.util';
+import { addStreamEntryAndWait, forEachZipEntry, openEntryReadStream, writeYazlOutput } from './zip-streaming.util';
 
 /** ストリーミング統合の入力元となる、ディスク上のアーカイブzipファイル1個分 */
 export type StreamingSourceArchive = {
@@ -16,64 +15,6 @@ export type StreamingSourceArchive = {
 export type ConsolidateStreamingResult = {
   keptEntries: ConsolidatedKeptEntry[];
   removedVideoEntries: RemovedVideoEntry[];
-};
-
-/**
- * yauzlでzipエントリを1件ずつ開き、Readableストリームとして返す（Promise化）
- */
-const openEntryReadStream = (zipFile: yauzl.ZipFile, entry: yauzl.Entry): Promise<NodeJS.ReadableStream> => {
-  return new Promise((resolve, reject) => {
-    zipFile.openReadStream(entry, (error, readStream) => {
-      if (error || !readStream) {
-        reject(error ?? new Error(`failed to open read stream for entry: ${entry.fileName}`));
-        return;
-      }
-      resolve(readStream);
-    });
-  });
-};
-
-/**
- * 指定したzipファイルパスを開き、エントリを1件ずつ処理する。yauzlの`lazyEntries`により
- * 次のエントリはコールバック側で明示的に`readEntry()`を呼ぶまで読み進めない。
- * `onEntry`は、そのエントリの後続処理（書き込み先への転送等）が完全に完了してから
- * resolveすること。yauzlは同一zipFileに対して複数エントリを同時並行で読み進める前提の
- * 実装になっていないため、前エントリの処理完了を待たずに次のreadEntry()を呼ぶと
- * 読み込み内容が壊れる恐れがある
- */
-const forEachZipEntry = (
-  zipPath: string,
-  onEntry: (zipFile: yauzl.ZipFile, entry: yauzl.Entry) => Promise<void>
-): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    yauzl.open(zipPath, { lazyEntries: true }, (openError, zipFile) => {
-      if (openError || !zipFile) {
-        reject(openError ?? new Error(`failed to open zip: ${zipPath}`));
-        return;
-      }
-
-      zipFile.readEntry();
-      zipFile.on('entry', (entry) => {
-        onEntry(zipFile, entry)
-          .then(() => zipFile.readEntry())
-          .catch(reject);
-      });
-      zipFile.on('end', resolve);
-      zipFile.on('error', reject);
-    });
-  });
-};
-
-/**
- * yazlの出力を指定パスへ書き出すストリームを開始し、完了を待つPromiseを返す
- */
-const writeYazlOutput = (zipFile: yazl.ZipFile, destZipPath: string): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    const writeStream = createWriteStream(destZipPath);
-    writeStream.on('finish', resolve);
-    writeStream.on('error', reject);
-    zipFile.outputStream.pipe(writeStream);
-  });
 };
 
 /**
@@ -114,13 +55,7 @@ export const consolidateArchiveFilesWithoutVideosStreaming = async (
 
       const newArchivePath = resolveUniquePath(basename(entry.fileName), usedPaths);
       const readStream = await openEntryReadStream(zipFile, entry);
-      // このエントリがyazlによって出力ストリームへ完全に転送し終わるまで待ってから
-      // 次のエントリへ進む。yauzlは同一zipFileに対する並行読み込みを想定していないため
-      await new Promise<void>((resolve, reject) => {
-        readStream.on('end', resolve);
-        readStream.on('error', reject);
-        outputZip.addReadStream(readStream, newArchivePath, { compress: false });
-      });
+      await addStreamEntryAndWait(outputZip, readStream, newArchivePath);
       usedPaths.add(newArchivePath);
       keptEntries.push({ sourceFileId: source.sourceFileId, oldArchivePath: entry.fileName, newArchivePath });
     });

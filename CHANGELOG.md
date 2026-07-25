@@ -14,6 +14,22 @@
 
 ## 変更履歴
 
+### [2026-07-25] グリッド・吹き出し表示用に横300px幅のサムネイル専用Zipを生成する機能を実装した（Issue #100、自律モード）
+* **修正の動機・概要**:
+  - Issue #99完了後、ユーザーから依頼のあった「グリッド/吹き出し表示用に横300px(縦横比維持)のサムネイル画像のみを集めたZip（例: `2026-04-thumbnails`）を年月ごとに生成する」機能を自律的に実装した。既存のフルサイズzip（`monthly_photo_archives`）はそのまま残し、別ファイル・別テーブルで管理する。
+  - 生成対象はIssue #99で動画削除・part統合が完了済み（`video_stripped_year_months`に記録済み）の年月のみに限定した。破損等により未処理のまま残っている年月（後述）は、常に単一アーカイブ・動画なしという前提を満たさないため対象外とした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/zip-streaming.util.ts`（新規）: Issue #99の`consolidate-monthly-archive-streaming.util.ts`からyauzl/yazlの低レベルなzip逐次読み書きヘルパーを切り出し、本機能と共有できるようにした（DRY）。
+    - `backend/src/photos/generate-thumbnail-archive-streaming.util.ts`（新規）: `generateThumbnailArchiveStreaming`。元アーカイブのエントリを`sharp().resize({ width: 300 })`のストリームへパイプしてから出力zipへ追加する、ディスク経由のストリーミング処理。
+    - `backend/src/photos/entities/monthly-photo-thumbnail-archive.entity.ts`（新規）・`backend/src/migrations/1784947777761-CreateMonthlyPhotoThumbnailArchives.ts`（新規）: 年月とサムネイルzipのDriveファイルIDを記録する専用テーブル。実DBに適用済み（適用前にスキーマのバックアップ取得済み）。
+    - `backend/src/photos/generate-thumbnail-archives.ts`（新規）: オーケストレーションスクリプト（`pnpm --filter backend run generate-thumbnails:photos`）。1年月の失敗で全体を止めない設計はIssue #99と同じパターンを踏襲。
+    - `backend/package.json`: `sharp`を追加。
+    - 対応する単体テストを新規追加（TDD、Red-Green。sharpで動的生成したテスト用画像でリサイズ結果を検証）。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため。グリッド/吹き出し表示側の実際の切り替えは本Issueのスコープ外で別Issue対応）。
+  * **設計書**: `designs/technical_design.md`に「グリッド・吹き出し表示用サムネイルZipの生成（Issue #100）」節を新設。あわせて、Issue #99実データ処理で判明したレガシー単一アーカイブのZIP64非対応による既知の制約も同節に追記した。
+
 ### [2026-07-25] 動画削除・part統合処理をストリーミング化し、2GiB超でスキップされていた残り年月も処理できるようにした（Issue #99、自律モード）
 * **修正の動機・概要**:
   - Issue #97の一括処理は全178年月中141件が完了したが、月合計サイズが2GiBを超える37年月（実データで最大約16.28GiB）は、zip全体をメモリ上へ保持する実装のままだとメモリ枯渇を招く恐れがあるため、安全のため未処理のままスキップしていた。

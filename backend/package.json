@@ -13,7 +13,8 @@
     "seed:municipalities": "ts-node src/municipalities/seed-municipalities.ts",
     "flatten:photos-local": "ts-node src/photos/flatten-local-photo-directory.ts",
     "backfill:photos-local": "ts-node src/photos/backfill-photos-from-local.ts",
-    "strip-videos:photos": "ts-node src/photos/strip-videos-and-consolidate-archives.ts"
+    "strip-videos:photos": "ts-node src/photos/strip-videos-and-consolidate-archives.ts",
+    "generate-thumbnails:photos": "ts-node src/photos/generate-thumbnail-archives.ts"
   },
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",
@@ -30,6 +31,7 @@
     "pg": "^8.22.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "sharp": "^0.35.3",
     "topojson-client": "^3.1.0",
     "typeorm": "^1.0.0",
     "yauzl": "^3.4.0",
