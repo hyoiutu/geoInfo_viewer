@@ -38,7 +38,13 @@ const log = (message: string): void => {
  * 月合計サイズが数GB〜十数GBになっても、Node.jsプロセスのメモリ使用量は一定に保たれる
  * （旧実装ではzip全体をメモリ上へ保持していたため、2GiBを超える月は安全のためスキップしていた）。
  * 年月ごとに処理し、完了した年月は`video_stripped_year_months`テーブルへ記録することで、
- * 中断・再実行時に処理済みの年月を丸ごとスキップする
+ * 中断・再実行時に処理済みの年月を丸ごとスキップする。
+ * 1つの年月の処理中にエラーが発生しても、他の年月の処理を止めずに次へ進む（あるアーカイブ自体が
+ * 破損している等、この処理では復旧できない問題により1つの年月だけが失敗しても、残りの年月の
+ * 処理が巻き添えで止まらないようにするため。実際に、part列導入以前の1つの巨大な既存アーカイブで
+ * End of central directoryが存在せずzipとして読めない＝アップロード当時から壊れていたと見られる
+ * 事例が発見された。この種の破損は本処理では自動修復せず、完了時に失敗した年月の一覧を出力し
+ * 手動確認を促す）
  */
 const stripVideosAndConsolidateArchives = async (): Promise<void> => {
   const dataSource = new DataSource(createDataSourceOptions(process.env));
@@ -60,6 +66,7 @@ const stripVideosAndConsolidateArchives = async (): Promise<void> => {
 
   let processedYearMonthCount = 0;
   let removedVideoCount = 0;
+  const failedYearMonths: string[] = [];
 
   for (const yearMonth of yearMonths) {
     if (strippedYearMonths.has(yearMonth)) {
@@ -67,87 +74,103 @@ const stripVideosAndConsolidateArchives = async (): Promise<void> => {
       continue;
     }
 
-    const archivesForMonth = allArchives.filter((archive) => archive.yearMonth === yearMonth);
-    const accessToken = await googleDriveAuthService.getAccessToken();
-
-    let totalSizeBytes = 0;
-    for (const archive of archivesForMonth) {
-      const metadata = await googleDriveApiClient.getFileMetadata(accessToken, archive.driveFileId);
-      totalSizeBytes += Number(metadata.size ?? '0');
-    }
-    log(
-      `[${yearMonth}] 処理開始（アーカイブ${archivesForMonth.length}個、合計約${(totalSizeBytes / (1024 * 1024)).toFixed(1)}MiB）`
-    );
-
-    // ダウンロード・統合後のzipは、この年月の処理が終わるまでの作業ディレクトリへ一時的に
-    // 保存する。処理の成否に関わらず、次の年月へ進む前に必ず削除する（disk容量を圧迫し続けないため）
-    const workDir = mkdtempSync(join(tmpdir(), `strip-videos-${yearMonth}-`));
     try {
-      const sources: StreamingSourceArchive[] = [];
-      for (const [index, archive] of archivesForMonth.entries()) {
-        const downloadPath = join(workDir, `source-${index}.zip`);
-        await googleDriveApiClient.downloadFileToPath(accessToken, archive.driveFileId, downloadPath);
-        sources.push({ sourceFileId: archive.driveFileId, filePath: downloadPath });
-      }
+      const archivesForMonth = allArchives.filter((archive) => archive.yearMonth === yearMonth);
+      const accessToken = await googleDriveAuthService.getAccessToken();
 
-      const destPath = join(workDir, 'consolidated.zip');
-      const { keptEntries, removedVideoEntries } = await consolidateArchiveFilesWithoutVideosStreaming(
-        sources,
-        destPath
-      );
-
-      if (removedVideoEntries.length === 0 && archivesForMonth.length === 1) {
-        log(`[${yearMonth}] 動画は含まれておらず既に単一のアーカイブのため、変更せず処理済みとして記録します`);
-        await videoStrippedRepository.save({ yearMonth });
-        processedYearMonthCount += 1;
-        continue;
-      }
-
-      const newDriveFileId = await googleDriveApiClient.createFileMetadata(accessToken, `${yearMonth}.zip`);
-      await googleDriveApiClient.uploadFileFromPath(accessToken, newDriveFileId, destPath);
-      log(`[${yearMonth}] 動画を除いた統合zip（${keptEntries.length}件）のアップロードが完了しました`);
-
-      for (const kept of keptEntries) {
-        await photoRepository.update(
-          { sourceFileId: kept.sourceFileId, archivePath: kept.oldArchivePath },
-          { sourceFileId: newDriveFileId, archivePath: kept.newArchivePath }
-        );
-      }
-      for (const removed of removedVideoEntries) {
-        await photoRepository.delete({ sourceFileId: removed.sourceFileId, archivePath: removed.archivePath });
-      }
-
-      await monthlyPhotoArchiveRepository.delete({ yearMonth });
-      await monthlyPhotoArchiveRepository.save({
-        yearMonth,
-        part: LEGACY_WHOLE_MONTH_PART,
-        driveFileId: newDriveFileId
-      });
-      await videoStrippedRepository.save({ yearMonth });
-
-      // 古いDriveファイルの削除はDB側が既に新しいファイルを正しく参照した後のベストエフォートな
-      // 後始末のため、失敗してもこの年月の処理自体は成功として扱う（Driveの容量を無駄にするだけで
-      // データの整合性は壊れない。失敗した場合は手動での削除が必要）
+      let totalSizeBytes = 0;
       for (const archive of archivesForMonth) {
-        try {
-          await googleDriveApiClient.deleteFile(accessToken, archive.driveFileId);
-        } catch (error) {
-          console.error(`[${yearMonth}] 古いアーカイブ（${archive.driveFileId}）の削除に失敗しました:`, error);
-        }
+        const metadata = await googleDriveApiClient.getFileMetadata(accessToken, archive.driveFileId);
+        totalSizeBytes += Number(metadata.size ?? '0');
       }
-
-      processedYearMonthCount += 1;
-      removedVideoCount += removedVideoEntries.length;
       log(
-        `[${yearMonth}] 完了しました（写真${keptEntries.length}件を保持、動画${removedVideoEntries.length}件を削除）`
+        `[${yearMonth}] 処理開始（アーカイブ${archivesForMonth.length}個、合計約${(totalSizeBytes / (1024 * 1024)).toFixed(1)}MiB）`
       );
-    } finally {
-      rmSync(workDir, { recursive: true, force: true });
+
+      // ダウンロード・統合後のzipは、この年月の処理が終わるまでの作業ディレクトリへ一時的に
+      // 保存する。処理の成否に関わらず、次の年月へ進む前に必ず削除する（disk容量を圧迫し続けないため）
+      const workDir = mkdtempSync(join(tmpdir(), `strip-videos-${yearMonth}-`));
+      try {
+        const sources: StreamingSourceArchive[] = [];
+        for (const [index, archive] of archivesForMonth.entries()) {
+          const downloadPath = join(workDir, `source-${index}.zip`);
+          await googleDriveApiClient.downloadFileToPath(accessToken, archive.driveFileId, downloadPath);
+          sources.push({ sourceFileId: archive.driveFileId, filePath: downloadPath });
+        }
+
+        const destPath = join(workDir, 'consolidated.zip');
+        const { keptEntries, removedVideoEntries } = await consolidateArchiveFilesWithoutVideosStreaming(
+          sources,
+          destPath
+        );
+
+        if (removedVideoEntries.length === 0 && archivesForMonth.length === 1) {
+          log(`[${yearMonth}] 動画は含まれておらず既に単一のアーカイブのため、変更せず処理済みとして記録します`);
+          await videoStrippedRepository.save({ yearMonth });
+          processedYearMonthCount += 1;
+          continue;
+        }
+
+        const newDriveFileId = await googleDriveApiClient.createFileMetadata(accessToken, `${yearMonth}.zip`);
+        await googleDriveApiClient.uploadFileFromPath(accessToken, newDriveFileId, destPath);
+        log(`[${yearMonth}] 動画を除いた統合zip（${keptEntries.length}件）のアップロードが完了しました`);
+
+        for (const kept of keptEntries) {
+          await photoRepository.update(
+            { sourceFileId: kept.sourceFileId, archivePath: kept.oldArchivePath },
+            { sourceFileId: newDriveFileId, archivePath: kept.newArchivePath }
+          );
+        }
+        for (const removed of removedVideoEntries) {
+          await photoRepository.delete({ sourceFileId: removed.sourceFileId, archivePath: removed.archivePath });
+        }
+
+        await monthlyPhotoArchiveRepository.delete({ yearMonth });
+        await monthlyPhotoArchiveRepository.save({
+          yearMonth,
+          part: LEGACY_WHOLE_MONTH_PART,
+          driveFileId: newDriveFileId
+        });
+        await videoStrippedRepository.save({ yearMonth });
+
+        // 古いDriveファイルの削除はDB側が既に新しいファイルを正しく参照した後のベストエフォートな
+        // 後始末のため、失敗してもこの年月の処理自体は成功として扱う（Driveの容量を無駄にするだけで
+        // データの整合性は壊れない。失敗した場合は手動での削除が必要）
+        for (const archive of archivesForMonth) {
+          try {
+            await googleDriveApiClient.deleteFile(accessToken, archive.driveFileId);
+          } catch (error) {
+            console.error(`[${yearMonth}] 古いアーカイブ（${archive.driveFileId}）の削除に失敗しました:`, error);
+          }
+        }
+
+        processedYearMonthCount += 1;
+        removedVideoCount += removedVideoEntries.length;
+        log(
+          `[${yearMonth}] 完了しました（写真${keptEntries.length}件を保持、動画${removedVideoEntries.length}件を削除）`
+        );
+      } finally {
+        rmSync(workDir, { recursive: true, force: true });
+      }
+    } catch (error) {
+      // 1つの年月の処理に失敗しても（アーカイブ自体の破損等、本処理では復旧できない問題を含む）、
+      // 他の年月の処理を巻き添えで止めない。この年月は`video_stripped_year_months`へ記録されないため、
+      // 次回実行時にも未処理として扱われ、修正後に再実行すれば自動的に対象になる
+      console.error(`[${yearMonth}] 処理に失敗したため、この年月をスキップして次へ進みます:`, error);
+      failedYearMonths.push(yearMonth);
     }
   }
 
   await dataSource.destroy();
-  log(`完了しました（処理済み年月: ${processedYearMonthCount}件、削除した動画: ${removedVideoCount}件）`);
+  log(
+    `完了しました（処理済み年月: ${processedYearMonthCount}件、削除した動画: ${removedVideoCount}件、失敗した年月: ${failedYearMonths.length}件）`
+  );
+  if (failedYearMonths.length > 0) {
+    log('処理に失敗した年月（手動確認が必要）:');
+    for (const yearMonth of failedYearMonths) {
+      log(`  - ${yearMonth}`);
+    }
+  }
 };
 
 stripVideosAndConsolidateArchives().catch((error: unknown) => {
