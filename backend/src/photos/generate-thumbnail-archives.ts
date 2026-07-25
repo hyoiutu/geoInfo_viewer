@@ -48,6 +48,7 @@ const generateThumbnailArchives = async (): Promise<void> => {
   );
 
   let processedCount = 0;
+  let totalFailedEntryCount = 0;
   const failedYearMonths: string[] = [];
 
   for (const yearMonth of targetYearMonths) {
@@ -74,7 +75,7 @@ const generateThumbnailArchives = async (): Promise<void> => {
         await googleDriveApiClient.downloadFileToPath(accessToken, archive.driveFileId, sourcePath);
 
         const destPath = join(workDir, 'thumbnails.zip');
-        const { entries } = await generateThumbnailArchiveStreaming(sourcePath, destPath);
+        const { entries, failedEntries } = await generateThumbnailArchiveStreaming(sourcePath, destPath);
 
         const newDriveFileId = await googleDriveApiClient.createFileMetadata(
           accessToken,
@@ -84,6 +85,15 @@ const generateThumbnailArchives = async (): Promise<void> => {
 
         await thumbnailArchiveRepository.save({ yearMonth, driveFileId: newDriveFileId });
         processedCount += 1;
+        totalFailedEntryCount += failedEntries.length;
+        // 個々の写真のサムネイル生成に失敗しても（一部のHEIC写真でlibheifのセキュリティ上限に
+        // 抵触する等）、それ以外の写真のサムネイルは正常に含んだzipとして年月単位では成功扱いとする
+        // （generate-thumbnail-archive-streaming.util.ts参照）。失敗した写真があった場合のみログに残す
+        if (failedEntries.length > 0) {
+          log(
+            `[${yearMonth}] サムネイル生成に失敗した写真が${failedEntries.length}件ありました: ${failedEntries.map((entry) => entry.archivePath).join(', ')}`
+          );
+        }
         log(`[${yearMonth}] 完了しました（サムネイル${entries.length}件を生成）`);
       } finally {
         rmSync(workDir, { recursive: true, force: true });
@@ -97,7 +107,9 @@ const generateThumbnailArchives = async (): Promise<void> => {
   }
 
   await dataSource.destroy();
-  log(`完了しました（処理済み年月: ${processedCount}件、失敗した年月: ${failedYearMonths.length}件）`);
+  log(
+    `完了しました（処理済み年月: ${processedCount}件、失敗した年月: ${failedYearMonths.length}件、サムネイル生成に失敗した写真: ${totalFailedEntryCount}件）`
+  );
   if (failedYearMonths.length > 0) {
     log('処理に失敗した年月（手動確認が必要）:');
     for (const yearMonth of failedYearMonths) {

@@ -91,11 +91,30 @@ describe('generateThumbnailArchiveStreamingに関するテスト', () => {
     const result = await generateThumbnailArchiveStreaming(sourcePath, destPath);
 
     expect(result.entries.map((entry) => entry.archivePath).sort()).toEqual(['IMG_1.jpg', 'IMG_2.jpg']);
+    expect(result.failedEntries).toEqual([]);
     const entries = await readZipEntries(destPath);
     expect(entries).toHaveLength(2);
     for (const entry of entries) {
       const metadata = await sharp(entry.content).metadata();
       expect(metadata.width).toBe(THUMBNAIL_WIDTH_PX);
     }
+  });
+
+  test('画像として不正なエントリが1件あっても、そのエントリだけをfailedEntriesへ記録し、他の正常なエントリの処理は継続する', async () => {
+    const validImage = await createTestImage(600, 400, { r: 255, g: 0, b: 0 });
+    const corruptImage = Buffer.from('this is not a valid image file');
+    const sourcePath = writeFixtureZip(dir, 'source.zip', {
+      'IMG_1.jpg': validImage,
+      'IMG_broken.jpg': corruptImage
+    });
+    const destPath = join(dir, 'thumbnails.zip');
+
+    const result = await generateThumbnailArchiveStreaming(sourcePath, destPath);
+
+    expect(result.entries).toEqual([{ archivePath: 'IMG_1.jpg' }]);
+    expect(result.failedEntries).toHaveLength(1);
+    expect(result.failedEntries[0].archivePath).toBe('IMG_broken.jpg');
+    const entries = await readZipEntries(destPath);
+    expect(entries.map((entry) => entry.fileName)).toEqual(['IMG_1.jpg']);
   });
 });
