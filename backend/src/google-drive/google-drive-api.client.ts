@@ -33,6 +33,12 @@ export const UPLOAD_CHUNK_SIZE_BYTES = 16 * 1024 * 1024;
 const GOOGLE_DRIVE_REQUEST_TIMEOUT_MS = 30 * 1000;
 // 既存アーカイブのダウンロードは（チャンク分割していないため）数GBになりうるので、より長めに確保する
 const GOOGLE_DRIVE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+// downloadFileToPath（ストリーミングダウンロード）専用のタイムアウト。動画削除・part統合処理
+// （Issue #99）では、旧実装の2GiB安全弁により実際には試されたことがなかった数GB〜十数GB規模の
+// 単一ファイルダウンロードが発生しうる。実際に約9.3GiBの単一アーカイブ（2020-09）のダウンロードが
+// GOOGLE_DRIVE_DOWNLOAD_TIMEOUT_MS（5分）内に完了せず、末尾が欠落したファイルのまま
+// ダウンロードが「成功」として扱われてしまう不具合が発生したため、より長い時間を確保する
+const GOOGLE_DRIVE_STREAMING_TRANSFER_TIMEOUT_MS = 120 * 60 * 1000;
 // アップロードチャンク(16MiB)1回あたりのタイムアウト。低速回線でも完了しうる時間を確保しつつ、
 // 応答が無いまま無限に待ち続けることは無いようにする
 const UPLOAD_CHUNK_TIMEOUT_MS = 2 * 60 * 1000;
@@ -120,9 +126,19 @@ export class GoogleDriveApiClient {
           headers: { Authorization: `Bearer ${accessToken}` },
           params: { alt: 'media' },
           responseType: 'stream',
-          timeout: GOOGLE_DRIVE_DOWNLOAD_TIMEOUT_MS
+          timeout: GOOGLE_DRIVE_STREAMING_TRANSFER_TIMEOUT_MS
         })
       );
+
+      // 実際に書き込んだバイト数をContent-Lengthヘッダーと突き合わせて検証する。数GB〜十数GB規模の
+      // ダウンロードで、末尾が欠落した状態のファイルなのにwriteStreamの'finish'（'error'ではなく）が
+      // 発火し、ダウンロード成功として扱われてしまう不具合が実際に発生した（約9.3GiBの単一アーカイブ
+      // で発生し、後段のzip読み込み処理が失敗するまで気づけなかった。Issue #99）。原因（タイムアウト・
+      // ネットワーク切断等）を問わず、途中で打ち切られたダウンロードを確実に検出できるようにする
+      let downloadedBytes = 0;
+      response.data.on('data', (chunk: Buffer) => {
+        downloadedBytes += chunk.length;
+      });
 
       await new Promise<void>((resolve, reject) => {
         const writeStream = createWriteStream(destPath);
@@ -131,6 +147,13 @@ export class GoogleDriveApiClient {
         writeStream.on('finish', resolve);
         response.data.pipe(writeStream);
       });
+
+      const expectedContentLength = response.headers?.['content-length'];
+      if (expectedContentLength !== undefined && downloadedBytes !== Number(expectedContentLength)) {
+        throw new Error(
+          `ダウンロードしたファイルサイズが不整合です（期待値: ${expectedContentLength}バイト、実際: ${downloadedBytes}バイト）`
+        );
+      }
     } catch (error) {
       throw toGoogleDriveApiException(error);
     }

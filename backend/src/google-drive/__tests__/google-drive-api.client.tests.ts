@@ -307,6 +307,35 @@ describe('GoogleDriveApiClientに関するテスト', () => {
       );
     });
 
+    test('レスポンスのContent-Lengthと実際に書き込んだバイト数が一致する場合は正常に完了する', async () => {
+      const content = Buffer.from('zip-content');
+      const httpServiceGet = vi
+        .fn()
+        .mockReturnValue(of({ data: Readable.from([content]), headers: { 'content-length': String(content.length) } }));
+      const client = await createClient(httpServiceGet, vi.fn());
+      const destPath = join(dir, 'downloaded.zip');
+
+      await expect(client.downloadFileToPath('token-xyz', 'file-1', destPath)).resolves.toBeUndefined();
+      expect(readFileSync(destPath).toString()).toBe('zip-content');
+    });
+
+    test('レスポンスのContent-Lengthより実際に書き込んだバイト数が少ない場合（ダウンロード途中で打ち切られた場合）、errorCode: GOOGLE_DRIVE_API_ERRORのAppExceptionを投げる', async () => {
+      const truncatedContent = Buffer.from('zip-cont');
+      const httpServiceGet = vi
+        .fn()
+        .mockReturnValue(of({ data: Readable.from([truncatedContent]), headers: { 'content-length': '12' } }));
+      const client = await createClient(httpServiceGet, vi.fn());
+      const destPath = join(dir, 'downloaded.zip');
+
+      try {
+        await client.downloadFileToPath('token-xyz', 'file-1', destPath);
+        expect.unreachable('例外が投げられるはず');
+      } catch (error) {
+        assertIsAppException(error);
+        expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
+      }
+    });
+
     test('失敗した場合、errorCode: GOOGLE_DRIVE_API_ERRORのAppExceptionを投げる', async () => {
       const httpServiceGet = vi.fn().mockReturnValue(throwError(() => new Error('network error')));
       const client = await createClient(httpServiceGet, vi.fn());
