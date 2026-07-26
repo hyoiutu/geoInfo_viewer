@@ -224,7 +224,10 @@ Google Takeoutで一括ダウンロードした写真をローカルへ展開す
 写真グリッド・吹き出し表示は、動画削除・part統合済みのフルサイズ月別アーカイブzip（`monthly_photo_archives`）をGoogle Driveから丸ごとダウンロードして表示しており、写真枚数が多い月ほど表示が遅い。グリッド・吹き出し表示では小さいサムネイルで十分なため、年月ごとに横300px（縦横比維持）のサムネイル画像のみを集めた専用zip（`<年月>-thumbnails.zip`）を`backend/src/photos/generate-thumbnail-archives.ts`（`pnpm --filter backend run generate-thumbnails:photos`）で生成し、既存のフルサイズzipとは別にGoogle Drive上へ保存する。
 
 - `zip-streaming.util.ts`は、動画削除・part統合のストリーミング処理（Issue #99）で使っていたyauzl/yazlの低レベルなzip逐次読み書きヘルパー（`forEachZipEntry`・`openEntryReadStream`・`writeYazlOutput`・`addStreamEntryAndWait`）を、`consolidate-monthly-archive-streaming.util.ts`と本機能とで共有できるよう切り出したもの（DRY）。
-- `generateThumbnailArchiveStreaming`（`generate-thumbnail-archive-streaming.util.ts`）は、ディスク上の元アーカイブzip（1つ、動画削除・part統合済みのため常に単一）を`zip-streaming.util.ts`のヘルパーでエントリ単位に逐次読み込み、各エントリの読み込みストリームを`sharp().resize({ width: 300 })`のリサイズ変換ストリームへパイプしてから出力zipへ追加する。写真1件分の全バイナリを同時にメモリへ保持せず、画像データがストリームとして流れる過程でリサイズされる。縦横比は`sharp`の`resize`の既定動作（幅のみ指定時は高さを維持したままスケール）により自動的に維持される。
+- `generateThumbnailArchiveStreaming`（`generate-thumbnail-archive-streaming.util.ts`）は、ディスク上の元アーカイブzip（1つ、動画削除・part統合済みのため常に単一）を`zip-streaming.util.ts`のヘルパーでエントリ単位に逐次読み込む。アーカイブ全体を同時にメモリへ保持しないが、1エントリ分（写真1件、数MB程度）はいったんBufferとして読み切ってから`sharp().resize({ width: 300 }).toBuffer()`が成功した場合のみ出力zipへ追加する。これは、出力ストリームへ追加した後に読み込み側でエラーが発生すると出力zipの内部キューが後続エントリの書き込みへ進めなくなる恐れがあるため（1枚の写真のデコード失敗が年月全体を巻き込まないようにする対応）。縦横比は`sharp`の`resize`の既定動作（幅のみ指定時は高さを維持したままスケール）により自動的に維持される。
+- HEIC/HEIF・Android Motion Photo(`.mp`)は、上記の`sharp().resize()`へ渡す前に変換・抽出する。
+  - HEIC/HEIF: sharpが内蔵するlibheifデコーダには、悪意あるファイルからのDoS対策としてのセキュリティ上限（iref boxの参照数16件超等）があり、iPhoneのポートレート/Live Photoが持つ補助画像（深度マップ等）を含む正当な写真もこの上限に抵触してデコードに失敗することがある。sharp自体はこの上限を緩和するオプションを公開していないため、`heic-conversion.util.ts`がlibheif付属のCLIツール`heif-convert`を`--disable-limits`オプション付きで外部プロセスとして呼び出し、上限を無効化した上でJPEGへ変換する。
+  - Android Motion Photo(`.mp`): JPEG本体の後ろにMP4動画データが連結されたハイブリッド形式で、sharpはそのままデコードできない。`motion-photo.util.ts`が、動画データの先頭を示すISOBMFFの`ftyp`ボックスの開始位置を検出し、その手前までを先頭のJPEG部分として抽出する。
 - オーケストレーション（`generate-thumbnail-archives.ts`）は年月ごとに以下を行う
   1. 生成対象は`video_stripped_year_months`に記録済みの年月のみに限定する（動画削除・part統合が完了し、常に単一アーカイブ・動画なしという前提を満たす年月のみを対象とすることで、サムネイル生成側の実装をシンプルに保てる）。未処理・失敗（レガシーアーカイブ破損等、前節参照）の年月は対象外とする
   2. 対象アーカイブをディスクへダウンロードし、`generateThumbnailArchiveStreaming`でサムネイルzipを生成する

@@ -14,6 +14,23 @@
 
 ## 変更履歴
 
+### [2026-07-27] サムネイル生成で個別に失敗していたHEIC・Android Motion Photoを救済する対応を追加した（Issue #100フォローアップ）
+* **修正の動機・概要**:
+  - Issue #100実データ実行で14,331件の写真がサムネイル生成に失敗した件（原因は(1)一部HEICのlibheifセキュリティ上限抵触、(2)Android Motion Photo(`.mp`)をsharpが認識できない、の2種類）について、ユーザーから「HEICはJPGへ変換してから同様の手法で解決できないか」との相談を受けた。
+  - 調査の結果、sharpが内蔵するHEICデコーダ自体がlibheifであり、Node.js/npmで使える他のHEICデコードライブラリ（`heic-decode`等）もすべて内部的にlibheifをラップしているだけのため、npmパッケージを変えるだけでは同じセキュリティ上限に抵触し解決しないことが判明した。ユーザーと相談の上、libheif付属のCLIツール`heif-convert`を`--disable-limits`オプション付きで外部プロセスとして呼び出す方式を採用した（自分自身が撮影した信頼できる写真のみを扱うため、上限無効化を許容できると判断）。
+  - `.mp`（Android Motion Photo、JPEG本体の後ろにMP4動画データが連結されたハイブリッド形式）は、動画データの先頭を示すISOBMFFの`ftyp`ボックスの位置を検出し、その手前までを先頭のJPEG部分として抽出する方式で対応した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/heic-conversion.util.ts`（新規）: `convertHeicBufferToJpegBuffer`。`heif-convert --disable-limits`を外部プロセスとして呼び出し、HEIC/HEIFバッファをJPEGバッファへ変換する。
+    - `backend/src/photos/motion-photo.util.ts`（新規）: `extractJpegFromMotionPhoto`。MP4の`ftyp`ボックス位置を検出し、その手前（先頭のJPEG部分）のみを抽出する。
+    - `backend/src/photos/generate-thumbnail-archive-streaming.util.ts`: `resolveDecodableImageBuffer`を追加し、`.heic`/`.heif`拡張子は`convertHeicBufferToJpegBuffer`、`.mp`拡張子は`extractJpegFromMotionPhoto`を経由してから`sharp().resize()`へ渡すようにした。変換・抽出に失敗した場合も既存の`failedEntries`記録の仕組みでそのエントリのみをスキップし、他のエントリ・年月全体への影響はない。
+    - 対応する単体テストを新規追加（TDD、Red-Green。HEIC変換は`node:child_process`の`execFileSync`をモックして検証、Motion Photoの抽出は実際のJPEGバイト列とダミーの`ftyp`ボックスを結合したフィクスチャで検証）。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため。`heif-convert`はこの処理を実行する開発者のマシンにのみ必要な追加の外部依存だが、`generate-thumbnails:photos`スクリプト自体がREADME未記載のため、既存の記載パターンに合わせて追記しなかった）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
+  * **設計書**: `designs/technical_design.md`の「グリッド・吹き出し表示用サムネイルZipの生成（Issue #100）」節を更新。あわせて、同節がf891076（1枚のデコード失敗が年月全体を巻き込まないようにする対応）反映前の「ストリームへパイプ」という古い記述のままだった乖離にも気づいたため、実装（Buffer化してから`sharp().toBuffer()`成功時のみ追加する方式）に合わせて修正した。
+* **既知の制約・今後の確認事項**:
+  - この対応の効果測定（実際に14,331件のうちどれだけ救済できたか）は、`heif-convert`のインストール・動作確認（Homebrew経由でのlibheifアップグレードが必要。開発機のバージョン1.17.3には`--disable-limits`オプションが無く、最新版へのアップグレードが必要だった）を経て、サムネイル生成バッチを実データに対して再実行した後にあらためて記録する。
+
 ### [2026-07-25] グリッド・吹き出し表示用に横300px幅のサムネイル専用Zipを生成する機能を実装した（Issue #100、自律モード）
 * **修正の動機・概要**:
   - Issue #99完了後、ユーザーから依頼のあった「グリッド/吹き出し表示用に横300px(縦横比維持)のサムネイル画像のみを集めたZip（例: `2026-04-thumbnails`）を年月ごとに生成する」機能を自律的に実装した。既存のフルサイズzip（`monthly_photo_archives`）はそのまま残し、別ファイル・別テーブルで管理する。

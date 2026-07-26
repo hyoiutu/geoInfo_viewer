@@ -3,9 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import AdmZip from 'adm-zip';
 import sharp from 'sharp';
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import yauzl from 'yauzl';
 import { generateThumbnailArchiveStreaming, THUMBNAIL_WIDTH_PX } from '../generate-thumbnail-archive-streaming.util';
+import { convertHeicBufferToJpegBuffer } from '../heic-conversion.util';
+
+vi.mock('../heic-conversion.util', () => ({ convertHeicBufferToJpegBuffer: vi.fn() }));
 
 const createTestImage = (
   widthPx: number,
@@ -15,6 +18,11 @@ const createTestImage = (
   return sharp({ create: { width: widthPx, height: heightPx, channels: 3, background: color } })
     .jpeg()
     .toBuffer();
+};
+
+// Android Motion PhotoのMP4部分先頭(ftypボックス)を模したバイト列
+const createFakeMp4FtypBox = (): Buffer => {
+  return Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from('ftypisom', 'ascii')]);
 };
 
 const writeFixtureZip = (dir: string, fileName: string, entries: Record<string, Buffer>): string => {
@@ -61,6 +69,7 @@ describe('generateThumbnailArchiveStreamingに関するテスト', () => {
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'thumbnail-streaming-test-'));
+    vi.mocked(convertHeicBufferToJpegBuffer).mockReset();
   });
 
   afterEach(() => {
@@ -116,5 +125,49 @@ describe('generateThumbnailArchiveStreamingに関するテスト', () => {
     expect(result.failedEntries[0].archivePath).toBe('IMG_broken.jpg');
     const entries = await readZipEntries(destPath);
     expect(entries.map((entry) => entry.fileName)).toEqual(['IMG_1.jpg']);
+  });
+
+  test('Android Motion Photo(.mp)は、先頭のJPEG部分を抽出してからサムネイル化する', async () => {
+    const jpeg = await createTestImage(600, 400, { r: 255, g: 0, b: 0 });
+    const motionPhoto = Buffer.concat([jpeg, createFakeMp4FtypBox(), Buffer.from('dummy video bytes')]);
+    const sourcePath = writeFixtureZip(dir, 'source.zip', { 'IMG_1.mp': motionPhoto });
+    const destPath = join(dir, 'thumbnails.zip');
+
+    const result = await generateThumbnailArchiveStreaming(sourcePath, destPath);
+
+    expect(result.entries).toEqual([{ archivePath: 'IMG_1.mp' }]);
+    expect(result.failedEntries).toEqual([]);
+    const entries = await readZipEntries(destPath);
+    const metadata = await sharp(entries[0].content).metadata();
+    expect(metadata.width).toBe(THUMBNAIL_WIDTH_PX);
+  });
+
+  test('HEIC/HEIFエントリは、sharpへ直接渡す前にconvertHeicBufferToJpegBufferで変換したバッファを使う', async () => {
+    const convertedJpeg = await createTestImage(600, 400, { r: 0, g: 255, b: 0 });
+    vi.mocked(convertHeicBufferToJpegBuffer).mockReturnValue(convertedJpeg);
+    const heicSource = Buffer.from('fake heic content');
+    const sourcePath = writeFixtureZip(dir, 'source.zip', { 'IMG_1.heic': heicSource });
+    const destPath = join(dir, 'thumbnails.zip');
+
+    const result = await generateThumbnailArchiveStreaming(sourcePath, destPath);
+
+    expect(convertHeicBufferToJpegBuffer).toHaveBeenCalledWith(heicSource);
+    expect(result.entries).toEqual([{ archivePath: 'IMG_1.heic' }]);
+    const entries = await readZipEntries(destPath);
+    const metadata = await sharp(entries[0].content).metadata();
+    expect(metadata.width).toBe(THUMBNAIL_WIDTH_PX);
+  });
+
+  test('HEIC/HEIFエントリの変換(convertHeicBufferToJpegBuffer)が失敗した場合、そのエントリだけをfailedEntriesへ記録する', async () => {
+    vi.mocked(convertHeicBufferToJpegBuffer).mockImplementation(() => {
+      throw new Error('heif-convert failed');
+    });
+    const sourcePath = writeFixtureZip(dir, 'source.zip', { 'IMG_broken.heic': Buffer.from('fake heic content') });
+    const destPath = join(dir, 'thumbnails.zip');
+
+    const result = await generateThumbnailArchiveStreaming(sourcePath, destPath);
+
+    expect(result.entries).toEqual([]);
+    expect(result.failedEntries).toEqual([{ archivePath: 'IMG_broken.heic', reason: 'heif-convert failed' }]);
   });
 });

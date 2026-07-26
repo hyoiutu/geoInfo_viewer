@@ -1,0 +1,55 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync, writeFileSync } from 'node:fs';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { convertHeicBufferToJpegBuffer } from '../heic-conversion.util';
+
+vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }));
+
+describe('convertHeicBufferToJpegBufferに関するテスト', () => {
+  const mockedExecFileSync = vi.mocked(execFileSync);
+
+  beforeEach(() => {
+    mockedExecFileSync.mockReset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('heif-convertを--disable-limitsオプション付きで呼び出し、生成されたJPEGファイルをバッファとして返す', () => {
+    const fakeJpegContent = Buffer.from('fake jpeg content');
+    let capturedOutputPath = '';
+    mockedExecFileSync.mockImplementation((_command: string, args: readonly string[] | undefined) => {
+      const commandArgs = args ?? [];
+      const outputPath = commandArgs[commandArgs.length - 1];
+      capturedOutputPath = outputPath;
+      writeFileSync(outputPath, fakeJpegContent);
+      return Buffer.from('');
+    });
+
+    const result = convertHeicBufferToJpegBuffer(Buffer.from('fake heic content'));
+
+    expect(result.equals(fakeJpegContent)).toBe(true);
+    expect(mockedExecFileSync).toHaveBeenCalledWith('heif-convert', [
+      '--disable-limits',
+      expect.stringMatching(/input\.heic$/),
+      expect.stringMatching(/output\.jpg$/)
+    ]);
+    // 変換後は作業ディレクトリ(一時ファイル含む)を削除する
+    expect(existsSync(capturedOutputPath)).toBe(false);
+  });
+
+  test('heif-convertの実行に失敗した場合、エラーを投げつつ作業ディレクトリを削除する', () => {
+    let capturedInputPath = '';
+    mockedExecFileSync.mockImplementation((_command: string, args: readonly string[] | undefined) => {
+      const commandArgs = args ?? [];
+      capturedInputPath = commandArgs[commandArgs.length - 2];
+      throw new Error('heif-convert failed: unsupported codec');
+    });
+
+    expect(() => convertHeicBufferToJpegBuffer(Buffer.from('fake heic content'))).toThrow(
+      'heif-convert failed: unsupported codec'
+    );
+    expect(existsSync(capturedInputPath)).toBe(false);
+  });
+});
