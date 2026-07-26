@@ -20,6 +20,12 @@ const log = (message: string): void => {
   writeSync(1, `${message}\n`);
 };
 
+// 個々の写真のサムネイル生成失敗(failedEntries)は年月単位の完了記録(monthly_photo_thumbnail_archives)には
+// 現れないため、HEIC/Motion Photo対応（Issue #100フォローアップ）等でサムネイル生成方式を改善した後、
+// 失敗を含んでいた年月だけを選んで再生成したい場合に、この環境変数でカンマ区切りの年月(YYYY-MM)を指定する。
+// 指定された年月は、既に処理済み(doneYearMonthToDriveFileId)であっても再処理の対象として扱う
+const FORCE_REPROCESS_YEAR_MONTHS_ENV_VAR = 'FORCE_REPROCESS_YEAR_MONTHS';
+
 /**
  * グリッド・吹き出し表示を高速化するため、月別アーカイブzipから横300px（縦横比維持）の
  * サムネイル画像のみを集めた専用zip（`<年月>-thumbnails.zip`）をGoogle Drive上に生成する
@@ -28,6 +34,11 @@ const log = (message: string): void => {
  * 未処理・失敗（レガシーアーカイブ破損等、Issue #99参照）の年月は、常に1年月=1zip・動画なしという
  * 前提を満たさないため対象外とする。年月ごとに処理し、完了した年月は`monthly_photo_thumbnail_archives`
  * テーブルへ記録することで、中断・再実行時に処理済みの年月を丸ごとスキップする。
+ * `FORCE_REPROCESS_YEAR_MONTHS`環境変数で指定された年月は、処理済みでも再処理する（用途は上記定数の
+ * コメント参照）。再処理により新しいサムネイルzipへ差し替わった場合、古いDriveファイルの削除は
+ * DB側が新しいファイルを正しく参照した後のベストエフォートな後始末とする
+ * （`strip-videos-and-consolidate-archives.ts`と同じパターン。失敗してもDriveの容量を無駄にするだけで
+ * データの整合性は壊れないため、この年月の処理自体は成功として扱う）。
  * 1つの年月の処理に失敗しても、他の年月の処理を止めずに次へ進む
  */
 const generateThumbnailArchives = async (): Promise<void> => {
@@ -40,11 +51,22 @@ const generateThumbnailArchives = async (): Promise<void> => {
   const videoStrippedRepository = dataSource.getRepository(VideoStrippedYearMonthEntity);
   const thumbnailArchiveRepository = dataSource.getRepository(MonthlyPhotoThumbnailArchiveEntity);
 
+  const forceReprocessYearMonths = new Set(
+    (process.env[FORCE_REPROCESS_YEAR_MONTHS_ENV_VAR] ?? '')
+      .split(',')
+      .map((yearMonth) => yearMonth.trim())
+      .filter((yearMonth) => yearMonth.length > 0)
+  );
+
   const targetYearMonths = (await videoStrippedRepository.find()).map((row) => row.yearMonth).sort();
-  const doneYearMonths = new Set((await thumbnailArchiveRepository.find()).map((row) => row.yearMonth));
-  const remainingCount = targetYearMonths.filter((yearMonth) => !doneYearMonths.has(yearMonth)).length;
+  const doneYearMonthToDriveFileId = new Map(
+    (await thumbnailArchiveRepository.find()).map((row) => [row.yearMonth, row.driveFileId])
+  );
+  const remainingCount = targetYearMonths.filter(
+    (yearMonth) => !doneYearMonthToDriveFileId.has(yearMonth) || forceReprocessYearMonths.has(yearMonth)
+  ).length;
   log(
-    `対象年月${targetYearMonths.length}件（処理済み: ${targetYearMonths.length - remainingCount}件、未処理: ${remainingCount}件）`
+    `対象年月${targetYearMonths.length}件（処理済み: ${targetYearMonths.length - remainingCount}件、未処理: ${remainingCount}件、うち再処理指定: ${forceReprocessYearMonths.size}件）`
   );
 
   let processedCount = 0;
@@ -52,7 +74,7 @@ const generateThumbnailArchives = async (): Promise<void> => {
   const failedYearMonths: string[] = [];
 
   for (const yearMonth of targetYearMonths) {
-    if (doneYearMonths.has(yearMonth)) {
+    if (doneYearMonthToDriveFileId.has(yearMonth) && !forceReprocessYearMonths.has(yearMonth)) {
       log(`[${yearMonth}] 前回の実行で処理済みのためスキップします`);
       continue;
     }
@@ -83,7 +105,18 @@ const generateThumbnailArchives = async (): Promise<void> => {
         );
         await googleDriveApiClient.uploadFileFromPath(accessToken, newDriveFileId, destPath);
 
+        const oldDriveFileId = doneYearMonthToDriveFileId.get(yearMonth);
         await thumbnailArchiveRepository.save({ yearMonth, driveFileId: newDriveFileId });
+
+        // 再処理により古いサムネイルzipが不要になった場合のベストエフォートな後始末（詳細は関数のTSDoc参照）
+        if (oldDriveFileId !== undefined) {
+          try {
+            await googleDriveApiClient.deleteFile(accessToken, oldDriveFileId);
+          } catch (error) {
+            console.error(`[${yearMonth}] 古いサムネイルzip（${oldDriveFileId}）の削除に失敗しました:`, error);
+          }
+        }
+
         processedCount += 1;
         totalFailedEntryCount += failedEntries.length;
         // 個々の写真のサムネイル生成に失敗しても（一部のHEIC写真でlibheifのセキュリティ上限に

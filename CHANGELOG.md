@@ -19,17 +19,19 @@
   - Issue #100実データ実行で14,331件の写真がサムネイル生成に失敗した件（原因は(1)一部HEICのlibheifセキュリティ上限抵触、(2)Android Motion Photo(`.mp`)をsharpが認識できない、の2種類）について、ユーザーから「HEICはJPGへ変換してから同様の手法で解決できないか」との相談を受けた。
   - 調査の結果、sharpが内蔵するHEICデコーダ自体がlibheifであり、Node.js/npmで使える他のHEICデコードライブラリ（`heic-decode`等）もすべて内部的にlibheifをラップしているだけのため、npmパッケージを変えるだけでは同じセキュリティ上限に抵触し解決しないことが判明した。ユーザーと相談の上、libheif付属のCLIツール`heif-convert`を`--disable-limits`オプション付きで外部プロセスとして呼び出す方式を採用した（自分自身が撮影した信頼できる写真のみを扱うため、上限無効化を許容できると判断）。
   - `.mp`（Android Motion Photo、JPEG本体の後ろにMP4動画データが連結されたハイブリッド形式）は、動画データの先頭を示すISOBMFFの`ftyp`ボックスの位置を検出し、その手前までを先頭のJPEG部分として抽出する方式で対応した。
+  - 実装後、ユーザーから「これを実行すれば残りのMPファイルからサムネイルが生成できる、既存分はスキップされ最短で済む、という認識で合っているか」との確認があった。調査の結果、`monthly_photo_thumbnail_archives`による中断・再開の重複防止は**年月単位**の完了記録のみで、年月内の個別写真の失敗（`failedEntries`）は記録されないため、単純に再実行しても対象169年月は全て「処理済み」としてスキップされ、今回の修正が一切適用されないことが判明した。前回実行時のログ（`/private/tmp/generate-thumbnails-run1.log`・`run2.log`）を解析したところ、失敗写真を含んでいた年月は169件中76件（2018-01〜2026-02に集中、失敗件数の合計は14,331件と一致）と特定できた。
 * **各ファイルへの影響と変更内容**:
   * **実装**:
     - `backend/src/photos/heic-conversion.util.ts`（新規）: `convertHeicBufferToJpegBuffer`。`heif-convert --disable-limits`を外部プロセスとして呼び出し、HEIC/HEIFバッファをJPEGバッファへ変換する。
     - `backend/src/photos/motion-photo.util.ts`（新規）: `extractJpegFromMotionPhoto`。MP4の`ftyp`ボックス位置を検出し、その手前（先頭のJPEG部分）のみを抽出する。
     - `backend/src/photos/generate-thumbnail-archive-streaming.util.ts`: `resolveDecodableImageBuffer`を追加し、`.heic`/`.heif`拡張子は`convertHeicBufferToJpegBuffer`、`.mp`拡張子は`extractJpegFromMotionPhoto`を経由してから`sharp().resize()`へ渡すようにした。変換・抽出に失敗した場合も既存の`failedEntries`記録の仕組みでそのエントリのみをスキップし、他のエントリ・年月全体への影響はない。
-    - 対応する単体テストを新規追加（TDD、Red-Green。HEIC変換は`node:child_process`の`execFileSync`をモックして検証、Motion Photoの抽出は実際のJPEGバイト列とダミーの`ftyp`ボックスを結合したフィクスチャで検証）。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
+    - `backend/src/photos/generate-thumbnail-archives.ts`: `FORCE_REPROCESS_YEAR_MONTHS`環境変数（カンマ区切りの年月）で指定した年月は、処理済みでも再処理するようにした。再処理で新しいサムネイルzipへの差し替えが成功した後、古いDriveファイルの削除をベストエフォートで行う処理も追加した（`strip-videos-and-consolidate-archives.ts`の古いアーカイブ削除と同じパターン）。ユーザーの希望により、DB行を直接削除する手動オペレーションではなく、スクリプト自体に正式な再処理の仕組みとして実装した。
+    - 対応する単体テストを新規追加（TDD、Red-Green。HEIC変換は`node:child_process`の`execFileSync`をモックして検証、Motion Photoの抽出は実際のJPEGバイト列とダミーの`ftyp`ボックスを結合したフィクスチャで検証）。`generate-thumbnail-archives.ts`自体は既存方針（スタンドアロンCLIスクリプトのオーケストレーション部分は専用テストを持たない、test_rules.md参照）に従い専用テストなし。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
   * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため。`heif-convert`はこの処理を実行する開発者のマシンにのみ必要な追加の外部依存だが、`generate-thumbnails:photos`スクリプト自体がREADME未記載のため、既存の記載パターンに合わせて追記しなかった）。
   * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
-  * **設計書**: `designs/technical_design.md`の「グリッド・吹き出し表示用サムネイルZipの生成（Issue #100）」節を更新。あわせて、同節がf891076（1枚のデコード失敗が年月全体を巻き込まないようにする対応）反映前の「ストリームへパイプ」という古い記述のままだった乖離にも気づいたため、実装（Buffer化してから`sharp().toBuffer()`成功時のみ追加する方式）に合わせて修正した。
+  * **設計書**: `designs/technical_design.md`の「グリッド・吹き出し表示用サムネイルZipの生成（Issue #100）」節を更新。あわせて、同節がf891076（1枚のデコード失敗が年月全体を巻き込まないようにする対応）反映前の「ストリームへパイプ」という古い記述のままだった乖離にも気づいたため、実装（Buffer化してから`sharp().toBuffer()`成功時のみ追加する方式）に合わせて修正した。`FORCE_REPROCESS_YEAR_MONTHS`環境変数による再処理・古いDriveファイル削除の仕組みも追記した。
 * **既知の制約・今後の確認事項**:
-  - この対応の効果測定（実際に14,331件のうちどれだけ救済できたか）は、`heif-convert`のインストール・動作確認（Homebrew経由でのlibheifアップグレードが必要。開発機のバージョン1.17.3には`--disable-limits`オプションが無く、最新版へのアップグレードが必要だった）を経て、サムネイル生成バッチを実データに対して再実行した後にあらためて記録する。
+  - この対応の効果測定（実際に14,331件のうちどれだけ救済できたか）は、`heif-convert`のインストール・動作確認（Homebrew経由でのlibheifアップグレードが必要。開発機のバージョン1.17.3には`--disable-limits`オプションが無く、最新版へのアップグレードが必要だった）を経て、`FORCE_REPROCESS_YEAR_MONTHS`で対象76年月を指定してサムネイル生成バッチを実データに対して再実行した後にあらためて記録する。
 
 ### [2026-07-25] グリッド・吹き出し表示用に横300px幅のサムネイル専用Zipを生成する機能を実装した（Issue #100、自律モード）
 * **修正の動機・概要**:

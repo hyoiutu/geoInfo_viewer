@@ -235,5 +235,6 @@ Google Takeoutで一括ダウンロードした写真をローカルへ展開す
   4. `monthly_photo_thumbnail_archives`（マイグレーション`CreateMonthlyPhotoThumbnailArchives`、年月とサムネイルzipのDriveファイルIDのみを保持する専用テーブル）へ記録する。既存の`monthly_photo_archives`（フルサイズ写真用）のスキーマ・データは変更しない（サムネイルzipはフルサイズzipと完全に独立した別ファイルとして扱う）
   5. 年月ごとの一時作業ディレクトリは、処理の成否に関わらず`finally`で必ず削除する
 - 中断・再実行時の重複防止・1年月の失敗で全体を止めない設計は、いずれも`strip-videos-and-consolidate-archives.ts`（Issue #99）と同じパターンを踏襲する
+- 中断・再実行時の重複防止（`monthly_photo_thumbnail_archives`への年月単位の完了記録）は、その年月「全体」が成功したかどうかのみを表す。年月の中の一部の写真だけが個別に失敗した場合（`failedEntries`）はこのテーブルには記録されないため、通常の再実行では再処理されない。HEIC/Motion Photo対応のようにサムネイル生成方式自体を改善した後、既に処理済みの年月に含まれる失敗写真だけを狙って再生成したい場合は、`FORCE_REPROCESS_YEAR_MONTHS`環境変数（カンマ区切りの年月）で対象を明示的に指定する。指定された年月は処理済みでも再処理され、新しいサムネイルzipへの差し替えが成功した後、古いDriveファイルの削除をベストエフォートで行う（`strip-videos-and-consolidate-archives.ts`の古いアーカイブ削除と同じパターン。失敗してもDriveの容量を無駄にするだけでデータの整合性は壊れない）
 - サムネイルzip内のエントリパスは、元アーカイブと同じファイル名（衝突時は`resolveUniquePath`で連番）とする。将来グリッド/吹き出し表示側で実際にサムネイルzipを参照する際は、`photos.archive_path`（元アーカイブ内でのファイル名）と`photos.taken_at`から求めた年月に対応する`monthly_photo_thumbnail_archives.drive_file_id`を組み合わせれば、対応するサムネイルエントリを特定できる（`photos`テーブル自体にサムネイル専用のカラムを追加する必要はない）
 - グリッド/吹き出し表示側の実際の切り替え（サムネイルzipを先に読み込み、フルサイズzipは裏で先読みする方式への変更）は本Issueのスコープ外とし、別Issueで対応する
