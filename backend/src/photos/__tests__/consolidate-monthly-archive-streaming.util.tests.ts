@@ -6,14 +6,19 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import yauzl from 'yauzl';
 import { consolidateArchiveFilesWithoutVideosStreaming } from '../consolidate-monthly-archive-streaming.util';
 
-const writeFixtureZip = (dir: string, fileName: string, entries: Record<string, string>): string => {
+const writeFixtureZip = (dir: string, fileName: string, entries: Record<string, string | Buffer>): string => {
   const zip = new AdmZip();
   for (const [entryName, content] of Object.entries(entries)) {
-    zip.addFile(entryName, Buffer.from(content));
+    zip.addFile(entryName, typeof content === 'string' ? Buffer.from(content) : content);
   }
   const filePath = join(dir, fileName);
   writeFileSync(filePath, zip.toBuffer());
   return filePath;
+};
+
+// 拡張子が失われたQuickTime動画(実データで見つかった事例)を模した先頭バイト列
+const createFakeQuickTimeHeader = (): Buffer => {
+  return Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x14]), Buffer.from('ftypqt  ', 'ascii')]);
 };
 
 const readZipEntries = async (zipPath: string): Promise<{ fileName: string; method: number; content: string }[]> => {
@@ -125,5 +130,26 @@ describe('consolidateArchiveFilesWithoutVideosStreamingに関するテスト', (
     expect(result.removedVideoEntries).toEqual([{ sourceFileId: 'file-1', archivePath: 'VID_1.mp4' }]);
     const entries = await readZipEntries(destPath);
     expect(entries).toEqual([]);
+  });
+
+  test('拡張子が動画として認識されなくても、中身が実際には動画(QuickTime等)の場合は除外する', async () => {
+    const actuallyVideo = Buffer.concat([createFakeQuickTimeHeader(), Buffer.from('dummy quicktime payload')]);
+    const sourcePath = writeFixtureZip(dir, 'source.zip', {
+      videoWithoutExtension: actuallyVideo,
+      'IMG_1.jpg': 'photo-1'
+    });
+    const destPath = join(dir, 'dest.zip');
+
+    const result = await consolidateArchiveFilesWithoutVideosStreaming(
+      [{ sourceFileId: 'file-1', filePath: sourcePath }],
+      destPath
+    );
+
+    expect(result.keptEntries).toEqual([
+      { sourceFileId: 'file-1', oldArchivePath: 'IMG_1.jpg', newArchivePath: 'IMG_1.jpg' }
+    ]);
+    expect(result.removedVideoEntries).toEqual([{ sourceFileId: 'file-1', archivePath: 'videoWithoutExtension' }]);
+    const entries = await readZipEntries(destPath);
+    expect(entries.map((entry) => entry.fileName)).toEqual(['IMG_1.jpg']);
   });
 });

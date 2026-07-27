@@ -28,6 +28,12 @@ const log = (message: string): void => {
   writeSync(1, `${message}\n`);
 };
 
+// `video_stripped_year_months`への完了記録は年月単位のみで、動画判定ロジック自体を改善した後
+// （拡張子が失われた動画をISOBMFFの中身から検出するようになった等）、既に処理済みの年月を
+// 選んで再処理したい場合に、この環境変数でカンマ区切りの年月(YYYY-MM)を指定する。指定された年月は
+// 処理済みでも再処理の対象として扱う（`generate-thumbnail-archives.ts`と同じパターン）
+const FORCE_REPROCESS_YEAR_MONTHS_ENV_VAR = 'FORCE_REPROCESS_YEAR_MONTHS';
+
 /**
  * 既存の月別アーカイブzip（写真ローカルバックフィルで作成済み）から動画エントリを削除し、
  * サイズ超過により複数partへ分割されていた年月は単一のzipへ統合する（Issue #97）。
@@ -44,7 +50,9 @@ const log = (message: string): void => {
  * 処理が巻き添えで止まらないようにするため。実際に、part列導入以前の1つの巨大な既存アーカイブで
  * End of central directoryが存在せずzipとして読めない＝アップロード当時から壊れていたと見られる
  * 事例が発見された。この種の破損は本処理では自動修復せず、完了時に失敗した年月の一覧を出力し
- * 手動確認を促す）
+ * 手動確認を促す）。
+ * `FORCE_REPROCESS_YEAR_MONTHS`環境変数で指定された年月は、処理済みでも再処理する
+ * （用途は同定数のコメント参照）
  */
 const stripVideosAndConsolidateArchives = async (): Promise<void> => {
   const dataSource = new DataSource(createDataSourceOptions(process.env));
@@ -56,12 +64,21 @@ const stripVideosAndConsolidateArchives = async (): Promise<void> => {
   const photoRepository = dataSource.getRepository(PhotoEntity);
   const videoStrippedRepository = dataSource.getRepository(VideoStrippedYearMonthEntity);
 
+  const forceReprocessYearMonths = new Set(
+    (process.env[FORCE_REPROCESS_YEAR_MONTHS_ENV_VAR] ?? '')
+      .split(',')
+      .map((yearMonth) => yearMonth.trim())
+      .filter((yearMonth) => yearMonth.length > 0)
+  );
+
   const allArchives = await monthlyPhotoArchiveRepository.find();
   const strippedYearMonths = new Set((await videoStrippedRepository.find()).map((row) => row.yearMonth));
   const yearMonths = [...new Set(allArchives.map((archive) => archive.yearMonth))].sort();
-  const remainingYearMonths = yearMonths.filter((yearMonth) => !strippedYearMonths.has(yearMonth));
+  const remainingYearMonths = yearMonths.filter(
+    (yearMonth) => !strippedYearMonths.has(yearMonth) || forceReprocessYearMonths.has(yearMonth)
+  );
   log(
-    `対象年月${yearMonths.length}件（処理済み: ${yearMonths.length - remainingYearMonths.length}件、未処理: ${remainingYearMonths.length}件）`
+    `対象年月${yearMonths.length}件（処理済み: ${yearMonths.length - remainingYearMonths.length}件、未処理: ${remainingYearMonths.length}件、うち再処理指定: ${forceReprocessYearMonths.size}件）`
   );
 
   let processedYearMonthCount = 0;
@@ -69,7 +86,7 @@ const stripVideosAndConsolidateArchives = async (): Promise<void> => {
   const failedYearMonths: string[] = [];
 
   for (const yearMonth of yearMonths) {
-    if (strippedYearMonths.has(yearMonth)) {
+    if (strippedYearMonths.has(yearMonth) && !forceReprocessYearMonths.has(yearMonth)) {
       log(`[${yearMonth}] 前回の実行で処理済みのためスキップします`);
       continue;
     }

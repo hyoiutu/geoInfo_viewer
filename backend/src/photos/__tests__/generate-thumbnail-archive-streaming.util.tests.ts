@@ -31,6 +31,11 @@ const createFakeHeicHeader = (): Buffer => {
   return Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from('ftypheic', 'ascii')]);
 };
 
+// 拡張子が失われたQuickTime動画(実データで見つかった事例)を模した先頭バイト列
+const createFakeQuickTimeHeader = (): Buffer => {
+  return Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x14]), Buffer.from('ftypqt  ', 'ascii')]);
+};
+
 const writeFixtureZip = (dir: string, fileName: string, entries: Record<string, Buffer>): string => {
   const zip = new AdmZip();
   for (const [entryName, content] of Object.entries(entries)) {
@@ -190,5 +195,23 @@ describe('generateThumbnailArchiveStreamingに関するテスト', () => {
     const entries = await readZipEntries(destPath);
     const metadata = await sharp(entries[0].content).metadata();
     expect(metadata.width).toBe(THUMBNAIL_WIDTH_PX);
+  });
+
+  test('拡張子が写真の形式でも、中身が実際には動画(QuickTime等)の場合は動画として除外し、entries・failedEntriesのいずれにも含めない', async () => {
+    const actuallyVideo = Buffer.concat([createFakeQuickTimeHeader(), Buffer.from('dummy quicktime payload')]);
+    const validImage = await createTestImage(600, 400, { r: 255, g: 0, b: 0 });
+    const sourcePath = writeFixtureZip(dir, 'source.zip', {
+      videoWithoutExtension: actuallyVideo,
+      'IMG_1.jpg': validImage
+    });
+
+    const destPath = join(dir, 'thumbnails.zip');
+
+    const result = await generateThumbnailArchiveStreaming(sourcePath, destPath);
+
+    expect(result.entries).toEqual([{ archivePath: 'IMG_1.jpg' }]);
+    expect(result.failedEntries).toEqual([]);
+    const entries = await readZipEntries(destPath);
+    expect(entries.map((entry) => entry.fileName)).toEqual(['IMG_1.jpg']);
   });
 });

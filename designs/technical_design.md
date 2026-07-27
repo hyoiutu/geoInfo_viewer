@@ -206,10 +206,10 @@ Google Takeoutで一括ダウンロードした写真をローカルへ展開す
 ## 月別アーカイブからの動画削除・part統合（Issue #97 / #99）
 写真グリッド表示（静止画プレビューのみで動画再生機能は無い）に動画は使われておらず、容量のみを圧迫していた。動画を多く含む月ほど月別アーカイブzipのダウンロードに時間がかかり、写真グリッドの表示が遅い原因になっていたため、`backend/src/photos/strip-videos-and-consolidate-archives.ts`（`pnpm --filter backend run strip-videos:photos`）で既存の月別アーカイブzipから動画エントリを削除する一括処理を用意した。元のGoogle Photos側のデータには影響しない（このアプリ用にGoogle Driveへコピーした分のみが対象）。
 
-- `isVideoFile`（`video-file.util.ts`）で拡張子（`.mp4`/`.mov`/`.avi`/`.mkv`/`.3gp`/`.webm`）から動画かどうかを判定する
+- 動画かどうかの判定は、拡張子（`isVideoFile`、`video-file.util.ts`。`.mp4`/`.mov`/`.avi`/`.mkv`/`.3gp`/`.webm`/`.m4v`）と、中身の先頭バイト（`looksLikeVideoContainer`、同ファイル）の両方で行う。実データ実行の結果、iPhoneのLive Photoに付随するQuickTime動画（`.mov`）が拡張子を失った状態で紛れ込んでいる事例が見つかったため、ISOBMFFのftypボックス＋メジャーブランドを確認し、HEIC/HEIF系のメジャーブランド（`heic`/`heix`/`mif1`等）以外のftypコンテナは動画とみなす。
 - ダウンロード・統合・アップロードは全てディスク経由のストリーミング処理で行う（Issue #99。初回実装ではzip全体をメモリ上へ保持していたため、月合計サイズが2GiBを超える月は安全のため処理対象から除外していたが、ストリーミング化によりこの制限は撤廃した）
   - `GoogleDriveApiClient.downloadFileToPath`/`uploadFileFromPath`（`google-drive-api.client.ts`）は、既存の`downloadFile`/`updateFileContent`（Bufferを丸ごと受け渡しする、写真取り込み等の他の処理で引き続き使用）とは別に新設したメソッドで、ファイル内容をディスク上のパス経由でストリーミング転送する。アップロードのチャンク読み出しはファイルサイズに関わらずチャンク1つ分のバッファを使い回すことで、メモリ使用量を一定に保つ
-  - `consolidateArchiveFilesWithoutVideosStreaming`（`consolidate-monthly-archive-streaming.util.ts`）は、ディスク上の元アーカイブzipファイル（サイズ超過によりpart分割されていた場合は複数）を`yauzl`でエントリ単位に逐次読み込み、動画エントリを除外した上で`yazl`によりディスク上の新規zipへ逐次書き込む。異なる元アーカイブ由来で同名ファイルが衝突する場合は`mergeMonthlyArchive`と共通の`resolveUniquePath`で連番を付けて回避し、新規エントリはSTORED（無圧縮）で追加する。yauzlは同一zipFileに対する並行読み込みを想定していないため、1エントリの出力ストリームへの転送が完了してから次のエントリの読み込みに進む設計とし、出力先への書き込みパイプはエントリ追加を始める前に開始しておく（そうしないと、書き込みが実際に消費されないまま最初のエントリの転送待ちで停止してしまう）
+  - `consolidateArchiveFilesWithoutVideosStreaming`（`consolidate-monthly-archive-streaming.util.ts`）は、ディスク上の元アーカイブzipファイル（サイズ超過によりpart分割されていた場合は複数）を`yauzl`でエントリ単位に逐次読み込む。アーカイブ全体を同時にメモリへ保持しないが、動画かどうかの判定に中身の確認が必要なため、1エントリ分（写真・動画1件、数MB程度）はいったんBufferとして読み切ってから、動画でなければ`yazl`の`addBuffer`で新規zipへ追加する（サムネイル生成、`generate-thumbnail-archive-streaming.util.ts`と同じ設計）。異なる元アーカイブ由来で同名ファイルが衝突する場合は`mergeMonthlyArchive`と共通の`resolveUniquePath`で連番を付けて回避し、新規エントリはSTORED（無圧縮）で追加する。yauzlは同一zipFileに対する並行読み込みを想定していないため、1エントリの処理が完了してから次のエントリの読み込みに進む設計とする
 - オーケストレーション（`strip-videos-and-consolidate-archives.ts`）は年月ごとに以下を行う
   1. 対象年月の全アーカイブ（part分割されていた場合は複数）の合計サイズを`GoogleDriveApiClient.getFileMetadata`で事前確認し、進捗ログに出力する（ストリーミング化により処理可否の判定には使わない）
   2. 年月ごとの一時作業ディレクトリ（`os.tmpdir()`配下）へ対象アーカイブを全て`downloadFileToPath`でダウンロードし、`consolidateArchiveFilesWithoutVideosStreaming`で統合。動画も無く既に単一アーカイブの場合は何もせず処理済みとして記録するのみ
@@ -217,7 +217,7 @@ Google Takeoutで一括ダウンロードした写真をローカルへ展開す
   4. `monthly_photo_archives`の当該年月の行を全て削除し、新しいzipを指す1行（`part = LEGACY_WHOLE_MONTH_PART`）を挿入する。この時点でDB側は新しいzipを正しく参照した一貫性のある状態になる
   5. 古いDriveファイルの削除は上記4の後に行うベストエフォートな後始末とする（失敗してもDB側の整合性は既に保たれているため、この年月の処理自体は成功として扱う。失敗時はDrive容量が無駄になるのみで手動削除が必要）
   6. 年月ごとの一時作業ディレクトリは、処理の成否に関わらず`finally`で必ず削除する（disk容量を圧迫し続けないため）
-- 中断・再実行時の重複防止は、専用の`video_stripped_year_months`テーブル（マイグレーション`CreateVideoStrippedYearMonths`、年月のみを保持する進捗管理専用テーブル）で行う。`monthly_photo_archives`本体のスキーマ・スキップ判定ロジックは変更しない（本処理による統合後のアーカイブも`part = LEGACY_WHOLE_MONTH_PART`という同じ状態になるため、既存のスキップ判定とは独立した専用の記録が必要だった）
+- 中断・再実行時の重複防止は、専用の`video_stripped_year_months`テーブル（マイグレーション`CreateVideoStrippedYearMonths`、年月のみを保持する進捗管理専用テーブル）で行う。`monthly_photo_archives`本体のスキーマ・スキップ判定ロジックは変更しない（本処理による統合後のアーカイブも`part = LEGACY_WHOLE_MONTH_PART`という同じ状態になるため、既存のスキップ判定とは独立した専用の記録が必要だった）。動画判定ロジック自体を改善した後（`looksLikeVideoContainer`追加等）、既に処理済みの年月を選んで再処理したい場合は、`generate-thumbnail-archives.ts`と同じパターンの`FORCE_REPROCESS_YEAR_MONTHS`環境変数（カンマ区切りの年月）で対象を指定する。指定された年月は処理済みでも再処理され、既存の古いDriveファイル削除の仕組み（上記5）がそのまま適用される
 - **既知の制約（レガシー単一アーカイブのZIP64非対応）**: `part`列導入以前（part分割の概念が存在しなかった時代）に作成された一部の既存アーカイブ（`part = LEGACY_WHOLE_MONTH_PART`）は、合計サイズが4GiBを超える場合に読み込めない（`yauzl`はもちろん標準の`unzip`コマンドでも「End of central directory record signature not found」となる）ことが実データ処理で判明した。標準ZIP形式は32bitオフセットで4GiBが上限のため、これらのファイルを書き込んだ当時の`adm-zip`がZIP64拡張に対応しておらず、書き込み時点で既に壊れた状態だった可能性が高い（ダウンロード自体はContent-Lengthと完全一致しており、ダウンロードや本処理起因の破損ではないことを確認済み）。オーケストレーションは1年月の処理失敗（この種のアーカイブ破損を含む）で全体を止めず、失敗した年月をログへ記録した上で次の年月へ処理を継続する。該当年月は`video_stripped_year_months`に記録されないため未処理のまま残り、復旧要否は別途判断が必要（自動修復は行わない）
 
 ## グリッド・吹き出し表示用サムネイルZipの生成（Issue #100）

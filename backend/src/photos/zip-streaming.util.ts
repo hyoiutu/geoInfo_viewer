@@ -62,21 +62,15 @@ export const writeYazlOutput = (zipFile: yazl.ZipFile, destZipPath: string): Pro
 };
 
 /**
- * 1件のエントリのReadableストリームをyazlの出力zipへ追加し、そのエントリの転送が
- * 完全に完了するまで待つ。yauzlは同一zipFileに対する並行読み込みを想定していないため、
- * `forEachZipEntry`のコールバック内でこの完了を待ってからでないと次のエントリへ進んではならない
- * @param outputZip 追加先のyazl出力zip
- * @param readStream 追加するエントリの読み込みストリーム（`transform`で変換される場合はその変換後ストリーム）
- * @param archivePath 出力zip内でのエントリパス
+ * 1件分のReadableストリームを最後まで読み切り、Bufferとして返す
+ * @param stream 読み切る対象のストリーム
+ * @returns 読み切ったバイト列
  */
-export const addStreamEntryAndWait = (
-  outputZip: yazl.ZipFile,
-  readStream: NodeJS.ReadableStream,
-  archivePath: string
-): Promise<void> => {
+export const readStreamToBuffer = (stream: NodeJS.ReadableStream): Promise<Buffer> => {
   return new Promise((resolve, reject) => {
-    readStream.on('end', resolve);
-    readStream.on('error', reject);
-    outputZip.addReadStream(readStream, archivePath, { compress: false });
+    const chunks: Buffer[] = [];
+    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
   });
 };

@@ -4,8 +4,8 @@ import yazl from 'yazl';
 import { convertHeicBufferToJpegBuffer } from './heic-conversion.util';
 import { resolveUniquePath } from './monthly-archive.util';
 import { extractJpegFromMotionPhoto } from './motion-photo.util';
-import { isVideoFile } from './video-file.util';
-import { forEachZipEntry, openEntryReadStream, writeYazlOutput } from './zip-streaming.util';
+import { isVideoFile, looksLikeVideoContainer } from './video-file.util';
+import { forEachZipEntry, openEntryReadStream, readStreamToBuffer, writeYazlOutput } from './zip-streaming.util';
 
 // sharpが内蔵するHEIC/HEIFデコーダ(libheif)はセキュリティ上限に抵触して正当な写真のデコードに
 // 失敗することがあるため、この拡張子は`heic-conversion.util.ts`(heif-convert CLI経由)で変換する
@@ -83,18 +83,6 @@ const resolveDecodableImageBuffer = (originalBuffer: Buffer, fileName: string): 
 };
 
 /**
- * 1件分のReadableストリームを最後まで読み切り、Bufferとして返す
- */
-const readStreamToBuffer = (stream: NodeJS.ReadableStream): Promise<Buffer> => {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    stream.on('data', (chunk: Buffer) => chunks.push(chunk));
-    stream.on('end', () => resolve(Buffer.concat(chunks)));
-    stream.on('error', reject);
-  });
-};
-
-/**
  * 動画削除・part統合済み（Issue #97 / #99）の月別アーカイブzip（ディスク上のパス）を読み込み、
  * 各写真エントリを横`THUMBNAIL_WIDTH_PX`px・縦横比維持でリサイズしたサムネイルzipを、
  * ディスク上に生成する（Issue #100）。
@@ -129,14 +117,17 @@ export const generateThumbnailArchiveStreaming = async (
     if (entry.fileName.endsWith('/')) {
       return;
     }
-    // 元アーカイブは動画削除済みのはずだが、念のため動画エントリはサムネイル化の対象から除外する
-    if (isVideoFile(entry.fileName)) {
-      return;
-    }
 
     try {
       const readStream = await openEntryReadStream(zipFile, entry);
       const originalBuffer = await readStreamToBuffer(readStream);
+      // 元アーカイブは動画削除済みのはずだが、念のため動画エントリはサムネイル化の対象から除外する。
+      // 拡張子だけでなく中身(ISOBMFFのftyp+メジャーブランド)も確認する。実データで、拡張子が
+      // 失われた動画ファイル(iPhoneのLive Photoに付随するQuickTime動画等)が写真として誤処理され
+      // サムネイル生成に失敗する事例が見つかったため
+      if (isVideoFile(entry.fileName) || looksLikeVideoContainer(originalBuffer)) {
+        return;
+      }
       const decodableBuffer = resolveDecodableImageBuffer(originalBuffer, entry.fileName);
       const thumbnailBuffer = await sharp(decodableBuffer).resize({ width: THUMBNAIL_WIDTH_PX }).toBuffer();
 

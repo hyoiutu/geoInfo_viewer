@@ -14,6 +14,24 @@
 
 ## 変更履歴
 
+### [2026-07-27] 拡張子が失われた動画ファイルをISOBMFFの中身から検出し、月別アーカイブ・photosテーブルから実際に削除する対応を追加した（Issue #97/#99/#100フォローアップ）
+* **修正の動機・概要**:
+  - サムネイル生成の残り30件の失敗原因をユーザーから問われ調査した結果、そのうち20件（拡張子なし、`Input buffer contains unsupported image format`）の実体をGoogle Driveから実際にダウンロードして確認したところ、全てQuickTime動画（先頭バイトが`ftyp` + メジャーブランド`qt  `）だと判明した。iPhoneのLive Photoに付随する動画コンポーネントが、取り込みのどこかの段階で拡張子を失ったものと推測される。
+  - これは「サムネイル生成の失敗」ではなく、そもそも動画削除・part統合処理（Issue #97/#99）が拡張子ベースの判定（`isVideoFile`）で検出できず、写真として誤って`monthly_photo_archives`・`photos`テーブルに残ってしまっていたことが根本原因だった。ユーザーと相談の上、判定ロジックを追加した上で、月別アーカイブ・`photos`テーブルから実際に削除する対応とすることで合意した（単にサムネイル生成側でスキップするだけの対応は不採用とした）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/video-file.util.ts`: `looksLikeVideoContainer`（新規）を追加。ISOBMFFのftypボックス＋メジャーブランドを確認し、HEIC/HEIF系のメジャーブランド以外のftypコンテナを動画とみなす。
+    - `backend/src/photos/zip-streaming.util.ts`: `generate-thumbnail-archive-streaming.util.ts`にあった`readStreamToBuffer`を共有ユーティリティとして移動（DRY）。ストリームをyazlへ直接パイプする`addStreamEntryAndWait`は利用箇所が無くなったため削除。
+    - `backend/src/photos/generate-thumbnail-archive-streaming.util.ts`: 動画判定を拡張子（`isVideoFile`）に加え中身（`looksLikeVideoContainer`）でも行うよう変更。判定に中身の確認が必要なため、動画チェックをBuffer読み込み後に移動した。
+    - `backend/src/photos/consolidate-monthly-archive-streaming.util.ts`: 同様に動画判定を拡張子＋中身の両方で行うよう変更。従来はエントリの読み込みストリームを直接yazlの出力へパイプする設計だったが、中身を確認するためにいったんBufferとして読み切ってから`addBuffer`する設計に変更した（1エントリ分、数MB程度のみをメモリへ保持。Issue #99が対象とした「アーカイブ全体を同時に保持する」問題とは規模が異なり実用上問題ない）。
+    - `backend/src/photos/strip-videos-and-consolidate-archives.ts`: `FORCE_REPROCESS_YEAR_MONTHS`環境変数（`generate-thumbnail-archives.ts`と同じパターン）を追加し、判定ロジック改善後に既に処理済みの年月を選んで再処理できるようにした。
+    - 対応する単体テストを新規追加（TDD、Red-Green。実際にQuickTime動画のftyp+メジャーブランドを模したバイト列で検証）。`strip-videos-and-consolidate-archives.ts`自体は既存方針（スタンドアロンCLIスクリプトのオーケストレーション部分は専用テストを持たない）に従い専用テストなし。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
+  * **設計書**: `designs/technical_design.md`の「月別アーカイブからの動画削除・part統合（Issue #97 / #99）」節を、動画判定が拡張子＋中身の両方になったこと・`FORCE_REPROCESS_YEAR_MONTHS`による再処理の仕組みに合わせて更新した。
+* **既知の制約・今後の確認事項**:
+  - 実データでの適用（該当14年月に対して`strip-videos-and-consolidate-archives.ts`を`FORCE_REPROCESS_YEAR_MONTHS`付きで再実行し、動画20件を実際に`monthly_photo_archives`・`photos`テーブルから削除。その後`generate-thumbnail-archives.ts`側も同じ14年月を再処理してサムネイルzipを更新）は、この記録の後に実施し結果を追記する。
+
 ### [2026-07-27] サムネイル生成で個別に失敗していたHEIC・Android Motion Photoを救済する対応を追加した（Issue #100フォローアップ）
 * **修正の動機・概要**:
   - Issue #100実データ実行で14,331件の写真がサムネイル生成に失敗した件（原因は(1)一部HEICのlibheifセキュリティ上限抵触、(2)Android Motion Photo(`.mp`)をsharpが認識できない、の2種類）について、ユーザーから「HEICはJPGへ変換してから同様の手法で解決できないか」との相談を受けた。
