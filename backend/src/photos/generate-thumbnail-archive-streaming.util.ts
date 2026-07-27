@@ -3,16 +3,12 @@ import sharp from 'sharp';
 import yazl from 'yazl';
 import { convertHeicBufferToJpegBuffer } from './heic-conversion.util';
 import { resolveUniquePath } from './monthly-archive.util';
-import { extractJpegFromMotionPhoto } from './motion-photo.util';
 import { isVideoFile, looksLikeVideoContainer } from './video-file.util';
 import { forEachZipEntry, openEntryReadStream, readStreamToBuffer, writeYazlOutput } from './zip-streaming.util';
 
 // sharpが内蔵するHEIC/HEIFデコーダ(libheif)はセキュリティ上限に抵触して正当な写真のデコードに
 // 失敗することがあるため、この拡張子は`heic-conversion.util.ts`(heif-convert CLI経由)で変換する
 const HEIC_EXTENSIONS = new Set(['.heic', '.heif']);
-// Android Motion Photo。JPEG本体の後ろにMP4動画データが連結されておりsharpはそのままデコードできないため、
-// `motion-photo.util.ts`で先頭のJPEG部分のみを抽出してから渡す
-const MOTION_PHOTO_EXTENSION = '.mp';
 
 // 実際のHEIC/HEIFファイルはISOBMFFコンテナで、先頭4バイトがボックスサイズ、続く4バイトが
 // 'ftyp'という構造を持つ。実データ実行の結果、拡張子が.heic/.heifでも中身が実際には別形式
@@ -62,20 +58,17 @@ export type GenerateThumbnailArchiveResult = {
 
 /**
  * サムネイル生成用にsharpでデコード可能な画像バッファを解決する。
- * Android Motion Photo(`.mp`)は先頭のJPEG部分を抽出し、実際にISOBMFFのftypボックスから
- * 始まっているHEIC/HEIFはheif-convert経由でJPEGへ変換する(sharp内蔵のlibheifデコーダは
- * セキュリティ上限に抵触することがあるため)。拡張子が.heic/.heifでも中身が実際には別形式の
- * 場合（`looksLikeHeicContainer`参照）は変換せず元のバッファをそのまま返し、sharp自身の
- * 形式判定に委ねる。それ以外の拡張子もsharpがそのままデコードできるため元のバッファを返す
+ * 実際にISOBMFFのftypボックスから始まっているHEIC/HEIFはheif-convert経由でJPEGへ変換する
+ * (sharp内蔵のlibheifデコーダはセキュリティ上限に抵触することがあるため)。拡張子が.heic/.heif
+ * でも中身が実際には別形式の場合（`looksLikeHeicContainer`参照）は変換せず元のバッファをそのまま
+ * 返し、sharp自身の形式判定に委ねる。それ以外の拡張子もsharpがそのままデコードできるため
+ * 元のバッファを返す
  * @param originalBuffer 元アーカイブから読み込んだ1エントリ分のバッファ
  * @param fileName エントリのファイル名(拡張子判定に使用)
  * @returns sharpでデコード可能な画像バッファ
  */
 const resolveDecodableImageBuffer = (originalBuffer: Buffer, fileName: string): Buffer => {
   const extension = extname(fileName).toLowerCase();
-  if (extension === MOTION_PHOTO_EXTENSION) {
-    return extractJpegFromMotionPhoto(originalBuffer);
-  }
   if (HEIC_EXTENSIONS.has(extension) && looksLikeHeicContainer(originalBuffer)) {
     return convertHeicBufferToJpegBuffer(originalBuffer);
   }
@@ -95,9 +88,9 @@ const resolveDecodableImageBuffer = (originalBuffer: Buffer, fileName: string): 
  * Buffer化してから`sharp().toBuffer()`が成功した場合のみ`addBuffer`で出力zipへ追加する設計にした。
  * これにより、1件のエントリの処理失敗が他のエントリ・年月全体の処理を巻き込んで止めることはない。
  *
- * HEIC/HEIF・Android Motion Photo(`.mp`)は`sharp`に直接渡す前に`resolveDecodableImageBuffer`で
- * 変換・抽出する（詳細は同関数のTSDoc参照）。それでも変換・デコードに失敗したエントリは、他の
- * 正常なエントリと同様に上記のtry/catchで捕捉され`failedEntries`に記録される
+ * HEIC/HEIFは`sharp`に直接渡す前に`resolveDecodableImageBuffer`で変換する（詳細は同関数のTSDoc
+ * 参照）。それでも変換・デコードに失敗したエントリは、他の正常なエントリと同様に上記の
+ * try/catchで捕捉され`failedEntries`に記録される
  * @param sourceZipPath 処理対象の元アーカイブ（ディスク上のファイルパス）
  * @param destZipPath 生成するサムネイルzipの出力先パス
  * @returns 生成に成功したサムネイルエントリ・失敗したエントリの一覧

@@ -1,6 +1,10 @@
 import { extname } from 'node:path';
 
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.3gp', '.webm', '.m4v']);
+// '.mp'はAndroid Motion Photoの拡張子。実データ調査の結果、データセット中の全11件が
+// 「動画本体のみで静止画は同じアーカイブ内の別ファイル（`<ファイル名>.mp.jpg`）として存在する」
+// 構成であり、`.mp`ファイル自体から静止画を抽出できた実例は確認されなかった（Issue #100）。
+// そのため`.mp`は動画として扱い、対応する`.jpg`側は別エントリとして通常通り処理される
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.3gp', '.webm', '.m4v', '.mp']);
 
 /**
  * ファイル名の拡張子から、動画ファイルかどうかを判定する

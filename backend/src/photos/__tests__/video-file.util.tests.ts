@@ -12,6 +12,8 @@ describe('isVideoFileに関するテスト', () => {
     ['IMG_1234.3gp', true],
     ['IMG_1234.webm', true],
     ['MAH00074.m4v', true],
+    ['PXL_20260201_011451962.MP', true],
+    ['PXL_20260201_011451962.mp', true],
     ['IMG_1234.jpg', false],
     ['IMG_1234.jpeg', false],
     ['IMG_1234.png', false],

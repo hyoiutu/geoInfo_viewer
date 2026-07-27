@@ -20,11 +20,6 @@ const createTestImage = (
     .toBuffer();
 };
 
-// Android Motion PhotoのMP4部分先頭(ftypボックス)を模したバイト列
-const createFakeMp4FtypBox = (): Buffer => {
-  return Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from('ftypisom', 'ascii')]);
-};
-
 // 実際のHEIC/HEIFファイルが持つISOBMFFのftypボックス(先頭4バイトがボックスサイズ、続く4バイトが
 // 'ftyp')を模した先頭バイト列。中身自体の正確なHEICデータではないため、実際のデコードには使えない
 const createFakeHeicHeader = (): Buffer => {
@@ -138,19 +133,20 @@ describe('generateThumbnailArchiveStreamingに関するテスト', () => {
     expect(entries.map((entry) => entry.fileName)).toEqual(['IMG_1.jpg']);
   });
 
-  test('Android Motion Photo(.mp)は、先頭のJPEG部分を抽出してからサムネイル化する', async () => {
-    const jpeg = await createTestImage(600, 400, { r: 255, g: 0, b: 0 });
-    const motionPhoto = Buffer.concat([jpeg, createFakeMp4FtypBox(), Buffer.from('dummy video bytes')]);
-    const sourcePath = writeFixtureZip(dir, 'source.zip', { 'IMG_1.mp': motionPhoto });
+  test('Android Motion Photo(.mp)は動画として除外し、entries・failedEntriesのいずれにも含めない', async () => {
+    const validImage = await createTestImage(600, 400, { r: 255, g: 0, b: 0 });
+    const sourcePath = writeFixtureZip(dir, 'source.zip', {
+      'PXL_1.MP': Buffer.from('dummy motion photo video content'),
+      'IMG_1.jpg': validImage
+    });
     const destPath = join(dir, 'thumbnails.zip');
 
     const result = await generateThumbnailArchiveStreaming(sourcePath, destPath);
 
-    expect(result.entries).toEqual([{ archivePath: 'IMG_1.mp' }]);
+    expect(result.entries).toEqual([{ archivePath: 'IMG_1.jpg' }]);
     expect(result.failedEntries).toEqual([]);
     const entries = await readZipEntries(destPath);
-    const metadata = await sharp(entries[0].content).metadata();
-    expect(metadata.width).toBe(THUMBNAIL_WIDTH_PX);
+    expect(entries.map((entry) => entry.fileName)).toEqual(['IMG_1.jpg']);
   });
 
   test('拡張子が.heic/.heifで中身も実際にISOBMFFのftypボックスから始まる場合、sharpへ直接渡す前にconvertHeicBufferToJpegBufferで変換したバッファを使う', async () => {

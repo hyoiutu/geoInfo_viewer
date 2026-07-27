@@ -14,6 +14,22 @@
 
 ## 変更履歴
 
+### [2026-07-28] Android Motion Photo(.mp)のJPEG抽出専用実装を廃止し、動画として除外するよう簡素化した（Issue #100フォローアップ）
+* **修正の動機・概要**:
+  - 残り10件の`.mp`サムネイル失敗（Motion Photoのうち「JPEG先頭+動画後続」という構造を持たないバリエーション）について、ユーザーから「JPEG情報を全く持たないのか、それとも別の場所に持っているのか」との質問を受け、実データをダウンロードして調査した。対象ファイルは`ftyp`+`mdat`+`moov`のみで構成される単体で完結したMP4動画で、埋め込みJPEGは存在しなかった（当初「JPEGらしきバイト列」が見つかった件は、動画の圧縮データ内での偶然の2バイト一致という誤検出だったことも確認した）。一方、同じアーカイブ内に`<ファイル名>.mp.jpg`という兄弟ファイルが別エントリとして存在し、いずれも正常にデコードできる本来の解像度のJPEGで、既にサムネイルzipにも正しく含まれていることを確認した。
+  - ユーザーから「JPEGを実際に埋め込んだ`.mp`ファイルも同様に別ファイルとしてJPEGを持つのではないか、であれば`.mp`は全件サムネイル生成から除外してよいのでは」との指摘を受け、`photos`テーブル全体（約47,000件超）を検索したところ、`.mp`拡張子のファイルはデータセット全体で**わずか11件**しかなく、うち10件は上記の「動画のみ+兄弟jpgあり」パターンと確認済み、残り1件は既知のレガシーZIP64破損アーカイブ（Issue #99）に含まれておりサムネイル生成パイプライン自体を一度も通っていなかった。つまり「JPEG本体が`.mp`ファイル自体に埋め込まれ、抽出が必要だった」という実例は実データ上で1件も確認できなかった。
+  - この調査結果から、`extractJpegFromMotionPhoto`（Issue #100初回対応で実装）はYAGNIの観点から不要と判断し、削除した上で`.mp`を単純に動画拡張子として扱う方針に変更した（ユーザーと合意）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/video-file.util.ts`: `VIDEO_EXTENSIONS`に`.mp`を追加。
+    - `backend/src/photos/motion-photo.util.ts`・`backend/src/photos/__tests__/motion-photo.util.tests.ts`（削除）: `extractJpegFromMotionPhoto`と対応するテストを削除。
+    - `backend/src/photos/generate-thumbnail-archive-streaming.util.ts`: `resolveDecodableImageBuffer`から`.mp`のJPEG抽出分岐を削除（`.mp`は共通の動画判定`isVideoFile`で除外されるようになったため、この関数に到達しなくなった）。
+    - 対応する単体テストを更新（TDD、Red-Green。`.mp`がentries・failedEntriesのいずれにも含まれず動画として除外されることを検証）。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
+  * **設計書**: `designs/technical_design.md`の「グリッド・吹き出し表示用サムネイルZipの生成（Issue #100）」「月別アーカイブからの動画削除・part統合（Issue #97 / #99）」両節を、`.mp`を動画として扱う方針・その調査根拠に合わせて更新した。
+* **実データでの適用**: `.mp`ファイルを含む4年月（2020-11, 2022-07, 2024-05, 2026-02）に対し、`strip-videos-and-consolidate-archives.ts`を`FORCE_REPROCESS_YEAR_MONTHS`付きで再実行し、この後に結果を追記する。
+
 ### [2026-07-27] 拡張子が失われた動画ファイルをISOBMFFの中身から検出し、月別アーカイブ・photosテーブルから実際に削除する対応を追加した（Issue #97/#99/#100フォローアップ）
 * **修正の動機・概要**:
   - サムネイル生成の残り30件の失敗原因をユーザーから問われ調査した結果、そのうち20件（拡張子なし、`Input buffer contains unsupported image format`）の実体をGoogle Driveから実際にダウンロードして確認したところ、全てQuickTime動画（先頭バイトが`ftyp` + メジャーブランド`qt  `）だと判明した。iPhoneのLive Photoに付随する動画コンポーネントが、取り込みのどこかの段階で拡張子を失ったものと推測される。
