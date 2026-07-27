@@ -29,8 +29,12 @@
   * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
   * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
   * **設計書**: `designs/technical_design.md`の「月別アーカイブからの動画削除・part統合（Issue #97 / #99）」節を、動画判定が拡張子＋中身の両方になったこと・`FORCE_REPROCESS_YEAR_MONTHS`による再処理の仕組みに合わせて更新した。
-* **既知の制約・今後の確認事項**:
-  - 実データでの適用（該当14年月に対して`strip-videos-and-consolidate-archives.ts`を`FORCE_REPROCESS_YEAR_MONTHS`付きで再実行し、動画20件を実際に`monthly_photo_archives`・`photos`テーブルから削除。その後`generate-thumbnail-archives.ts`側も同じ14年月を再処理してサムネイルzipを更新）は、この記録の後に実施し結果を追記する。
+* **実データ実行の結果**:
+  - 適用前にDB（`photos`・`monthly_photo_archives`・`video_stripped_year_months`）をバックアップ。
+  - `strip-videos-and-consolidate-archives.ts`を該当14年月に対し`FORCE_REPROCESS_YEAR_MONTHS`付きで実行し、動画20件（想定と完全一致）を`monthly_photo_archives`・`photos`テーブルから実際に削除した（処理済み年月14件、削除した動画20件、失敗した年月9件＝いずれも既知のレガシーZIP64破損月で今回の対象外）。古いDriveファイルの削除エラーは0件。
+  - 続けて`generate-thumbnail-archives.ts`を同じ14年月に対して再実行し、サムネイルzipを更新した（処理済み年月14件、失敗した年月0件、サムネイル生成に失敗した写真0件）。動画がソースアーカイブから完全に除去されたため、この14年月のサムネイル失敗は0件になった。
+  - サムネイル生成の失敗総数は**30件→10件**まで減少した（動画由来の20件が解消。残り10件は既知の`.mp`構造上の制約でこの対応の範囲外）。
+* **設計書**: 上記に加え、`designs/technical_design.md`の実データ実行結果に関する記載は数値を含まない設計方針のみのため追記なし（CHANGELOGにのみ記録）。
 
 ### [2026-07-27] サムネイル生成で個別に失敗していたHEIC・Android Motion Photoを救済する対応を追加した（Issue #100フォローアップ）
 * **修正の動機・概要**:
