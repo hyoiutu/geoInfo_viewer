@@ -11,6 +11,7 @@ describe('isVideoFileに関するテスト', () => {
     ['IMG_1234.mkv', true],
     ['IMG_1234.3gp', true],
     ['IMG_1234.webm', true],
+    ['MAH00074.m4v', true],
     ['IMG_1234.jpg', false],
     ['IMG_1234.jpeg', false],
     ['IMG_1234.png', false],

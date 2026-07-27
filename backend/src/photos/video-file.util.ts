@@ -1,6 +1,6 @@
 import { extname } from 'node:path';
 
-const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.3gp', '.webm']);
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.avi', '.mkv', '.3gp', '.webm', '.m4v']);
 
 /**
  * ファイル名の拡張子から、動画ファイルかどうかを判定する

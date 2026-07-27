@@ -25,6 +25,12 @@ const createFakeMp4FtypBox = (): Buffer => {
   return Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from('ftypisom', 'ascii')]);
 };
 
+// 実際のHEIC/HEIFファイルが持つISOBMFFのftypボックス(先頭4バイトがボックスサイズ、続く4バイトが
+// 'ftyp')を模した先頭バイト列。中身自体の正確なHEICデータではないため、実際のデコードには使えない
+const createFakeHeicHeader = (): Buffer => {
+  return Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from('ftypheic', 'ascii')]);
+};
+
 const writeFixtureZip = (dir: string, fileName: string, entries: Record<string, Buffer>): string => {
   const zip = new AdmZip();
   for (const [entryName, content] of Object.entries(entries)) {
@@ -142,10 +148,10 @@ describe('generateThumbnailArchiveStreamingに関するテスト', () => {
     expect(metadata.width).toBe(THUMBNAIL_WIDTH_PX);
   });
 
-  test('HEIC/HEIFエントリは、sharpへ直接渡す前にconvertHeicBufferToJpegBufferで変換したバッファを使う', async () => {
+  test('拡張子が.heic/.heifで中身も実際にISOBMFFのftypボックスから始まる場合、sharpへ直接渡す前にconvertHeicBufferToJpegBufferで変換したバッファを使う', async () => {
     const convertedJpeg = await createTestImage(600, 400, { r: 0, g: 255, b: 0 });
     vi.mocked(convertHeicBufferToJpegBuffer).mockReturnValue(convertedJpeg);
-    const heicSource = Buffer.from('fake heic content');
+    const heicSource = Buffer.concat([createFakeHeicHeader(), Buffer.from('dummy heic payload')]);
     const sourcePath = writeFixtureZip(dir, 'source.zip', { 'IMG_1.heic': heicSource });
     const destPath = join(dir, 'thumbnails.zip');
 
@@ -162,12 +168,27 @@ describe('generateThumbnailArchiveStreamingに関するテスト', () => {
     vi.mocked(convertHeicBufferToJpegBuffer).mockImplementation(() => {
       throw new Error('heif-convert failed');
     });
-    const sourcePath = writeFixtureZip(dir, 'source.zip', { 'IMG_broken.heic': Buffer.from('fake heic content') });
+    const heicSource = Buffer.concat([createFakeHeicHeader(), Buffer.from('dummy heic payload')]);
+    const sourcePath = writeFixtureZip(dir, 'source.zip', { 'IMG_broken.heic': heicSource });
     const destPath = join(dir, 'thumbnails.zip');
 
     const result = await generateThumbnailArchiveStreaming(sourcePath, destPath);
 
     expect(result.entries).toEqual([]);
     expect(result.failedEntries).toEqual([{ archivePath: 'IMG_broken.heic', reason: 'heif-convert failed' }]);
+  });
+
+  test('拡張子が.heic/.heifでも、中身が実際にはISOBMFFのftypボックスから始まっていない(別形式)場合は、convertHeicBufferToJpegBufferを経由せず直接デコードする', async () => {
+    const actuallyJpeg = await createTestImage(600, 400, { r: 255, g: 255, b: 0 });
+    const sourcePath = writeFixtureZip(dir, 'source.zip', { 'IMG_1.HEIC': actuallyJpeg });
+    const destPath = join(dir, 'thumbnails.zip');
+
+    const result = await generateThumbnailArchiveStreaming(sourcePath, destPath);
+
+    expect(convertHeicBufferToJpegBuffer).not.toHaveBeenCalled();
+    expect(result.entries).toEqual([{ archivePath: 'IMG_1.HEIC' }]);
+    const entries = await readZipEntries(destPath);
+    const metadata = await sharp(entries[0].content).metadata();
+    expect(metadata.width).toBe(THUMBNAIL_WIDTH_PX);
   });
 });

@@ -38,4 +38,12 @@ describe('extractJpegFromMotionPhotoに関するテスト', () => {
 
     expect(() => extractJpegFromMotionPhoto(buffer)).toThrow();
   });
+
+  test('ftypボックスがバッファの先頭(4バイト目)にあり、抽出結果が空になる場合はエラーを投げる（JPEG先頭+動画後続という構造を持たないMotion Photo）', () => {
+    // createFakeMp4FtypBox()自体が「4バイトのボックスサイズ+'ftyp'」のみで構成されており、
+    // 'ftyp'の開始位置はインデックス4（=手前にJPEG本体が入る余地が無い）
+    const buffer = createFakeMp4FtypBox();
+
+    expect(() => extractJpegFromMotionPhoto(buffer)).toThrow();
+  });
 });

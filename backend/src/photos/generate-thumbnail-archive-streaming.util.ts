@@ -14,6 +14,29 @@ const HEIC_EXTENSIONS = new Set(['.heic', '.heif']);
 // `motion-photo.util.ts`で先頭のJPEG部分のみを抽出してから渡す
 const MOTION_PHOTO_EXTENSION = '.mp';
 
+// 実際のHEIC/HEIFファイルはISOBMFFコンテナで、先頭4バイトがボックスサイズ、続く4バイトが
+// 'ftyp'という構造を持つ。実データ実行の結果、拡張子が.heic/.heifでも中身が実際には別形式
+// （編集アプリでの再保存等によりJPEGへ変わっている等）のファイルが多数存在し、heif-convertが
+// 「Input file does not appear to start with a valid box length. Possibly could be a JPEG file
+// instead.」というエラーで変換に失敗することが判明した。拡張子だけでなく中身の先頭バイトも
+// 確認し、実際にHEIC/HEIFコンテナである場合のみheif-convertへ回す
+const ISOBMFF_BOX_TYPE_OFFSET = 4;
+const ISOBMFF_FTYP_BOX_TYPE = 'ftyp';
+
+/**
+ * バッファの先頭バイトが、実際にISOBMFF（HEIC/HEIFが準拠するコンテナ形式）のftypボックスから
+ * 始まっているかどうかを判定する
+ * @param buffer 判定対象のバッファ
+ * @returns ISOBMFFのftypボックスから始まっている場合true
+ */
+const looksLikeHeicContainer = (buffer: Buffer): boolean => {
+  const ftypBoxEnd = ISOBMFF_BOX_TYPE_OFFSET + ISOBMFF_FTYP_BOX_TYPE.length;
+  return (
+    buffer.length >= ftypBoxEnd &&
+    buffer.subarray(ISOBMFF_BOX_TYPE_OFFSET, ftypBoxEnd).toString('ascii') === ISOBMFF_FTYP_BOX_TYPE
+  );
+};
+
 /** グリッド・吹き出し表示用サムネイルの横幅（px）。縦横比は維持する（Issue #100） */
 export const THUMBNAIL_WIDTH_PX = 300;
 
@@ -39,9 +62,11 @@ export type GenerateThumbnailArchiveResult = {
 
 /**
  * サムネイル生成用にsharpでデコード可能な画像バッファを解決する。
- * Android Motion Photo(`.mp`)は先頭のJPEG部分を抽出し、HEIC/HEIFはheif-convert経由でJPEGへ
- * 変換する(sharp内蔵のlibheifデコーダはセキュリティ上限に抵触することがあるため)。
- * それ以外の拡張子はsharpがそのままデコードできるため元のバッファをそのまま返す
+ * Android Motion Photo(`.mp`)は先頭のJPEG部分を抽出し、実際にISOBMFFのftypボックスから
+ * 始まっているHEIC/HEIFはheif-convert経由でJPEGへ変換する(sharp内蔵のlibheifデコーダは
+ * セキュリティ上限に抵触することがあるため)。拡張子が.heic/.heifでも中身が実際には別形式の
+ * 場合（`looksLikeHeicContainer`参照）は変換せず元のバッファをそのまま返し、sharp自身の
+ * 形式判定に委ねる。それ以外の拡張子もsharpがそのままデコードできるため元のバッファを返す
  * @param originalBuffer 元アーカイブから読み込んだ1エントリ分のバッファ
  * @param fileName エントリのファイル名(拡張子判定に使用)
  * @returns sharpでデコード可能な画像バッファ
@@ -51,7 +76,7 @@ const resolveDecodableImageBuffer = (originalBuffer: Buffer, fileName: string): 
   if (extension === MOTION_PHOTO_EXTENSION) {
     return extractJpegFromMotionPhoto(originalBuffer);
   }
-  if (HEIC_EXTENSIONS.has(extension)) {
+  if (HEIC_EXTENSIONS.has(extension) && looksLikeHeicContainer(originalBuffer)) {
     return convertHeicBufferToJpegBuffer(originalBuffer);
   }
   return originalBuffer;
