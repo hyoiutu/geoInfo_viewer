@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { convertHeicBufferToJpegBuffer } from '../heic-conversion.util';
+import { assertHeifConvertAvailable, convertHeicBufferToJpegBuffer } from '../heic-conversion.util';
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }));
 
@@ -51,5 +51,47 @@ describe('convertHeicBufferToJpegBufferに関するテスト', () => {
       'heif-convert failed: unsupported codec'
     );
     expect(existsSync(capturedInputPath)).toBe(false);
+  });
+});
+
+describe('assertHeifConvertAvailableに関するテスト', () => {
+  const mockedExecFileSync = vi.mocked(execFileSync);
+
+  beforeEach(() => {
+    mockedExecFileSync.mockReset();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('heif-convertが--disable-limitsオプションに対応している場合、エラーを投げない', () => {
+    // heif-convertは--helpを指定してもexit code 1で終了するため、execFileSyncは例外を投げるが
+    // 標準出力自体には正常にヘルプテキストが含まれる（実際の挙動を再現）
+    mockedExecFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('Command failed'), {
+        stdout: Buffer.from('Usage: heif-convert [options]\n      --disable-limits   disable all security limits')
+      });
+    });
+
+    expect(() => assertHeifConvertAvailable()).not.toThrow();
+  });
+
+  test('heif-convertコマンドが見つからない(ENOENT)場合、エラーを投げる', () => {
+    mockedExecFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('spawnSync heif-convert ENOENT'), { code: 'ENOENT' });
+    });
+
+    expect(() => assertHeifConvertAvailable()).toThrow(/heif-convert/);
+  });
+
+  test('heif-convertが--disable-limitsオプションに対応していない(古いバージョン)場合、エラーを投げる', () => {
+    mockedExecFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('Command failed'), {
+        stdout: Buffer.from('Usage: heif-convert [options]\n  -q, --quality  quality')
+      });
+    });
+
+    expect(() => assertHeifConvertAvailable()).toThrow(/disable-limits/);
   });
 });

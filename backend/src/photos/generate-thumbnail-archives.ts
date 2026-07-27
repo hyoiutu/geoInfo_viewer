@@ -12,6 +12,7 @@ import { MonthlyPhotoArchiveEntity } from './entities/monthly-photo-archive.enti
 import { MonthlyPhotoThumbnailArchiveEntity } from './entities/monthly-photo-thumbnail-archive.entity';
 import { VideoStrippedYearMonthEntity } from './entities/video-stripped-year-month.entity';
 import { generateThumbnailArchiveStreaming } from './generate-thumbnail-archive-streaming.util';
+import { assertHeifConvertAvailable } from './heic-conversion.util';
 
 // console.logはパイプ経由の出力時にNode.jsによって非同期にバッファリングされ、外部要因でプロセスが
 // 停止した場合に未フラッシュの行が失われうるため、fs.writeSyncで同期的にログを出力する
@@ -39,9 +40,16 @@ const FORCE_REPROCESS_YEAR_MONTHS_ENV_VAR = 'FORCE_REPROCESS_YEAR_MONTHS';
  * DB側が新しいファイルを正しく参照した後のベストエフォートな後始末とする
  * （`strip-videos-and-consolidate-archives.ts`と同じパターン。失敗してもDriveの容量を無駄にするだけで
  * データの整合性は壊れないため、この年月の処理自体は成功として扱う）。
- * 1つの年月の処理に失敗しても、他の年月の処理を止めずに次へ進む
+ * 1つの年月の処理に失敗しても、他の年月の処理を止めずに次へ進む。
+ *
+ * 実行前に必ず`assertHeifConvertAvailable`でheif-convertの可用性を確認し、使えない場合は
+ * 何も処理せずエラーで終了する。heif-convertが使えない環境で処理を進めてしまうと、本来sharp単体で
+ * 成功していたはずのHEIC写真まで含めて全滅し、既存の（より良い）結果を静かに劣化させて上書きして
+ * しまう恐れがあるため（実際に発生した事故の再発防止。詳細は`heic-conversion.util.ts`のTSDoc参照）
  */
 const generateThumbnailArchives = async (): Promise<void> => {
+  assertHeifConvertAvailable();
+
   const dataSource = new DataSource(createDataSourceOptions(process.env));
   await dataSource.initialize();
 
