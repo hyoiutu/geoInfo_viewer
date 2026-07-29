@@ -26,11 +26,13 @@ export type YearMonthGroup = {
 };
 
 /**
- * 撮影日時（UTC基準）から'YYYY-MM'形式の年月文字列を求める
+ * 撮影日時（UTC基準）から'YYYY-MM'形式の年月文字列を求める。`groupPhotosByYearMonth`だけでなく、
+ * `PhotosService.findThumbnailByPhotoId`が`photos.taken_at`から対応する
+ * `monthly_photo_thumbnail_archives`の行を特定する際にも使う（Issue #105）
  * @param takenAt 撮影日時
  * @returns 'YYYY-MM'形式の年月文字列
  */
-const toYearMonth = (takenAt: Date): string => {
+export const toYearMonth = (takenAt: Date): string => {
   const year = takenAt.getUTCFullYear();
   const month = String(takenAt.getUTCMonth() + 1).padStart(MONTH_DIGITS, '0');
   return `${year}${YEAR_MONTH_SEPARATOR}${month}`;

@@ -1,7 +1,7 @@
 import { Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Post, StreamableFile } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { PhotoIngestService } from './photo-ingest.service';
-import { PHOTOS_IMAGE_ROUTE, PHOTOS_INGEST_ROUTE, PHOTOS_ROUTE } from './photos.constants';
+import { PHOTOS_IMAGE_ROUTE, PHOTOS_INGEST_ROUTE, PHOTOS_ROUTE, PHOTOS_THUMBNAIL_ROUTE } from './photos.constants';
 import { PhotosService } from './photos.service';
 import type { PhotoIngestResultDto } from './types/photo-ingest-result.dto';
 
@@ -24,6 +24,20 @@ export class PhotosController {
   @Get(PHOTOS_IMAGE_ROUTE)
   async getImage(@Param('id', ParseIntPipe) id: number): Promise<StreamableFile> {
     const image = await this.photosService.findImageByPhotoId(id);
+    if (image === null) {
+      throw new NotFoundException();
+    }
+    return new StreamableFile(image.data, { type: image.contentType });
+  }
+
+  /**
+   * GET /photos/:id/thumbnail: 指定した写真IDのサムネイル画像を、サムネイル専用月別アーカイブzipから
+   * 遅延取得して返す。撮影年月に対応するサムネイルアーカイブが存在しない（未処理・失敗年月）場合は
+   * 404を返し、フロントエンド側でフルサイズ画像（`GET /photos/:id/image`）へフォールバックする（Issue #105）
+   */
+  @Get(PHOTOS_THUMBNAIL_ROUTE)
+  async getThumbnail(@Param('id', ParseIntPipe) id: number): Promise<StreamableFile> {
+    const image = await this.photosService.findThumbnailByPhotoId(id);
     if (image === null) {
       throw new NotFoundException();
     }

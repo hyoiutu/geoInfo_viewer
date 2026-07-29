@@ -5,7 +5,9 @@ import { Between, type Repository } from 'typeorm';
 import { CyclingActivityEntity } from '../activities/entities/cycling-activity.entity';
 import { GoogleDriveApiClient } from '../google-drive/google-drive-api.client';
 import { GoogleDriveAuthService } from '../google-drive/google-drive-auth.service';
+import { MonthlyPhotoThumbnailArchiveEntity } from './entities/monthly-photo-thumbnail-archive.entity';
 import { PhotoEntity } from './entities/photo.entity';
+import { toYearMonth } from './group-photos-by-year-month.util';
 import { resolveImageContentType } from './image-content-type.util';
 import { toPhotoDto } from './photo-dto.util';
 import type { PhotoDto } from './types/photo.dto';
@@ -40,6 +42,8 @@ export class PhotosService {
     private readonly cyclingActivityRepository: Repository<CyclingActivityEntity>,
     @InjectRepository(PhotoEntity)
     private readonly photoRepository: Repository<PhotoEntity>,
+    @InjectRepository(MonthlyPhotoThumbnailArchiveEntity)
+    private readonly thumbnailArchiveRepository: Repository<MonthlyPhotoThumbnailArchiveEntity>,
     private readonly googleDriveAuthService: GoogleDriveAuthService,
     private readonly googleDriveApiClient: GoogleDriveApiClient
   ) {}
@@ -78,12 +82,51 @@ export class PhotosService {
     }
 
     const zipBuffer = await this.getOrFetchArchiveZip(photo.sourceFileId);
-    const entry = new AdmZip(zipBuffer).getEntry(photo.archivePath);
-    if (entry === null) {
+    return this.extractImageFromZip(zipBuffer, photo.archivePath, photo.fileName);
+  }
+
+  /**
+   * 指定した写真IDのサムネイル画像を、Google Drive上のサムネイル専用月別アーカイブzip
+   * （`monthly_photo_thumbnail_archives`）から該当エントリ（`archivePath`）を取り出して返す。
+   * 撮影年月に対応するサムネイルアーカイブが存在しない（未処理・失敗年月）場合、サムネイルzip内に
+   * 対応するエントリが見つからない（生成失敗等）場合はいずれもnullを返す。フロントエンド側は
+   * nullに対応するHTTP 404を受けてフルサイズ画像（`findImageByPhotoId`）へフォールバックする（Issue #105）
+   * @param photoId 対象の写真ID
+   * @returns サムネイルのバイナリ本体とContent-Type。取得できない場合はnull
+   */
+  async findThumbnailByPhotoId(photoId: number): Promise<PhotoImage | null> {
+    const photo = await this.photoRepository.findOneBy({ id: photoId });
+    if (photo === null) {
       return null;
     }
 
-    return { data: entry.getData(), contentType: resolveImageContentType(photo.fileName) };
+    const thumbnailArchive = await this.thumbnailArchiveRepository.findOneBy({
+      yearMonth: toYearMonth(photo.takenAt)
+    });
+    if (thumbnailArchive === null) {
+      return null;
+    }
+
+    const zipBuffer = await this.getOrFetchArchiveZip(thumbnailArchive.driveFileId);
+    return this.extractImageFromZip(zipBuffer, photo.archivePath, photo.fileName);
+  }
+
+  /**
+   * zip本体から指定したエントリパスの画像を取り出す。フルサイズ・サムネイルいずれのアーカイブzipに
+   * 対しても、エントリパスの解決方法（`sourceFileId`経由かサムネイル専用テーブル経由か）が
+   * 異なるだけでzip内からの取り出し自体は共通のため、`findImageByPhotoId`・`findThumbnailByPhotoId`
+   * の両方から使う（Issue #105）
+   * @param zipBuffer 取り出し元のzip本体
+   * @param archivePath zip内でのエントリパス
+   * @param fileName Content-Type判定用のファイル名
+   * @returns 取り出した画像のバイナリ本体とContent-Type。対応するエントリが無い場合はnull
+   */
+  private extractImageFromZip(zipBuffer: Buffer, archivePath: string, fileName: string): PhotoImage | null {
+    const entry = new AdmZip(zipBuffer).getEntry(archivePath);
+    if (entry === null) {
+      return null;
+    }
+    return { data: entry.getData(), contentType: resolveImageContentType(fileName) };
   }
 
   /**

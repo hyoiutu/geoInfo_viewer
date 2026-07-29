@@ -8,16 +8,18 @@ import { PhotosService } from '../photos.service';
 describe('PhotosControllerに関するテスト', () => {
   const createController = async ({
     ingest = vi.fn(),
-    findImageByPhotoId = vi.fn()
+    findImageByPhotoId = vi.fn(),
+    findThumbnailByPhotoId = vi.fn()
   }: {
     ingest?: ReturnType<typeof vi.fn>;
     findImageByPhotoId?: ReturnType<typeof vi.fn>;
+    findThumbnailByPhotoId?: ReturnType<typeof vi.fn>;
   }) => {
     const moduleRef = await Test.createTestingModule({
       controllers: [PhotosController],
       providers: [
         { provide: PhotoIngestService, useValue: { ingest } },
-        { provide: PhotosService, useValue: { findImageByPhotoId } }
+        { provide: PhotosService, useValue: { findImageByPhotoId, findThumbnailByPhotoId } }
       ]
     }).compile();
 
@@ -51,5 +53,23 @@ describe('PhotosControllerに関するテスト', () => {
     const controller = await createController({ findImageByPhotoId });
 
     await expect(controller.getImage(999)).rejects.toThrow(NotFoundException);
+  });
+
+  test('GET /photos/:id/thumbnail: 対象のサムネイルが存在する場合、バイナリをContent-Type付きのStreamableFileとして返す（Issue #105）', async () => {
+    const data = Buffer.from('binary-thumbnail-data');
+    const findThumbnailByPhotoId = vi.fn().mockResolvedValue({ data, contentType: 'image/jpeg' });
+    const controller = await createController({ findThumbnailByPhotoId });
+
+    const response = await controller.getThumbnail(1);
+
+    expect(findThumbnailByPhotoId).toHaveBeenCalledWith(1);
+    expect(response).toBeInstanceOf(StreamableFile);
+  });
+
+  test('GET /photos/:id/thumbnail: 対象のサムネイルが存在しない場合、NotFoundExceptionを投げる（Issue #105）', async () => {
+    const findThumbnailByPhotoId = vi.fn().mockResolvedValue(null);
+    const controller = await createController({ findThumbnailByPhotoId });
+
+    await expect(controller.getThumbnail(999)).rejects.toThrow(NotFoundException);
   });
 });

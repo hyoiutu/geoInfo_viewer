@@ -11,3 +11,14 @@ const PHOTOS_PATH = '/photos';
  * @returns 画像取得用のURL
  */
 export const resolvePhotoImageUrl = (photoId: number): string => `${BACKEND_BASE_URL}${PHOTOS_PATH}/${photoId}/image`;
+
+/**
+ * 指定した写真IDのサムネイル画像バイナリを取得するURLを組み立てる。`<img>`のsrc等にそのまま使う。
+ * サムネイルアーカイブが存在しない（未処理・失敗年月）場合、このURLは404を返すため、
+ * 呼び出し側（`PhotoGridItem`、`ActivityDetailSidebar.tsx`）で`resolvePhotoImageUrl`へ
+ * フォールバックする（Issue #105）
+ * @param photoId 対象の写真ID
+ * @returns サムネイル取得用のURL
+ */
+export const resolvePhotoThumbnailUrl = (photoId: number): string =>
+  `${BACKEND_BASE_URL}${PHOTOS_PATH}/${photoId}/thumbnail`;

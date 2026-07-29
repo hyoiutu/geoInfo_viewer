@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { CyclingActivityEntity } from '../../activities/entities/cycling-activity.entity';
 import { GoogleDriveApiClient } from '../../google-drive/google-drive-api.client';
 import { GoogleDriveAuthService } from '../../google-drive/google-drive-auth.service';
+import { MonthlyPhotoThumbnailArchiveEntity } from '../entities/monthly-photo-thumbnail-archive.entity';
 import { PhotoEntity } from '../entities/photo.entity';
 import { PhotosService } from '../photos.service';
 
@@ -26,12 +27,14 @@ describe('PhotosServiceに関するテスト', () => {
     findOneBy = vi.fn(),
     find = vi.fn(),
     photoFindOneBy = vi.fn(),
+    thumbnailArchiveFindOneBy = vi.fn(),
     getAccessToken = vi.fn(),
     downloadFile = vi.fn()
   }: {
     findOneBy?: ReturnType<typeof vi.fn>;
     find?: ReturnType<typeof vi.fn>;
     photoFindOneBy?: ReturnType<typeof vi.fn>;
+    thumbnailArchiveFindOneBy?: ReturnType<typeof vi.fn>;
     getAccessToken?: ReturnType<typeof vi.fn>;
     downloadFile?: ReturnType<typeof vi.fn>;
   }) => {
@@ -40,6 +43,10 @@ describe('PhotosServiceに関するテスト', () => {
         PhotosService,
         { provide: getRepositoryToken(CyclingActivityEntity), useValue: { findOneBy } },
         { provide: getRepositoryToken(PhotoEntity), useValue: { find, findOneBy: photoFindOneBy } },
+        {
+          provide: getRepositoryToken(MonthlyPhotoThumbnailArchiveEntity),
+          useValue: { findOneBy: thumbnailArchiveFindOneBy }
+        },
         { provide: GoogleDriveAuthService, useValue: { getAccessToken } },
         { provide: GoogleDriveApiClient, useValue: { downloadFile } }
       ]
@@ -164,6 +171,95 @@ describe('PhotosServiceに関するテスト', () => {
 
       expect(downloadFile).toHaveBeenCalledTimes(1);
       expect(result).toEqual({ data: Buffer.from('binary-image-data-2'), contentType: 'image/jpeg' });
+    });
+  });
+
+  describe('findThumbnailByPhotoIdに関するテスト（Issue #105）', () => {
+    test('対象の写真・撮影年月に対応するサムネイルアーカイブが存在する場合、サムネイルの実バイナリを取り出しContent-Typeとともに返す', async () => {
+      const zipBuffer = buildZip([{ path: '2026-07/IMG_1234.jpg', content: 'thumbnail-binary-data' }]);
+      const photoFindOneBy = vi.fn().mockResolvedValue({
+        id: 1,
+        fileName: 'IMG_1234.jpg',
+        takenAt: new Date('2026-07-15T00:00:00.000Z'),
+        archivePath: '2026-07/IMG_1234.jpg'
+      });
+      const thumbnailArchiveFindOneBy = vi.fn().mockResolvedValue({ yearMonth: '2026-07', driveFileId: 'thumb-zip-1' });
+      const getAccessToken = vi.fn().mockResolvedValue('access-token');
+      const downloadFile = vi.fn().mockResolvedValue(zipBuffer);
+      const service = await createService({ photoFindOneBy, thumbnailArchiveFindOneBy, getAccessToken, downloadFile });
+
+      const result = await service.findThumbnailByPhotoId(1);
+
+      expect(photoFindOneBy).toHaveBeenCalledWith({ id: 1 });
+      expect(thumbnailArchiveFindOneBy).toHaveBeenCalledWith({ yearMonth: '2026-07' });
+      expect(downloadFile).toHaveBeenCalledWith('access-token', 'thumb-zip-1');
+      expect(result).toEqual({ data: Buffer.from('thumbnail-binary-data'), contentType: 'image/jpeg' });
+    });
+
+    test('対象の写真が存在しない場合、nullを返す', async () => {
+      const photoFindOneBy = vi.fn().mockResolvedValue(null);
+      const thumbnailArchiveFindOneBy = vi.fn();
+      const service = await createService({ photoFindOneBy, thumbnailArchiveFindOneBy });
+
+      const result = await service.findThumbnailByPhotoId(999);
+
+      expect(result).toBeNull();
+      expect(thumbnailArchiveFindOneBy).not.toHaveBeenCalled();
+    });
+
+    test('撮影年月に対応するサムネイルアーカイブが存在しない場合（未処理・失敗年月）、nullを返す', async () => {
+      const photoFindOneBy = vi.fn().mockResolvedValue({
+        id: 1,
+        fileName: 'IMG_1234.jpg',
+        takenAt: new Date('2026-07-15T00:00:00.000Z'),
+        archivePath: '2026-07/IMG_1234.jpg'
+      });
+      const thumbnailArchiveFindOneBy = vi.fn().mockResolvedValue(null);
+      const downloadFile = vi.fn();
+      const service = await createService({ photoFindOneBy, thumbnailArchiveFindOneBy, downloadFile });
+
+      const result = await service.findThumbnailByPhotoId(1);
+
+      expect(result).toBeNull();
+      expect(downloadFile).not.toHaveBeenCalled();
+    });
+
+    test('サムネイルアーカイブzip内に対応するエントリが見つからない場合、nullを返す', async () => {
+      const zipBuffer = buildZip([{ path: '2026-07/OTHER.jpg', content: 'other-data' }]);
+      const photoFindOneBy = vi.fn().mockResolvedValue({
+        id: 1,
+        fileName: 'IMG_1234.jpg',
+        takenAt: new Date('2026-07-15T00:00:00.000Z'),
+        archivePath: '2026-07/IMG_1234.jpg'
+      });
+      const thumbnailArchiveFindOneBy = vi.fn().mockResolvedValue({ yearMonth: '2026-07', driveFileId: 'thumb-zip-1' });
+      const getAccessToken = vi.fn().mockResolvedValue('access-token');
+      const downloadFile = vi.fn().mockResolvedValue(zipBuffer);
+      const service = await createService({ photoFindOneBy, thumbnailArchiveFindOneBy, getAccessToken, downloadFile });
+
+      const result = await service.findThumbnailByPhotoId(1);
+
+      expect(result).toBeNull();
+    });
+
+    test('サムネイルアーカイブzipのダウンロードは、フルサイズzipと同じキャッシュ（driveFileId単位）を共有する', async () => {
+      const zipBuffer = buildZip([{ path: '2026-07/IMG_1234.jpg', content: 'thumbnail-binary-data' }]);
+      const photoFindOneBy = vi.fn().mockResolvedValue({
+        id: 1,
+        fileName: 'IMG_1234.jpg',
+        takenAt: new Date('2026-07-15T00:00:00.000Z'),
+        sourceFileId: 'thumb-zip-1',
+        archivePath: '2026-07/IMG_1234.jpg'
+      });
+      const thumbnailArchiveFindOneBy = vi.fn().mockResolvedValue({ yearMonth: '2026-07', driveFileId: 'thumb-zip-1' });
+      const getAccessToken = vi.fn().mockResolvedValue('access-token');
+      const downloadFile = vi.fn().mockResolvedValue(zipBuffer);
+      const service = await createService({ photoFindOneBy, thumbnailArchiveFindOneBy, getAccessToken, downloadFile });
+
+      await service.findImageByPhotoId(1);
+      await service.findThumbnailByPhotoId(1);
+
+      expect(downloadFile).toHaveBeenCalledTimes(1);
     });
   });
 });

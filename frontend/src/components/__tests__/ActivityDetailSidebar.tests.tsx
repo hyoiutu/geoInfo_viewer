@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity } from '../../api/activitiesApi';
 import { fetchPassedMunicipalities, fetchPhotos } from '../../api/activitiesApi';
-import { resolvePhotoImageUrl } from '../../api/photosApi';
+import { resolvePhotoImageUrl, resolvePhotoThumbnailUrl } from '../../api/photosApi';
 import { ErrorsProbe } from '../../test-utils/ErrorsProbe';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { ActivityDetailSidebar } from '../ActivityDetailSidebar';
@@ -263,7 +263,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     });
   });
 
-  test('フォーカス中の場合、対象アクティビティのIDで写真を取得しグリッド表示する', async () => {
+  test('フォーカス中の場合、対象アクティビティのIDで写真を取得しサムネイルURLでグリッド表示する（Issue #105）', async () => {
     const photos = [
       { id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null },
       { id: 2, fileName: 'b.jpg', takenAt: '2026-07-01T00:40:00.000Z', location: null }
@@ -284,9 +284,67 @@ describe('ActivityDetailSidebarに関するテスト', () => {
 
     expect(fetchPhotos).toHaveBeenCalledWith('42');
     await waitFor(() => {
+      expect(screen.getByAltText('a.jpg')).toHaveAttribute('src', resolvePhotoThumbnailUrl(1));
+    });
+    expect(screen.getByAltText('b.jpg')).toHaveAttribute('src', resolvePhotoThumbnailUrl(2));
+  });
+
+  test('サムネイルの読み込みに失敗した場合、フルサイズ画像のURLへフォールバックする（Issue #105）', async () => {
+    const photos = [{ id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null }];
+    vi.mocked(fetchPhotos).mockResolvedValue(photos);
+    const activity = createActivity({ id: '42' });
+
+    renderWithChakra(
+      <ActivityDetailSidebar
+        activities={[activity]}
+        focusedActivity={activity}
+        onFocus={vi.fn()}
+        onBackFromDetail={vi.fn()}
+        onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByAltText('a.jpg')).toHaveAttribute('src', resolvePhotoThumbnailUrl(1));
+    });
+
+    fireEvent.error(screen.getByAltText('a.jpg'));
+
+    await waitFor(() => {
       expect(screen.getByAltText('a.jpg')).toHaveAttribute('src', resolvePhotoImageUrl(1));
     });
-    expect(screen.getByAltText('b.jpg')).toHaveAttribute('src', resolvePhotoImageUrl(2));
+  });
+
+  test('サムネイル・フルサイズ画像のいずれの読み込みにも失敗した場合、ローディング表示を消して諦める（Issue #105）', async () => {
+    const photos = [{ id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null }];
+    vi.mocked(fetchPhotos).mockResolvedValue(photos);
+    const activity = createActivity({ id: '42' });
+
+    renderWithChakra(
+      <ActivityDetailSidebar
+        activities={[activity]}
+        focusedActivity={activity}
+        onFocus={vi.fn()}
+        onBackFromDetail={vi.fn()}
+        onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('a.jpg')).toBeInTheDocument();
+    });
+
+    fireEvent.error(screen.getByAltText('a.jpg'));
+    await waitFor(() => {
+      expect(screen.getByAltText('a.jpg')).toHaveAttribute('src', resolvePhotoImageUrl(1));
+    });
+    fireEvent.error(screen.getByAltText('a.jpg'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('a.jpg')).not.toBeInTheDocument();
+    });
   });
 
   test('写真表示直後は各写真にファイル名とローディングアイコンを表示し、画像の読み込み完了後に消える', async () => {
