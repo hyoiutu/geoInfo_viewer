@@ -30,21 +30,24 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
   ...overrides
 });
 
+const buildControls = (overrides: Partial<Parameters<typeof MapControls>[0]> = {}) => (
+  <MapControls
+    appliedVisibility={DEFAULT_VISIBILITY}
+    appliedEra={MUNICIPALITY_ERA_CURRENT}
+    onApplyLayerSettings={vi.fn()}
+    isApplyingLayerSettings={false}
+    appliedFilter={DEFAULT_ACTIVITY_FILTER}
+    onApplyFilter={vi.fn()}
+    activities={[]}
+    isBackfillRunning={false}
+    onStartBackfill={vi.fn()}
+    onStartForceRefetch={vi.fn()}
+    {...overrides}
+  />
+);
+
 const renderControls = (overrides: Partial<Parameters<typeof MapControls>[0]> = {}) =>
-  renderWithChakra(
-    <MapControls
-      appliedVisibility={DEFAULT_VISIBILITY}
-      appliedEra={MUNICIPALITY_ERA_CURRENT}
-      onApplyLayerSettings={vi.fn()}
-      appliedFilter={DEFAULT_ACTIVITY_FILTER}
-      onApplyFilter={vi.fn()}
-      activities={[]}
-      isBackfillRunning={false}
-      onStartBackfill={vi.fn()}
-      onStartForceRefetch={vi.fn()}
-      {...overrides}
-    />
-  );
+  renderWithChakra(buildControls(overrides));
 
 describe('MapControlsに関するテスト', () => {
   test('レイヤー・フィルタ・統計・設定の4つのアイコンボタンが表示される', () => {
@@ -64,7 +67,7 @@ describe('MapControlsに関するテスト', () => {
     await waitFor(() => expect(screen.getByRole('checkbox', { name: '道路' })).toBeInTheDocument());
   });
 
-  test('レイヤーダイアログで実行すると、onApplyLayerSettingsが呼ばれダイアログが閉じる', async () => {
+  test('レイヤーダイアログで何も変更せず実行すると、onApplyLayerSettingsが呼ばれダイアログはすぐに閉じる', async () => {
     const onApplyLayerSettings = vi.fn();
     renderControls({ onApplyLayerSettings });
     fireEvent.click(screen.getByRole('button', { name: 'レイヤー切り替え' }));
@@ -74,6 +77,72 @@ describe('MapControlsに関するテスト', () => {
 
     expect(onApplyLayerSettings).toHaveBeenCalledWith(DEFAULT_VISIBILITY, MUNICIPALITY_ERA_CURRENT);
     await waitFor(() => expect(screen.queryByRole('checkbox', { name: '道路' })).not.toBeInTheDocument());
+  });
+
+  describe('非同期処理を伴うレイヤー変更の実行に関するテスト（Issue #65）', () => {
+    test('行政区画の年代を変更して実行すると、ダイアログはすぐには閉じず、適用が完了してから閉じる', async () => {
+      const onApplyLayerSettings = vi.fn();
+      const { rerender } = renderControls({ onApplyLayerSettings });
+      fireEvent.click(screen.getByRole('button', { name: 'レイヤー切り替え' }));
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '道路' })).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText('行政区画の年代'), { target: { value: '2000-10-01' } });
+
+      fireEvent.click(screen.getByRole('button', { name: '実行' }));
+
+      expect(onApplyLayerSettings).toHaveBeenCalledWith(DEFAULT_VISIBILITY, '2000-10-01');
+      // 適用中フラグがtrueになっても、一定時間待ってもダイアログは閉じない
+      rerender(buildControls({ onApplyLayerSettings, isApplyingLayerSettings: true }));
+      await expect(
+        waitFor(() => expect(screen.queryByRole('checkbox', { name: '道路' })).not.toBeInTheDocument(), {
+          timeout: 200
+        })
+      ).rejects.toThrow();
+
+      // 適用中フラグがfalseに戻った時点でダイアログが閉じる
+      rerender(buildControls({ onApplyLayerSettings, isApplyingLayerSettings: false }));
+      await waitFor(() => expect(screen.queryByRole('checkbox', { name: '道路' })).not.toBeInTheDocument());
+    });
+
+    test('自転車ログをOFF→ONにして実行すると、ダイアログはすぐには閉じず、適用が完了してから閉じる', async () => {
+      const onApplyLayerSettings = vi.fn();
+      const { rerender } = renderControls({ onApplyLayerSettings });
+      fireEvent.click(screen.getByRole('button', { name: 'レイヤー切り替え' }));
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '自転車ログ' })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('checkbox', { name: '自転車ログ' }));
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '自転車ログ' })).toBeChecked());
+
+      fireEvent.click(screen.getByRole('button', { name: '実行' }));
+
+      expect(onApplyLayerSettings).toHaveBeenCalledWith(
+        { ...DEFAULT_VISIBILITY, 'bicycle-log': true },
+        MUNICIPALITY_ERA_CURRENT
+      );
+      rerender(buildControls({ onApplyLayerSettings, isApplyingLayerSettings: true }));
+      await expect(
+        waitFor(() => expect(screen.queryByRole('checkbox', { name: '自転車ログ' })).not.toBeInTheDocument(), {
+          timeout: 200
+        })
+      ).rejects.toThrow();
+
+      rerender(buildControls({ onApplyLayerSettings, isApplyingLayerSettings: false }));
+      await waitFor(() => expect(screen.queryByRole('checkbox', { name: '自転車ログ' })).not.toBeInTheDocument());
+    });
+
+    test('自転車ログをON→OFFにして実行しても、待たずにすぐ閉じる（非同期処理が発生しないため）', async () => {
+      const onApplyLayerSettings = vi.fn();
+      renderControls({
+        onApplyLayerSettings,
+        appliedVisibility: { ...DEFAULT_VISIBILITY, 'bicycle-log': true }
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'レイヤー切り替え' }));
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '自転車ログ' })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('checkbox', { name: '自転車ログ' }));
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '自転車ログ' })).not.toBeChecked());
+
+      fireEvent.click(screen.getByRole('button', { name: '実行' }));
+
+      await waitFor(() => expect(screen.queryByRole('checkbox', { name: '自転車ログ' })).not.toBeInTheDocument());
+    });
   });
 
   test('フィルタアイコンを押すと、フィルタダイアログが開く', async () => {

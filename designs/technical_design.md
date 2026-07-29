@@ -107,6 +107,15 @@ root/
 - 選択中の年代は`MapWorkspace`から`MapView`（描画用）・`ActivityDetailSidebar`（通過自治体の判定用、`usePassedMunicipalities`経由）の両方へ`adminBoundaryEra`として渡される
 - 2026-07時点で投入済みの年代は`current`（2023-01-01）・`2000-10-01`（平成の大合併前）・`1950-10-01`（昭和の大合併前）・`1920-01-01`（大正時代）の4つで、Issue #34が要望する全年代の投入が完了している
 
+# レイヤーダイアログの非同期実行対応（Issue #65）
+- レイヤーダイアログ（`LayerDialog`）で「実行」を押した際、行政区画の年代変更（`applyAdminBoundaryData`、Promiseベースで完了を検知可能）・自転車ログレイヤーのOFF→ON（`useCyclingActivities`の同期処理）のいずれかが発生する場合、それらの完了までダイアログを閉じずマウスカーソルをローディング状態（`cursor: wait`）にする。MapLibreのタイル読み込み自体（`idle`イベント）は対象に含めない（ユーザー確認済み、issue-reviewでの事前レビュー時点の懸念）
+- 対象の2つの非同期処理は元々「状態の変化に反応するuseEffect」として実装されており、実行ボタンのクリックから直接Promiseを返す形にはなっていない。完了検知は以下のコールバックを新設して実現する。
+  - `MapView`に`onAdminBoundaryDataApplied?: () => void`を追加し、`applyAdminBoundaryData`が成功・失敗いずれの場合も`.finally()`で呼ぶ（エラー時に呼ばないとダイアログが閉じなくなるため）。コールバックは他のprops同様`useRef`で保持し、effectの依存配列に含めない（`onSelectActivities`等と同じ、不要な再実行を避ける対策）
+  - `useCyclingActivities`に第2引数`onSyncComplete?: () => void`を追加し、OFF→ON時の同期処理（`syncAndLoadBicycleLog`）が完了した時点（成功・失敗問わず`finally`）で呼ぶ
+- `MapWorkspace`が`{ waitingForAdminBoundary: boolean; waitingForCyclingLog: boolean } | null`型の`pendingLayerApply`状態を持つ。`handleApplyLayerSettings`（実行ボタン押下時にMapControls経由で呼ばれるコールバック）は、渡された次の表示状態・年代を**現在適用中の値と比較**し、実際に変化するかどうかをこの時点で同期的に判定して`pendingLayerApply`へ記録する。この判定を「非同期処理が開始されたことを検知してから」ではなく「クリックの時点で」行うのは、非同期処理が実際に開始される（`useEffect`が発火する）のは1レンダーサイクル後であり、開始前に完了判定を行ってしまう競合を避けるため
+- `isApplyingLayerSettings`（`pendingLayerApply`のいずれかの待機フラグがtrueかどうか）を`MapView`・`MapControls`へpropsとして渡す。`MapControls`はこれがtrue→falseに変化した時点（`useRef`で前回値を保持し比較）でダイアログを閉じる。「実行」時点で非同期処理が不要と判定した場合（`appliedEra`/`appliedVisibility`との比較で変化なし）は、この仕組みを介さず即座に閉じる（既存の挙動を維持）
+- カーソルのローディング表示は`MapWorkspace`の最外殻`Flex`に`cursor={isApplyingLayerSettings ? 'wait' : undefined}`を設定して実現する。このプロジェクトにローディングカーソルの既存パターンは無かったため、新規に導入した
+
 # 行政区画フォーカス機能（Issue #76）
 - 「地図上の行政区画クリック」「通過自治体一覧の項目クリック」いずれからも同じ行政区画をフォーカス表示できるようにするため、クリックした地点から自治体を特定する経路として、OSMベクトルタイルの`place`ラベル（現行の行政区画表示に使っている）ではなく、`municipalities`テーブル由来のGeoJSON（`GET /municipalities/boundaries?era=...`、通過自治体表示機能・過去年代表示機能が既に使っているものと同一のAPI）を採用した
   - 理由: OSMベクトルタイルの`boundary`ソースレイヤー（境界ポリゴン）自体は名前プロパティを持たず、名前は別レイヤー（`place`、地点ラベル）にしか無いため、クリック地点から直接「どの自治体か」を機械的に特定できない。また`place`ラベルの表記（例: 政令指定都市の区の扱い）が`municipalities`テーブル（`PassedMunicipality`が使うものと同一）の`prefectureName`/`municipalityName`と一致する保証が無く、通過自治体一覧の項目とのマッチングに使うには不整合が起きうる。`municipalities`テーブルのGeoJSONを両方の入口で共通の検索対象にすることで、この不整合を避けている
