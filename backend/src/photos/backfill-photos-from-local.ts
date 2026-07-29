@@ -17,6 +17,7 @@ import {
 } from './local-photo-directory.util';
 import { MonthlyPhotoArchiveService } from './monthly-photo-archive.service';
 import { toPhotoEntity } from './photo-ingest.service';
+import { sortPhotosByTakenAt } from './sort-photos-by-taken-at.util';
 import { splitPhotosIntoSizedParts } from './split-photos-into-sized-parts.util';
 import { resolvePhotoMetadata } from './takeout-metadata.util';
 import { matchPhotosWithJsonSidecars } from './takeout-photo-matcher.util';
@@ -138,8 +139,10 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
         return [photo.entry.path, statSync(localEntry.absolutePath).size];
       })
     );
+    // 撮影日時の昇順に並び替えてからpart分割することで、part番号が撮影日時の連続性を保つようにする
+    // （scanLocalPhotoDirectoryのreaddirSyncはファイルシステムの列挙順であり撮影日時とは無関係なため。Issue #91）
     const parts = splitPhotosIntoSizedParts(
-      group.photos,
+      sortPhotosByTakenAt(group.photos),
       (photo) => photoSizeBytesByPath.get(photo.entry.path) ?? 0,
       MAX_ARCHIVE_PART_SIZE_BYTES
     );

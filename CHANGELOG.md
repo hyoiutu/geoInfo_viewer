@@ -14,6 +14,17 @@
 
 ## 変更履歴
 
+### [2026-07-30] 写真ローカルバックフィルのpart分割を撮影日時順に行うようにした（Issue #91）
+* **修正の動機・概要**:
+  - `backfill-photos-from-local.ts`のpart分割は、`scanLocalPhotoDirectory`が`readdirSync`で列挙した順（撮影日時とは無関係）のまま先頭から累積サイズで区切っていたため、1つのアクティビティ（自転車ログ）の写真取得が複数zip（part）にまたがりうる不具合があった。part分割前に撮影日時の昇順へ並び替えることで、part番号が撮影日時の連続性を保つようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `sort-photos-by-taken-at.util.ts`（新規）: `sortPhotosByTakenAt`。写真一覧を`metadata.takenAt`の昇順に並び替える純粋関数（元の配列は変更しない）。
+    - `backfill-photos-from-local.ts`: `splitPhotosIntoSizedParts`の呼び出し前に`sortPhotosByTakenAt`を挟むよう変更。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た機能・挙動に変化は無い）。
+  * **設計書**: `designs/technical_design.md`「既存写真の一括取り込み（写真ローカルバックフィル）」に、並び替えを挟む理由と対応範囲（新規バックフィルのみ、既存データは対象外）を追記。既存データについては、Issue #97/#99の動画削除・part統合処理が動画の有無に関わらず複数part月を単一zipへ統合するため、既に本問題の実害が無い状態になっていることを確認し、日付境界での再構成は不要と判断した。
+
 ### [2026-07-30] E2Eテスト(bicycle-log.spec.ts)のフレーキー失敗の根本原因を特定し修正した（Issue #86）
 * **修正の動機・概要**:
   - `bicycle-log.spec.ts`の初期取り込み完了待ちが断続的に20秒タイムアウトする問題を、過去2回のセッションでも根本原因が特定できないまま持ち越していた。今回、失敗時のアクセシビリティツリースナップショット（Playwrightのerror-context）を確認したところ、進捗フッター自体が全く描画されていないことが判明し、`useBackfillProgressFooter`の設計上のバグと特定した。
