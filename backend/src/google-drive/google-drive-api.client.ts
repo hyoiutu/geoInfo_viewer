@@ -1,3 +1,6 @@
+import { createWriteStream } from 'node:fs';
+import { open } from 'node:fs/promises';
+import type { Readable } from 'node:stream';
 import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { firstValueFrom } from 'rxjs';
@@ -30,6 +33,12 @@ export const UPLOAD_CHUNK_SIZE_BYTES = 16 * 1024 * 1024;
 const GOOGLE_DRIVE_REQUEST_TIMEOUT_MS = 30 * 1000;
 // 既存アーカイブのダウンロードは（チャンク分割していないため）数GBになりうるので、より長めに確保する
 const GOOGLE_DRIVE_DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+// downloadFileToPath（ストリーミングダウンロード）専用のタイムアウト。動画削除・part統合処理
+// （Issue #99）では、旧実装の2GiB安全弁により実際には試されたことがなかった数GB〜十数GB規模の
+// 単一ファイルダウンロードが発生しうる。実際に約9.3GiBの単一アーカイブ（2020-09）のダウンロードが
+// GOOGLE_DRIVE_DOWNLOAD_TIMEOUT_MS（5分）内に完了せず、末尾が欠落したファイルのまま
+// ダウンロードが「成功」として扱われてしまう不具合が発生したため、より長い時間を確保する
+const GOOGLE_DRIVE_STREAMING_TRANSFER_TIMEOUT_MS = 120 * 60 * 1000;
 // アップロードチャンク(16MiB)1回あたりのタイムアウト。低速回線でも完了しうる時間を確保しつつ、
 // 応答が無いまま無限に待ち続けることは無いようにする
 const UPLOAD_CHUNK_TIMEOUT_MS = 2 * 60 * 1000;
@@ -95,6 +104,56 @@ export class GoogleDriveApiClient {
       );
 
       return response.data;
+    } catch (error) {
+      throw toGoogleDriveApiException(error);
+    }
+  }
+
+  /**
+   * 指定したファイルの実体（バイナリ）を、メモリ上へ全体を保持せずディスク上の指定パスへ
+   * ストリーミングでダウンロードする。`downloadFile`（Bufferとして全体をメモリへ返す）と異なり、
+   * 月合計サイズが数GB〜十数GBになりうる月別アーカイブzipの動画削除・part統合処理
+   * （`strip-videos-and-consolidate-archives.ts`）で、Node.jsプロセスのメモリ枯渇を避けるために使う（Issue #99）
+   * @param accessToken Google Driveのアクセストークン
+   * @param fileId 対象のDriveファイルID
+   * @param destPath ダウンロード先のファイルパス
+   */
+  async downloadFileToPath(accessToken: string, fileId: string, destPath: string): Promise<void> {
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<Readable>(`${GOOGLE_DRIVE_API_BASE_URL}/files/${fileId}`, {
+          // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
+          headers: { Authorization: `Bearer ${accessToken}` },
+          params: { alt: 'media' },
+          responseType: 'stream',
+          timeout: GOOGLE_DRIVE_STREAMING_TRANSFER_TIMEOUT_MS
+        })
+      );
+
+      // 実際に書き込んだバイト数をContent-Lengthヘッダーと突き合わせて検証する。数GB〜十数GB規模の
+      // ダウンロードで、末尾が欠落した状態のファイルなのにwriteStreamの'finish'（'error'ではなく）が
+      // 発火し、ダウンロード成功として扱われてしまう不具合が実際に発生した（約9.3GiBの単一アーカイブ
+      // で発生し、後段のzip読み込み処理が失敗するまで気づけなかった。Issue #99）。原因（タイムアウト・
+      // ネットワーク切断等）を問わず、途中で打ち切られたダウンロードを確実に検出できるようにする
+      let downloadedBytes = 0;
+      response.data.on('data', (chunk: Buffer) => {
+        downloadedBytes += chunk.length;
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        const writeStream = createWriteStream(destPath);
+        response.data.on('error', reject);
+        writeStream.on('error', reject);
+        writeStream.on('finish', resolve);
+        response.data.pipe(writeStream);
+      });
+
+      const expectedContentLength = response.headers?.['content-length'];
+      if (expectedContentLength !== undefined && downloadedBytes !== Number(expectedContentLength)) {
+        throw new Error(
+          `ダウンロードしたファイルサイズが不整合です（期待値: ${expectedContentLength}バイト、実際: ${downloadedBytes}バイト）`
+        );
+      }
     } catch (error) {
       throw toGoogleDriveApiException(error);
     }
@@ -192,6 +251,74 @@ export class GoogleDriveApiClient {
       }
     } catch (error) {
       throw toGoogleDriveApiException(error);
+    }
+  }
+
+  /**
+   * ディスク上のファイルを、内容全体をメモリへ読み込まずチャンク単位で逐次読み出しながら
+   * レジューマブルアップロードする。`updateFileContent`（Bufferを丸ごと受け取る）と異なり、
+   * 月合計サイズが数GB〜十数GBになりうる月別アーカイブzipの動画削除・part統合処理
+   * （`strip-videos-and-consolidate-archives.ts`）で、Node.jsプロセスのメモリ枯渇を避けるために使う。
+   * チャンクの読み出しには同一サイズのバッファを使い回すため、ファイル全体のサイズに関わらず
+   * 常にチャンク1つ分のメモリ使用量で済む（Issue #99）
+   * @param accessToken Google Driveのアクセストークン
+   * @param fileId 更新対象のDriveファイルID
+   * @param sourcePath アップロードするファイルのパス
+   * @param chunkSizeBytes 1チャンクあたりのサイズ。テストで小さい値へ差し替えられるよう引数化しているが、
+   * 通常は省略しデフォルト（`UPLOAD_CHUNK_SIZE_BYTES`）を使うこと
+   */
+  async uploadFileFromPath(
+    accessToken: string,
+    fileId: string,
+    sourcePath: string,
+    chunkSizeBytes: number = UPLOAD_CHUNK_SIZE_BYTES
+  ): Promise<void> {
+    const fileHandle = await open(sourcePath, 'r');
+    try {
+      const { size: totalSizeBytes } = await fileHandle.stat();
+
+      const sessionResponse = await firstValueFrom(
+        this.httpService.patch(
+          `${GOOGLE_DRIVE_UPLOAD_BASE_URL}/files/${fileId}`,
+          {},
+          {
+            headers: {
+              // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization/Content-Type)に合わせる
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json; charset=UTF-8',
+              'X-Upload-Content-Type': 'application/zip',
+              'X-Upload-Content-Length': String(totalSizeBytes)
+            },
+            params: { uploadType: 'resumable' },
+            timeout: GOOGLE_DRIVE_REQUEST_TIMEOUT_MS
+          }
+        )
+      );
+
+      const uploadSessionUrl: string = sessionResponse.headers.location;
+      for (let start = 0; start < totalSizeBytes; start += chunkSizeBytes) {
+        const end = Math.min(start + chunkSizeBytes, totalSizeBytes);
+        // チャンクごとに新規Bufferを確保する。1本のBufferを使い回すと、そのビュー(subarray)を
+        // 引数に渡した後続処理（テストのモック記録やリトライ処理等）が実行される時点で
+        // 既に次のチャンクの内容へ上書きされてしまう恐れがあるため
+        const chunkBuffer = Buffer.alloc(end - start);
+        const { bytesRead } = await fileHandle.read(chunkBuffer, 0, end - start, start);
+        await firstValueFrom(
+          this.httpService.put(uploadSessionUrl, chunkBuffer.subarray(0, bytesRead), {
+            headers: {
+              'Content-Type': 'application/zip',
+              'Content-Range': `bytes ${start}-${end - 1}/${totalSizeBytes}`
+            },
+            maxRedirects: 0,
+            validateStatus: isValidUploadChunkStatus,
+            timeout: UPLOAD_CHUNK_TIMEOUT_MS
+          })
+        );
+      }
+    } catch (error) {
+      throw toGoogleDriveApiException(error);
+    } finally {
+      await fileHandle.close();
     }
   }
 
