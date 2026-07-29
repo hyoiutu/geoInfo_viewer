@@ -1013,9 +1013,15 @@ describe('MapViewに関するテスト', () => {
         />
       );
       const mapInstance = getMapInstance();
+      // 他のテストのqueryRenderedFeatures.mockReturnValueが残っていないことを保証する
+      // （自転車ログとの競合判定、Issue #96）
+      mapInstance.queryRenderedFeatures.mockReturnValue([]);
       const handleClick = getAdminBoundaryClickHandler(mapInstance);
 
-      handleClick({ features: [{ properties: { prefectureName: '東京都', municipalityName: '渋谷区' } }] });
+      handleClick({
+        point: { x: 100, y: 200 },
+        features: [{ properties: { prefectureName: '東京都', municipalityName: '渋谷区' } }]
+      });
 
       expect(onFocusMunicipality).toHaveBeenCalledWith({ prefectureName: '東京都', municipalityName: '渋谷区' });
     });
