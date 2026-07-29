@@ -4,6 +4,13 @@ import type { TakeoutArchiveEntry } from './takeout-archive.util';
 
 const JSON_EXTENSION = '.json';
 
+// Node.jsのfs.readFileSyncは、実行環境のメモリ量に関わらず2GiB(2^31-1バイト)を超えるファイルを
+// 読み込めない（RangeError: File size is greater than 2 GiB）。動画等の大容量ファイルが対象
+// ディレクトリに含まれる場合に備え、この上限を超えるファイルは読み込み自体を試みずスキップする対策で
+// `backfill-photos-from-local.ts`・`strip-videos-and-generate-thumbnails-locally.ts`の両方が使う
+// （Issue #23、実際にGoogle Takeoutの動画で発生）
+export const MAX_READABLE_FILE_SIZE_BYTES = 2 ** 31 - 1;
+
 /** ローカルディレクトリ内の1ファイル分（相対パス・絶対パスの組） */
 export type LocalArchiveEntry = TakeoutArchiveEntry & {
   /** ファイルの絶対パス。写真本体の実バイナリを遅延読み込みする際に使う（readLocalPhotoData参照） */

@@ -12,6 +12,7 @@
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts",
     "seed:municipalities": "ts-node src/municipalities/seed-municipalities.ts",
     "flatten:photos-local": "ts-node src/photos/flatten-local-photo-directory.ts",
+    "strip-videos:photos-local": "ts-node src/photos/strip-videos-and-generate-thumbnails-locally.ts",
     "backfill:photos-local": "ts-node src/photos/backfill-photos-from-local.ts",
     "strip-videos:photos": "ts-node src/photos/strip-videos-and-consolidate-archives.ts",
     "generate-thumbnails:photos": "ts-node src/photos/generate-thumbnail-archives.ts"

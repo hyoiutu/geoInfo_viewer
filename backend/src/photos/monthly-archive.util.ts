@@ -80,3 +80,37 @@ export const mergeMonthlyArchive = (
 
   return { zipBuffer: zip.toBuffer(), entries };
 };
+
+/** mergeMonthlyThumbnailArchiveに渡す、追加対象のサムネイル1件分 */
+export type ThumbnailToMerge = {
+  /** アーカイブ内でのエントリパス。呼び出し元（フルサイズ写真のmergeMonthlyArchive結果）で
+   * 解決済みのものをそのまま使うため、この関数自体は重複排除を行わない（Issue #104） */
+  archivePath: string;
+  /** サムネイルのバイナリ */
+  buffer: Buffer;
+};
+
+/**
+ * 既存のサムネイル月別アーカイブzip（無ければ新規作成）に、新規のサムネイルエントリ一覧を追記する。
+ * `mergeMonthlyArchive`（フルサイズ写真用）と異なり、サムネイルのアーカイブ内パスは呼び出し元が
+ * 対応するフルサイズ写真の`mergeMonthlyArchive`結果（`archivePath`）から渡す前提のため、
+ * この関数自体では重複排除（`resolveUniquePath`）を行わない。フルサイズ側と異なる名前解決を
+ * 行ってしまうと、`photos.archive_path`から対応するサムネイルエントリを特定できなくなるため
+ * （Issue #104）
+ * @param existingZipBuffer 既存のサムネイル月別アーカイブzip本体。まだ存在しない年月の場合はnull
+ * @param newThumbnails 追記するサムネイル一覧
+ * @returns マージ後のzip本体
+ */
+export const mergeMonthlyThumbnailArchive = (
+  existingZipBuffer: Buffer | null,
+  newThumbnails: ThumbnailToMerge[]
+): Buffer => {
+  const zip = existingZipBuffer !== null ? new AdmZip(existingZipBuffer) : new AdmZip();
+
+  for (const thumbnail of newThumbnails) {
+    const entry = zip.addFile(thumbnail.archivePath, thumbnail.buffer);
+    entry.header.method = ZIP_COMPRESSION_METHOD_STORED;
+  }
+
+  return zip.toBuffer();
+};

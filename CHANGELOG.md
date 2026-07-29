@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-07-30] 動画削除・サムネイル生成をflatten直後のローカル処理へ前倒しした（Issue #104）
+* **修正の動機・概要**:
+  - 動画削除（Issue #97/#99）・サムネイル生成（Issue #100）はいずれも、写真ローカルバックフィルで全年月をGoogle Driveへアップロードし終えた後に、成り行きで追加された機能だった。そのため新規取り込み年月ごとに「動画込みでアップロード→ダウンロードして動画削除→再アップロード→改めてダウンロードしてサムネイル生成→アップロード」という無駄な通信往復が発生し、動画込みの状態で先にアップロードするため月合計サイズが4GiBを超えやすく、Issue #103のZIP64破損リスクも高まっていた。動画削除・サムネイル生成の判断自体は`flatten-local-photo-directory.ts`実行後の時点で確定できるため、この時点に前倒しし無駄な往復を無くした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - 新規`strip-videos-and-generate-thumbnails-locally.ts`: ローカルのフラットディレクトリに対し、動画ファイルの削除とサムネイル生成を行うオーケストレーションスクリプトを追加。既存の`isVideoFile`・`looksLikeVideoContainer`をそのまま流用する`isLocalFileVideo`（新規`local-video-detection.util.ts`）で動画を判定し、削除前にファイル名・EXIF撮影日時を`formatVideoDeletionLogLine`（新規`video-deletion-log.util.ts`）でJSON Lines形式の削除ログへ記録する。
+    - `thumbnail-generation.util.ts`: `generate-thumbnail-archive-streaming.util.ts`からHEIC変換・sharpリサイズ処理（`generateThumbnailBuffer`）を共通utilとして切り出し、両方（zip経路・ローカルファイル経路）から使えるようにした。
+    - `monthly-archive.util.ts`: サムネイル専用月別アーカイブへの追記を行う`mergeMonthlyThumbnailArchive`を追加。
+    - 新規`monthly-photo-thumbnail-archive.service.ts`: `MonthlyPhotoThumbnailArchiveService`を追加し、`backfill-photos-from-local.ts`がフルサイズzipのアップロードと同じpart単位のループの中で、サムネイル専用zip（part列を持たず常に1年月=1zip）へも追記・アップロードできるようにした。`photos.module.ts`へ登録。
+    - `backfill-photos-from-local.ts`: 第2引数`<サムネイルディレクトリパス>`を追加し、事前生成済みサムネイルを読み込んでサムネイルアーカイブへ追記・アップロードする処理を追加。`MAX_READABLE_FILE_SIZE_BYTES`を`local-photo-directory.util.ts`へexportし、新規スクリプトと共有するようにした。
+    - `strip-videos-and-consolidate-archives.ts`・`generate-thumbnail-archives.ts`（Drive上のアーカイブに対する既存スクリプト）は、事後的な再処理（`FORCE_REPROCESS_YEAR_MONTHS`）用の経路として維持し、新規取り込みの標準経路からは外した。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（ユーザーから見た機能・挙動に変化はなく、内部の運用パイプラインのみの変更のため）。
+  * **設計書**: `designs/technical_design.md`に新規節「写真ローカル前処理での動画除外・サムネイル生成の前倒し（Issue #104）」を追加。「既存写真の一括取り込み（写真ローカルバックフィル）」節も、第2引数の追加とサムネイル追記処理を反映して更新。
+
 ### [2026-07-30] アクティビティ選択時に行政区画も選択される競合を解消した（Issue #96）
 * **修正の動機・概要**:
   - 自転車ログの線の真上にある行政区画をクリックすると、`registerBicycleLogClickHandler`（自転車ログのクリック検出）・`registerAdminBoundaryClickHandler`（行政区画hit-testのクリック検出）が互いに独立して同じ`click`イベントに登録されているため両方が発火し、アクティビティが選択されると同時に行政区画へも意図せずフォーカス・パンし、選択したアクティビティが見えなくなる問題があった。

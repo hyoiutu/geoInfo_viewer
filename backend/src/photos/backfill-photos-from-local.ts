@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { statSync, writeSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeSync } from 'node:fs';
+import { join } from 'node:path';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
@@ -7,26 +8,24 @@ import { createDataSourceOptions } from '../database/database.config';
 import { GoogleDriveApiClient } from '../google-drive/google-drive-api.client';
 import { GoogleDriveAuthService } from '../google-drive/google-drive-auth.service';
 import { MonthlyPhotoArchiveEntity } from './entities/monthly-photo-archive.entity';
+import { MonthlyPhotoThumbnailArchiveEntity } from './entities/monthly-photo-thumbnail-archive.entity';
 import { PhotoEntity } from './entities/photo.entity';
 import { groupPhotosByYearMonth, type PhotoWithMetadata } from './group-photos-by-year-month.util';
 import {
   createLazyPhotoData,
   type LocalArchiveEntry,
+  MAX_READABLE_FILE_SIZE_BYTES,
   readLocalPhotoData,
   scanLocalPhotoDirectory
 } from './local-photo-directory.util';
+import type { ThumbnailToMerge } from './monthly-archive.util';
 import { MonthlyPhotoArchiveService } from './monthly-photo-archive.service';
+import { MonthlyPhotoThumbnailArchiveService } from './monthly-photo-thumbnail-archive.service';
 import { toPhotoEntity } from './photo-ingest.service';
 import { sortPhotosByTakenAt } from './sort-photos-by-taken-at.util';
 import { splitPhotosIntoSizedParts } from './split-photos-into-sized-parts.util';
 import { resolvePhotoMetadata } from './takeout-metadata.util';
 import { matchPhotosWithJsonSidecars } from './takeout-photo-matcher.util';
-
-// Node.jsのfs.readFileSyncは、実行環境のメモリ量に関わらず2GiB(2^31-1バイト)を超える
-// ファイルを読み込めない（RangeError: File size is greater than 2 GiB）。動画等の
-// 大容量ファイルが対象ディレクトリに含まれる場合に備え、この上限を超えるファイルは
-// 読み込み自体を試みずスキップする（Issue #23、実際にGoogle Takeoutの動画で発生）
-const MAX_READABLE_FILE_SIZE_BYTES = 2 ** 31 - 1;
 
 // 1つの年月をこのバイト数ごとの複数part（zip）へ分割する。動画を多く含む月では
 // 元データ＋zip化後のバッファを同時に保持する必要があり、1つの月を丸ごと1つのzipにまとめようとすると
@@ -62,10 +61,18 @@ const log = (message: string): void => {
  * レコードがあるpartはスキップする。処理の途中（アップロード直後〜DB保存の間等）で中断された場合、
  * そのpartのレコードが無い・不完全な状態になりうるため、その場合は自動スキップされず再処理される（Issue #23）。
  * `MAX_READABLE_FILE_SIZE_BYTES`（2GiB）を超えるファイル（動画等）は読み込み自体を試みずスキップし、
- * 完了時にパス一覧を出力する（手動での個別対応用）
+ * 完了時にパス一覧を出力する（手動での個別対応用）。
+ * `thumbnailDirectoryPath`には、事前に`strip-videos-and-generate-thumbnails-locally.ts`で生成済みの
+ * サムネイル（元ファイルと同じファイル名）が置かれている前提で、フルサイズzipのアップロードと同じpart単位の
+ * ループの中でサムネイルzipへの追記・アップロードも行う（Drive経由の別途ダウンロード往復を無くす、Issue #104）。
+ * 対応するサムネイルが見つからない写真（生成失敗等）はサムネイルzipへの追加をスキップし、完了時にパス一覧を出力する
  * @param directoryPath 走査対象のローカルディレクトリパス
+ * @param thumbnailDirectoryPath 事前生成済みサムネイルが置かれたローカルディレクトリパス
  */
-const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<void> => {
+const backfillPhotosFromLocalDirectory = async (
+  directoryPath: string,
+  thumbnailDirectoryPath: string
+): Promise<void> => {
   const dataSource = new DataSource(createDataSourceOptions(process.env));
   await dataSource.initialize();
 
@@ -75,6 +82,11 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
   const monthlyPhotoArchiveService = new MonthlyPhotoArchiveService(
     googleDriveApiClient,
     monthlyPhotoArchiveRepository
+  );
+  const monthlyPhotoThumbnailArchiveRepository = dataSource.getRepository(MonthlyPhotoThumbnailArchiveEntity);
+  const monthlyPhotoThumbnailArchiveService = new MonthlyPhotoThumbnailArchiveService(
+    googleDriveApiClient,
+    monthlyPhotoThumbnailArchiveRepository
   );
   const photoRepository = dataSource.getRepository(PhotoEntity);
 
@@ -183,6 +195,24 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
         savedCount += entities.length;
       }
       log(`[${group.yearMonth} part${partIndex}] ${entities.length}件を月別アーカイブへ振り分け・保存しました`);
+
+      const thumbnails: ThumbnailToMerge[] = [];
+      const missingThumbnailPaths: string[] = [];
+      for (const entry of reorganized) {
+        const thumbnailPath = join(thumbnailDirectoryPath, entry.photo.entry.path);
+        if (!existsSync(thumbnailPath)) {
+          missingThumbnailPaths.push(entry.photo.entry.path);
+          continue;
+        }
+        thumbnails.push({ archivePath: entry.archivePath, buffer: readFileSync(thumbnailPath) });
+      }
+      await monthlyPhotoThumbnailArchiveService.appendThumbnails(accessToken, group.yearMonth, thumbnails);
+      log(`[${group.yearMonth} part${partIndex}] ${thumbnails.length}件をサムネイルアーカイブへ追記・保存しました`);
+      if (missingThumbnailPaths.length > 0) {
+        log(
+          `[${group.yearMonth} part${partIndex}] サムネイルが見つからずスキップしたファイル（${missingThumbnailPaths.length}件）: ${missingThumbnailPaths.join(', ')}`
+        );
+      }
     }
   }
 
@@ -194,12 +224,14 @@ const backfillPhotosFromLocalDirectory = async (directoryPath: string): Promise<
 
 // `pnpm --filter <package> run <script> -- <args>`はnpm scriptsと異なり、区切りの`--`自体を
 // 除去せずそのままprocess.argvへ渡すため、位置引数を取り出す前に取り除いておく
-const [directoryPath] = process.argv.slice(2).filter((arg) => arg !== '--');
-if (directoryPath === undefined) {
-  console.error('使い方: ts-node src/photos/backfill-photos-from-local.ts <ローカルディレクトリパス>');
+const [directoryPath, thumbnailDirectoryPath] = process.argv.slice(2).filter((arg) => arg !== '--');
+if (directoryPath === undefined || thumbnailDirectoryPath === undefined) {
+  console.error(
+    '使い方: ts-node src/photos/backfill-photos-from-local.ts <ローカルディレクトリパス> <サムネイルディレクトリパス>'
+  );
   process.exitCode = 1;
 } else {
-  backfillPhotosFromLocalDirectory(directoryPath).catch((error: unknown) => {
+  backfillPhotosFromLocalDirectory(directoryPath, thumbnailDirectoryPath).catch((error: unknown) => {
     console.error(error);
     process.exitCode = 1;
   });
