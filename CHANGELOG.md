@@ -32,6 +32,7 @@
   - 残り9件（各年月ちょうど1件ずつ、CRC32またはサイズ不一致）は元データ自体が書き込み当時から部分的に破損していたと考えられ、この方式では復旧不可能。該当`photos`行は元の（読めない）Driveファイルを指したまま残る。
   - 古い（読めない）9つのDriveファイルは、安全確認のため削除せず残している。
   - `photos`テーブル総数は47,441件→47,411件（Issue #97/#99/#100フォローアップで削除した動画30件分の差分と一致、整合性を確認済み）。
+  - 復旧した9年月は`video_stripped_year_months`・`monthly_photo_thumbnail_archives`に未記録の通常の未処理年月として扱われるため、続けて`strip-videos-and-consolidate-archives.ts`・`generate-thumbnail-archives.ts`を（`FORCE_REPROCESS_YEAR_MONTHS`無しの）通常のフローで実行した。動画483件を削除（写真6,838件を保持）、サムネイル生成も失敗0件で完了。これにより`video_stripped_year_months`・`monthly_photo_thumbnail_archives`とも**178/178年月（全年月）**が完了した状態になった。`photos`テーブル総数は47,411件→46,928件（動画483件削除分と一致）。
 
 ### [2026-07-28] Android Motion Photo(.mp)のJPEG抽出専用実装を廃止し、動画として除外するよう簡素化した（Issue #100フォローアップ）
 * **修正の動機・概要**:
