@@ -44,8 +44,11 @@ export const MapWorkspace = () => {
   const [pendingLayerApply, setPendingLayerApply] = useState<PendingLayerApply | null>(null);
 
   const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus();
-  const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =
-    useBackfillProgressFooter(backfillStatus);
+  const {
+    isVisible: isBackfillFooterVisible,
+    show: showBackfillFooter,
+    dismiss: dismissBackfillFooter
+  } = useBackfillProgressFooter(backfillStatus);
   const handleCyclingLogSyncComplete = () => {
     setPendingLayerApply((current) => (current ? { ...current, waitingForCyclingLog: false } : current));
   };
@@ -114,9 +117,11 @@ export const MapWorkspace = () => {
             activities={activities}
             isBackfillRunning={backfillStatus?.isRunning ?? false}
             onStartBackfill={() => {
+              showBackfillFooter();
               void startBackfill();
             }}
             onStartForceRefetch={() => {
+              showBackfillFooter();
               void startForceRefetch();
             }}
           />

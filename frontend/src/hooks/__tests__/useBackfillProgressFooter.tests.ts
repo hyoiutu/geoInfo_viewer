@@ -86,4 +86,40 @@ describe('useBackfillProgressFooterに関するテスト', () => {
 
     expect(result.current.isVisible).toBe(true);
   });
+
+  describe('showに関するテスト（Issue #86）', () => {
+    test('showを呼ぶと、backfillStatusがisRunning:trueを一度も経由しなくてもフッターが表示される', () => {
+      // E2E環境等、対象件数が極端に少ない・レート制限間隔が極小の場合、開始直後の最初の状態取得時点で
+      // 既に完了していることがあり、isRunning:trueの状態を一度もフロントエンドが観測できないことがある
+      // (Issue #86で判明。開始操作の直後にbackfillStatusがnull→isRunning:falseへ直接遷移するケース)。
+      // isRunning:trueの観測に頼らず、開始操作そのものをトリガーとして表示できる必要がある
+      const { result, rerender } = renderHook(({ status }) => useBackfillProgressFooter(status), {
+        initialProps: { status: NOT_RUNNING_STATUS_OR_NULL }
+      });
+
+      act(() => {
+        result.current.show();
+      });
+
+      expect(result.current.isVisible).toBe(true);
+
+      // isRunning:trueを経由せず、直接「完了済み」状態へ遷移しても表示され続ける
+      rerender({ status: { ...NOT_RUNNING_STATUS, completedCount: 3, totalCount: 3 } });
+
+      expect(result.current.isVisible).toBe(true);
+    });
+
+    test('showを呼んだ後にdismissを呼ぶと、フッターが非表示になる', () => {
+      const { result } = renderHook(() => useBackfillProgressFooter(null));
+
+      act(() => {
+        result.current.show();
+      });
+      act(() => {
+        result.current.dismiss();
+      });
+
+      expect(result.current.isVisible).toBe(false);
+    });
+  });
 });

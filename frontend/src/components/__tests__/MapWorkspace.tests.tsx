@@ -177,6 +177,21 @@ describe('MapWorkspaceに関するテスト', () => {
     await waitFor(() => expect(startBackfill).toHaveBeenCalledTimes(1));
   });
 
+  test('対象件数が少なく開始直後に完了する場合でも、進捗フッターに完了状態が表示される（Issue #86）', async () => {
+    // 実際にE2E環境で断続的に発生していた不具合を再現するテスト。対象件数が極端に少ない・
+    // レート制限間隔が極小の環境では、開始操作の直後の最初の状態取得時点で既に完了しており、
+    // isRunning:trueの状態をフロントエンドが一度も観測できないことがある。
+    // getBackfillStatusの既定モック（isRunning:falseを即座に返す）はまさにこのケースを表す
+    const { getByRole, getByText } = renderWithChakra(<MapWorkspace />);
+
+    fireEvent.click(getByRole('button', { name: '設定' }));
+    const backfillButton = await waitFor(() => getByRole('button', { name: '自転車ログ初期取り込み' }));
+    fireEvent.click(backfillButton);
+
+    await waitFor(() => expect(getByText('取得が完了しました')).toBeInTheDocument());
+    expect(getByRole('button', { name: '閉じる' })).toBeInTheDocument();
+  });
+
   test('設定ダイアログの強制再取得ボタンをクリックすると、startForceRefetchが呼ばれる', async () => {
     const { startForceRefetch } = await import('../../api/activitiesApi');
     const { getByRole } = renderWithChakra(<MapWorkspace />);
