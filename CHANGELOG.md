@@ -14,6 +14,18 @@
 
 ## 変更履歴
 
+### [2026-07-30] フルサイズのHEIC写真を事前一括変換しJPEGとして配信するようにした（Issue #106）
+* **修正の動機・概要**:
+  - `GET /photos/:id/image`は元サイズの写真を加工せずそのまま返しており、`.heic`写真は多くのブラウザ（Safari以外）がネイティブにデコードできず表示に失敗していた。ユーザーとの相談の結果、リクエストの都度変換するのではなく、事前一括変換（既存のフルサイズアーカイブ内の`.heic`エントリを`.jpg`エントリへ直接置き換え、元のHEICバイト列は保持しない）方式を採用した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `heic-conversion.util.ts`: `thumbnail-generation.util.ts`に private であったHEIC拡張子・ISOBMFFコンテナ判定ロジックを`isActualHeicFile`として移設・export。`thumbnail-generation.util.ts`はこれを使うよう変更（判定ロジックの共通化）。
+    - 新規`convert-heic-archive-entries.util.ts`: `convertHeicArchiveEntries`を追加。月別アーカイブzip内の対象エントリのうち実際にHEICであるもののみJPEGへ変換し`.jpg`エントリへ置き換える。
+    - 新規`convert-heic-photos-to-jpeg.ts`（`pnpm --filter backend run convert-heic:photos`）: `photos.file_name`がHEIC/HEIF拡張子の写真を検出し、アーカイブ単位で変換・DB更新するオーケストレーションスクリプトを追加。`generate-thumbnail-archives.ts`と同じ「未処理分を検出して処理する恒久パイプライン」パターンを採用し、専用のone-offスクリプトは用意していない（初回実行で新規取り込み分・既存バックログの両方を自動的にカバーする）。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（表示の成功・失敗自体はこれまでも「読み込み中はローディング表示、完了で切り替え」という同じ挙動のため、新たに記載すべきユーザーから見た挙動の変化はない）。
+  * **設計書**: `designs/technical_design.md`に新規節「フルサイズ写真のHEIC事前一括変換（Issue #106）」を追加。
+
 ### [2026-07-30] アクティビティパネルの写真表示をサムネイル経由に切り替えた（Issue #105）
 * **修正の動機・概要**:
   - アクティビティパネルの写真グリッドは、Issue #100でサムネイル専用zipを生成する仕組みが実装済みだったにもかかわらず一切参照されておらず、引き続きフルサイズ月別アーカイブzipを直接ダウンロードして表示していたため表示が遅かった。新規のサムネイル取得エンドポイントを追加し、パネル表示を切り替えた。

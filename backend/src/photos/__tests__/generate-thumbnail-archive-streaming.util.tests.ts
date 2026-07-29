@@ -8,7 +8,10 @@ import yauzl from 'yauzl';
 import { generateThumbnailArchiveStreaming, THUMBNAIL_WIDTH_PX } from '../generate-thumbnail-archive-streaming.util';
 import { convertHeicBufferToJpegBuffer } from '../heic-conversion.util';
 
-vi.mock('../heic-conversion.util', () => ({ convertHeicBufferToJpegBuffer: vi.fn() }));
+vi.mock('../heic-conversion.util', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../heic-conversion.util')>()),
+  convertHeicBufferToJpegBuffer: vi.fn()
+}));
 
 const createTestImage = (
   widthPx: number,
