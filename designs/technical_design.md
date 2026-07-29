@@ -45,13 +45,20 @@ root/
 - レイヤONのタイミングでStrava APIを呼び出し、前回の切り替えからアクティビティが更新されていないか新規アクティビティ取得を行い、更新されていれば、バックエンドのDBを更新した上でフロントエンドの地図上に自転車ログを表示する（`ActivitiesService.sync()`）
   - Strava のAPIトークンは6時間で失効するため、失効していた場合リフレッシュトークンを使ってAPIトークンを更新する（`StravaAuthService`）
   - フロントエンド側のトリガー検知（自転車ログレイヤーのOFF→ON遷移を監視し、Strava新規アクティビティ取得→DBからの参照取得を行う）は`useCyclingActivities`フック（`frontend/src/hooks/useCyclingActivities.ts`）が担う。`MapWorkspace`がこのフックを1回だけ呼び出し、取得した`activities`をフィルタ計算・`MapView`への表示反映へつなげる。以前は`MapView`内のuseEffectに「表示反映」と「データ取得トリガー」という異なる関心事が同居していたが、Issue #58でデータ取得側を切り出した
-- アクティビティの取得には詳細API（`GET /activities/{id}`、1ログにつき1リクエスト）を使い、常に高解像度の軌跡を取得する。一覧APIが返す簡略化された軌跡（低解像度）は使用しない
+- アクティビティの取得には詳細API（`GET /activities/{id}`、1ログにつき1リクエスト）を使い、常に高解像度の軌跡（`path`）を取得する。一覧APIが返す簡略化された軌跡（低解像度）は、通常表示には使用しない
 - 取得した軌跡（`path`）は、隣接する2点間の距離が10km以上離れている箇所（トンネル内・フェリー乗船中等の測定不能区間）で複数の区間に分割して保持する
   - 距離の算出はHaversine公式（大圏距離）を用いる（`splitPathAtJumps`、`backend/src/activities/split-path-at-jumps.util.ts`）
   - 分割した結果2点未満（線を描画できない孤立した1点）になった区間は除外する
   - DBの`path`列は単一の線（PostGIS `geometry(LineString,4326)`）ではなく、複数の線をまとめて持てる`geometry(MultiLineString,4326)`として保持する（マイグレーション`1720800000000-ChangeCyclingActivitiesPathToMultiLineString`）
   - この分割は詳細API呼び出し時（`toCyclingActivityEntityFromDetail`）に行われるため、バックフィル・フォースリフェッチ・新規アクティビティ取得のいずれも、対象アクティビティの詳細取得を行うタイミングで共通して適用される
   - フロントエンドの`path`型は区間ごとの座標配列の配列（`[number, number][][]`）であり、地図描画は`MultiLineString`ジオメトリとして行う（`cyclingActivityToGeoJson`）
+
+## 低ズームレベルでの軽量表示（Issue #61）
+- ズームレベル10以下では、データ量の多い高解像度の軌跡（`path`）ではなく、Strava詳細APIレスポンスの`summary_polyline`をデコードした簡略化された軌跡（`summaryPath`列、マイグレーション`1785347504217-AddSummaryPathToCyclingActivities`）を表示する。`summaryPath`も`path`と同じ区間分割ロジック（位置飛び10km以上）を適用してから保持する（`toCyclingActivityEntityFromDetail`）
+  - `path`が`polyline`優先・`summary_polyline`はGPSルートの無い手動記録等での代替という位置づけなのに対し、`summaryPath`は常に`summary_polyline`から独立してデコードする（`polyline`の有無に関わらず`summary_polyline`が存在すれば設定する）
+- 地図描画は`path`用（`BICYCLE_LOG_SOURCE_ID`等3ソース）とは別に、summary専用の1ソース・1レイヤー（`BICYCLE_LOG_SUMMARY_SOURCE_ID`/`BICYCLE_LOG_SUMMARY_LAYER_ID`、`addBicycleLogLayer`）を持つ。低ズームでは選択・フォーカス状態の概念自体を提供しないため、通常・選択・フォーカス用のような複数状態は不要で1種類のみで足りる
+  - 表示切り替えはMapLibreの宣言的な`minzoom`/`maxzoom`（既存の行政区画レイヤー等と同じ方式）で行う。`BICYCLE_LOG_SUMMARY_MAX_ZOOM`(10)を境に、summaryレイヤーは`maxzoom`、`path`用の3レイヤーは`minzoom`として同じ値を使う。MapLibreの仕様上「maxzoom以上で非表示」となるため、ズームレベルちょうど10の瞬間のみ高解像度側が優先されるが、連続的に変化するズーム操作の中では実用上体感できる差ではない
+- ズームレベルが`BICYCLE_LOG_SUMMARY_MAX_ZOOM`以下の場合、`registerBicycleLogClickHandler`はヒットテスト自体を行わずクリックによる選択・フォーカスを無効にする（フォーカス中の早期returnと同じ箇所に`map.getZoom() <= BICYCLE_LOG_SUMMARY_MAX_ZOOM`の判定を追加）
 
 # 自転車ログフィルタリング機能
 - 仕様書記載のフィルタ条件（年月・獲得標高・平均時速・走行距離）はフロントエンドの純粋関数`filterActivities`・バリデーション関数`isActivityFilterValid`（`frontend/src/utils/filterActivities.ts`）で実現する

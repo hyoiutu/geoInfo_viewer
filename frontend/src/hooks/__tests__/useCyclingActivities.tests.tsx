@@ -34,7 +34,8 @@ const ACTIVITY_1 = {
   elapsedTimeSeconds: 650,
   elevationGainMeters: 50,
   startDate: '2026-07-01T00:00:00Z',
-  path: null
+  path: null,
+  summaryPath: null
 };
 
 const renderCyclingActivities = (isBicycleLogVisible: boolean) =>

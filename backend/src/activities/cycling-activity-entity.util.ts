@@ -1,4 +1,5 @@
 import polyline from '@mapbox/polyline';
+import type { MultiLineString } from 'geojson';
 import type { StravaActivity, StravaActivityDetail } from '../strava/types/strava-activity.type';
 import { CyclingActivityEntity } from './entities/cycling-activity.entity';
 import { splitPathAtJumps } from './split-path-at-jumps.util';
@@ -39,33 +40,46 @@ const mapBaseFields = (
 };
 
 /**
+ * デコードした座標配列を、位置飛び（隣接点間10km以上）で区間分割したMultiLineStringへ変換する。
+ * 分割後に区間が1つも残らない場合（全ての隣接点が位置飛び）はnullを返す
+ * @param path デコード済みの座標配列。デコードできなかった場合はnull
+ * @returns 区間分割済みのMultiLineString、または該当区間が無い場合はnull
+ */
+const toSegmentedMultiLineString = (path: [number, number][] | null): MultiLineString | null => {
+  const segments = path === null ? [] : splitPathAtJumps(path);
+  return segments.length === 0 ? null : { type: 'MultiLineString', coordinates: segments };
+};
+
+/**
  * バックフィルでDBにIDだけ先に挿入しておくためのプレースホルダーEntityを作る。
  * 詳細取得(GET /activities/{id})が完了するまでは位置情報を持たせない方針のため、
- * summary_polylineが取得できていてもpathには反映しない。
+ * summary_polylineが取得できていてもpath・summaryPathには反映しない。
  * @param activity 変換元の一覧APIレスポンス
  * @returns 位置情報を持たないプレースホルダーEntity
  */
 export const toPlaceholderCyclingActivityEntity = (activity: StravaActivity): CyclingActivityEntity => {
   const entity = mapBaseFields(activity, new CyclingActivityEntity());
   entity.path = null;
+  entity.summaryPath = null;
   entity.detailFetchedAt = null;
   return entity;
 };
 
 /**
  * 詳細API(GET /activities/{id})のレスポンスから高解像度のEntityを作る。
- * 高解像度のpolylineを優先し、GPSルートの無い手動記録等でpolylineが空の場合はsummary_polylineにフォールバックする。
- * デコードした軌跡は、トンネル内・フェリー乗船中等の測定不能区間による位置飛び（隣接点間10km以上）で
- * 区間分割してから保持する（Issue #27）。分割後に区間が1つも残らない場合はpathをnullにする
+ * pathは高解像度のpolylineを優先し、GPSルートの無い手動記録等でpolylineが空の場合はsummary_polylineに
+ * フォールバックする。summaryPathは、低ズーム表示専用（Issue #61）としてsummary_polylineから
+ * 独立してデコードする（polylineの有無に関わらず、summary_polyline自体が空でなければ常に設定する）。
+ * いずれも、デコードした軌跡はトンネル内・フェリー乗船中等の測定不能区間による位置飛び
+ * （隣接点間10km以上）で区間分割してから保持する（Issue #27）。分割後に区間が1つも残らない場合はnullにする
  * @param detail 変換元の詳細APIレスポンス
  * @returns 位置情報を含むEntity
  */
 export const toCyclingActivityEntityFromDetail = (detail: StravaActivityDetail): CyclingActivityEntity => {
   const entity = mapBaseFields(detail, new CyclingActivityEntity());
   const encodedPolyline = detail.map.polyline !== EMPTY_POLYLINE ? detail.map.polyline : detail.map.summary_polyline;
-  const path = decodePolylineToPath(encodedPolyline);
-  const segments = path === null ? [] : splitPathAtJumps(path);
-  entity.path = segments.length === 0 ? null : { type: 'MultiLineString', coordinates: segments };
+  entity.path = toSegmentedMultiLineString(decodePolylineToPath(encodedPolyline));
+  entity.summaryPath = toSegmentedMultiLineString(decodePolylineToPath(detail.map.summary_polyline));
   entity.detailFetchedAt = new Date();
   return entity;
 };

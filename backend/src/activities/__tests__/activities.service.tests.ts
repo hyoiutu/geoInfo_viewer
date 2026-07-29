@@ -91,6 +91,7 @@ describe('ActivitiesServiceに関するテスト', () => {
         movingTimeSeconds: 600,
         startDate: new Date('2026-07-01T00:00:00Z'),
         path: null,
+        summaryPath: null,
         detailFetchedAt: null
       });
       cyclingActivityRepository.findAll.mockResolvedValue([entity1]);

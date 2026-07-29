@@ -49,7 +49,12 @@ import {
   BICYCLE_LOG_LINE_WIDTH_SELECTED,
   BICYCLE_LOG_SELECTED_LAYER_ID,
   BICYCLE_LOG_SELECTED_SOURCE_ID,
-  BICYCLE_LOG_SOURCE_ID
+  BICYCLE_LOG_SOURCE_ID,
+  BICYCLE_LOG_SUMMARY_LAYER_ID,
+  BICYCLE_LOG_SUMMARY_LINE_COLOR,
+  BICYCLE_LOG_SUMMARY_LINE_WIDTH,
+  BICYCLE_LOG_SUMMARY_MAX_ZOOM,
+  BICYCLE_LOG_SUMMARY_SOURCE_ID
 } from '../constants/bicycleLog';
 import type { CategorizedLayerIds } from '../types/layer';
 import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
@@ -101,29 +106,51 @@ export const addAdminBoundaryLayer = (map: maplibregl.Map) => {
 
 /**
  * 自転車ログ用の空のGeoJSONソース・ラインレイヤーを地図に追加する。
- * 通常状態(全アクティビティ)・選択状態・フォーカス状態をそれぞれ別のソース・レイヤーとして持つ。
+ * 通常状態(全アクティビティ)・選択状態・フォーカス状態・summary状態（低ズームレベル用の簡略化された
+ * 軌跡、Issue #61）をそれぞれ別のソース・レイヤーとして持つ。
  * 単一のline層には描画順を制御する仕組みが無いため、レイヤーを追加した順（=描画順、後から追加した方が手前）で
- * 「通常→選択→フォーカス」の手前関係を実現する。
+ * 「summary→通常→選択→フォーカス」の手前関係を実現する（summaryと他の3層はズームレベルで表示が
+ * 切り替わるため実際に重なることは無い）。
  * フォーカス状態は他の線に埋もれず視認できるよう、フォーカス用ソースを参照する地図背景色のハロー(縁取り)レイヤーを
- * 色付き本体レイヤーより先に(=下に)追加する
+ * 色付き本体レイヤーより先に(=下に)追加する。
+ * summary状態のレイヤーはBICYCLE_LOG_SUMMARY_MAX_ZOOM以下でのみ表示し、それ以外(通常・選択・フォーカス)は
+ * 同じズームレベル以上でのみ表示する（低ズームでは選択・フォーカス操作自体を無効にするため、
+ * summary状態は1種類のみで足りる）
  * @param map 追加先のMapLibre地図インスタンス
  */
 export const addBicycleLogLayer = (map: maplibregl.Map) => {
-  const addLineLayer = (sourceId: string, layerId: string, color: string, width: number) => {
+  const addLineLayer = (
+    sourceId: string,
+    layerId: string,
+    color: string,
+    width: number,
+    zoomBound: { minzoom: number } | { maxzoom: number }
+  ) => {
     map.addLayer({
       id: layerId,
       type: 'line',
       source: sourceId,
-      paint: { 'line-color': color, 'line-width': width }
+      paint: { 'line-color': color, 'line-width': width },
+      ...zoomBound
     });
   };
+
+  map.addSource(BICYCLE_LOG_SUMMARY_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
+  addLineLayer(
+    BICYCLE_LOG_SUMMARY_SOURCE_ID,
+    BICYCLE_LOG_SUMMARY_LAYER_ID,
+    BICYCLE_LOG_SUMMARY_LINE_COLOR,
+    BICYCLE_LOG_SUMMARY_LINE_WIDTH,
+    { maxzoom: BICYCLE_LOG_SUMMARY_MAX_ZOOM }
+  );
 
   map.addSource(BICYCLE_LOG_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
   addLineLayer(
     BICYCLE_LOG_SOURCE_ID,
     BICYCLE_LOG_LAYER_ID,
     BICYCLE_LOG_LINE_COLOR_DEFAULT,
-    BICYCLE_LOG_LINE_WIDTH_DEFAULT
+    BICYCLE_LOG_LINE_WIDTH_DEFAULT,
+    { minzoom: BICYCLE_LOG_SUMMARY_MAX_ZOOM }
   );
 
   map.addSource(BICYCLE_LOG_SELECTED_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
@@ -131,7 +158,8 @@ export const addBicycleLogLayer = (map: maplibregl.Map) => {
     BICYCLE_LOG_SELECTED_SOURCE_ID,
     BICYCLE_LOG_SELECTED_LAYER_ID,
     BICYCLE_LOG_LINE_COLOR_SELECTED,
-    BICYCLE_LOG_LINE_WIDTH_SELECTED
+    BICYCLE_LOG_LINE_WIDTH_SELECTED,
+    { minzoom: BICYCLE_LOG_SUMMARY_MAX_ZOOM }
   );
 
   map.addSource(BICYCLE_LOG_FOCUSED_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURE_COLLECTION });
@@ -139,13 +167,15 @@ export const addBicycleLogLayer = (map: maplibregl.Map) => {
     BICYCLE_LOG_FOCUSED_SOURCE_ID,
     BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
     BICYCLE_LOG_FOCUSED_OUTLINE_COLOR,
-    BICYCLE_LOG_FOCUSED_OUTLINE_WIDTH
+    BICYCLE_LOG_FOCUSED_OUTLINE_WIDTH,
+    { minzoom: BICYCLE_LOG_SUMMARY_MAX_ZOOM }
   );
   addLineLayer(
     BICYCLE_LOG_FOCUSED_SOURCE_ID,
     BICYCLE_LOG_FOCUSED_LAYER_ID,
     BICYCLE_LOG_LINE_COLOR_FOCUSED,
-    BICYCLE_LOG_LINE_WIDTH_FOCUSED
+    BICYCLE_LOG_LINE_WIDTH_FOCUSED,
+    { minzoom: BICYCLE_LOG_SUMMARY_MAX_ZOOM }
   );
 };
 

@@ -1,4 +1,4 @@
-import type { Position } from 'geojson';
+import type { MultiLineString, Position } from 'geojson';
 import type { CyclingActivityEntity } from './entities/cycling-activity.entity';
 import type { CyclingActivityDto } from './types/cycling-activity.dto';
 
@@ -8,6 +8,14 @@ import type { CyclingActivityDto } from './types/cycling-activity.dto';
  * @returns [経度, 緯度]の2要素タプル
  */
 const toLngLat = (position: Position): [number, number] => [position[0], position[1]];
+
+/**
+ * GeoJSONのMultiLineStringを、DTOで使う区間ごとの[経度, 緯度]配列の配列へ変換する
+ * @param multiLineString 変換元のMultiLineString。無い場合はnull
+ * @returns 変換後の座標配列の配列。multiLineStringがnullの場合はnull
+ */
+const toDtoPath = (multiLineString: MultiLineString | null): [number, number][][] | null =>
+  multiLineString === null ? null : multiLineString.coordinates.map((line) => line.map(toLngLat));
 
 /**
  * DBのEntityをフロントエンドへ返すDTOへ変換する
@@ -22,5 +30,6 @@ export const toCyclingActivityDto = (entity: CyclingActivityEntity): CyclingActi
   elapsedTimeSeconds: entity.elapsedTimeSeconds,
   elevationGainMeters: entity.elevationGainMeters,
   startDate: entity.startDate.toISOString(),
-  path: entity.path === null ? null : entity.path.coordinates.map((line) => line.map(toLngLat))
+  path: toDtoPath(entity.path),
+  summaryPath: toDtoPath(entity.summaryPath)
 });

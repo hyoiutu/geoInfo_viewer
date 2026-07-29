@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { CyclingActivity } from '../../api/activitiesApi';
-import { cyclingActivityToGeoJson } from '../cyclingActivityToGeoJson';
+import { cyclingActivitySummaryToGeoJson, cyclingActivityToGeoJson } from '../cyclingActivityToGeoJson';
 
 describe('cyclingActivityToGeoJsonに関するテスト', () => {
   test('pathを持つアクティビティは、MultiLineString FeatureのFeatureCollectionに変換される', () => {
@@ -18,7 +18,8 @@ describe('cyclingActivityToGeoJsonに関するテスト', () => {
             [139.767125, 35.681236],
             [139.768, 35.6813]
           ]
-        ]
+        ],
+        summaryPath: null
       }
     ];
 
@@ -63,7 +64,8 @@ describe('cyclingActivityToGeoJsonに関するテスト', () => {
             [140.0, 36.0],
             [140.001, 36.001]
           ]
-        ]
+        ],
+        summaryPath: null
       }
     ];
 
@@ -82,11 +84,76 @@ describe('cyclingActivityToGeoJsonに関するテスト', () => {
         elapsedTimeSeconds: 0,
         elevationGainMeters: 0,
         startDate: '2026-07-01T00:00:00Z',
-        path: null
+        path: null,
+        summaryPath: null
       }
     ];
 
     const geoJson = cyclingActivityToGeoJson(activities);
+
+    expect(geoJson.features).toEqual([]);
+  });
+});
+
+describe('cyclingActivitySummaryToGeoJsonに関するテスト（Issue #61）', () => {
+  test('summaryPathを持つアクティビティは、MultiLineString FeatureのFeatureCollectionに変換される', () => {
+    const activities: CyclingActivity[] = [
+      {
+        id: '1',
+        name: 'ライド1',
+        distanceMeters: 1000,
+        movingTimeSeconds: 600,
+        elapsedTimeSeconds: 650,
+        elevationGainMeters: 50,
+        startDate: '2026-07-01T00:00:00Z',
+        path: null,
+        summaryPath: [
+          [
+            [139.767125, 35.681236],
+            [139.768, 35.6813]
+          ]
+        ]
+      }
+    ];
+
+    const geoJson = cyclingActivitySummaryToGeoJson(activities);
+
+    expect(geoJson).toEqual({
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: { id: '1', name: 'ライド1' },
+          geometry: {
+            type: 'MultiLineString',
+            coordinates: [
+              [
+                [139.767125, 35.681236],
+                [139.768, 35.6813]
+              ]
+            ]
+          }
+        }
+      ]
+    });
+  });
+
+  test('summaryPathがnullのアクティビティは、FeatureCollectionから除外される', () => {
+    const activities: CyclingActivity[] = [
+      {
+        id: '1',
+        name: 'GPSデータなし',
+        distanceMeters: 0,
+        movingTimeSeconds: 0,
+        elapsedTimeSeconds: 0,
+        elevationGainMeters: 0,
+        startDate: '2026-07-01T00:00:00Z',
+        path: null,
+        summaryPath: null
+      }
+    ];
+
+    const geoJson = cyclingActivitySummaryToGeoJson(activities);
 
     expect(geoJson.features).toEqual([]);
   });

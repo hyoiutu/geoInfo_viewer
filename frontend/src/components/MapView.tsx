@@ -6,11 +6,11 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
 import type { CyclingActivity, PassedMunicipality } from '../api/activitiesApi';
 import { addErrorAtom } from '../atoms/errorsAtom';
-import { BICYCLE_LOG_SOURCE_ID } from '../constants/bicycleLog';
+import { BICYCLE_LOG_SOURCE_ID, BICYCLE_LOG_SUMMARY_SOURCE_ID } from '../constants/bicycleLog';
 import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
 import { toAppErrorInfo } from '../utils/apiError';
-import { cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
+import { cyclingActivitySummaryToGeoJson, cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
 import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
 import {
   applyFocusedMunicipalityLayer,
@@ -149,7 +149,8 @@ export const MapView = ({
     };
   }, []);
 
-  // フィルタ適用後のアクティビティ一覧が変化するたびに、通常状態の自転車ログレイヤーのデータを更新する
+  // フィルタ適用後のアクティビティ一覧が変化するたびに、通常状態・summary状態（低ズームレベル用、Issue #61）
+  // 両方の自転車ログレイヤーのデータを更新する
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isStyleLoaded) {
@@ -157,10 +158,14 @@ export const MapView = ({
     }
 
     const source = map.getSource<maplibregl.GeoJSONSource>(BICYCLE_LOG_SOURCE_ID);
-    if (!source) {
-      return;
+    if (source) {
+      source.setData(cyclingActivityToGeoJson(filteredActivities));
     }
-    source.setData(cyclingActivityToGeoJson(filteredActivities));
+
+    const summarySource = map.getSource<maplibregl.GeoJSONSource>(BICYCLE_LOG_SUMMARY_SOURCE_ID);
+    if (summarySource) {
+      summarySource.setData(cyclingActivitySummaryToGeoJson(filteredActivities));
+    }
   }, [filteredActivities, isStyleLoaded]);
 
   // 選択中・フォーカス中のアクティビティが変化するたびに、選択用・フォーカス用レイヤーのデータを更新する

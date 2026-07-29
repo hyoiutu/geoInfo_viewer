@@ -21,7 +21,8 @@ describe('ActivitiesControllerに関するテスト', () => {
         elapsedTimeSeconds: 650,
         elevationGainMeters: 50,
         startDate: '2026-07-01T00:00:00Z',
-        path: null
+        path: null,
+        summaryPath: null
       }
     ];
     const findAll = vi.fn().mockResolvedValue(dtos);

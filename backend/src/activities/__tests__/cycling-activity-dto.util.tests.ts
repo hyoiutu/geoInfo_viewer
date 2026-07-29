@@ -12,6 +12,7 @@ const createEntity = (overrides: Partial<CyclingActivityEntity>): CyclingActivit
   entity.elevationGainMeters = 250.5;
   entity.startDate = new Date('2026-07-01T00:00:00Z');
   entity.path = null;
+  entity.summaryPath = null;
   Object.assign(entity, overrides);
   return entity;
 };
@@ -68,5 +69,36 @@ describe('toCyclingActivityDtoに関するテスト', () => {
     const dto = toCyclingActivityDto(entity);
 
     expect(dto.path).toBeNull();
+  });
+
+  test('summaryPathが設定されている場合、区間ごとの[lng, lat]順の座標配列の配列に変換される（Issue #61）', () => {
+    const entity = createEntity({
+      summaryPath: {
+        type: 'MultiLineString',
+        coordinates: [
+          [
+            [-120.2, 38.5],
+            [-120.95, 40.7]
+          ]
+        ]
+      }
+    });
+
+    const dto = toCyclingActivityDto(entity);
+
+    expect(dto.summaryPath).toEqual([
+      [
+        [-120.2, 38.5],
+        [-120.95, 40.7]
+      ]
+    ]);
+  });
+
+  test('summaryPathがnullのとき、summaryPathはnullになる', () => {
+    const entity = createEntity({ summaryPath: null });
+
+    const dto = toCyclingActivityDto(entity);
+
+    expect(dto.summaryPath).toBeNull();
   });
 });

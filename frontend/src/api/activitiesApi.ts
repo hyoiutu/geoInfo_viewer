@@ -24,6 +24,11 @@ export type CyclingActivity = {
    * 測定不能区間）で区間分割されている。GPSルートの無いアクティビティの場合はnull
    */
   path: [number, number][][] | null;
+  /**
+   * 低ズームレベル（ズームレベル10以下）表示用の簡略化された軌跡（区間ごとの経度・緯度配列の配列）。
+   * GPSルートの無いアクティビティの場合はnull（Issue #61）
+   */
+  summaryPath: [number, number][][] | null;
 };
 
 /** syncCyclingActivitiesの実行結果 */
