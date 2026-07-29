@@ -14,6 +14,19 @@
 
 ## 変更履歴
 
+### [2026-07-30] 一回限りの復旧スクリプトを`backend/src/one-off/<追加したブランチ名>/`へ分離した
+* **修正の動機・概要**:
+  - `recover-legacy-archives.ts`・`finalize-legacy-recovery.ts`は、対象年月・ファイルがハードコードされた繰り返し実行しない一回限りの復旧作業用スクリプトであり、`photos/`配下の恒久的なパイプライン（`generate-thumbnail-archives.ts`・`strip-videos-and-consolidate-archives.ts`等）と性質が異なる。ユーザーからの指摘を受け、`backend/src/one-off/`ディレクトリへ分離した。さらに、複数の一回限りの作業が積み重なった際にどの作業がどのファイル群を追加したのか追跡できるよう、そのスクリプトを追加したブランチ名のサブディレクトリ配下に置く方式へ改めた。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/recover-legacy-archives.ts` → `backend/src/one-off/feat/issue-100-thumbnail-zip-generation/recover-legacy-archives.ts`（移動）。
+    - `backend/src/photos/finalize-legacy-recovery.ts` → `backend/src/one-off/feat/issue-100-thumbnail-zip-generation/finalize-legacy-recovery.ts`（移動）。
+    - `backend/src/photos/legacy-archive-recovery.util.ts` → `backend/src/one-off/feat/issue-100-thumbnail-zip-generation/utils/legacy-archive-recovery.util.ts`（移動）。上記2スクリプトのうち`recover-legacy-archives.ts`からのみimportされており、他のモジュールから一切参照されていないことを確認した上で、追加元スクリプトと同じブランチ名サブディレクトリの`utils/`へ移動した。一方`zip-streaming.util.ts`・`generate-thumbnail-archive-streaming.util.ts`は恒久的パイプライン（`generate-thumbnail-archives.ts`・`consolidate-monthly-archive-streaming.util.ts`）からも参照されているため`photos/`直下に残した。
+    - 対応する単体テストファイルも同様に移動（`backend/src/photos/__tests__/legacy-archive-recovery.util.tests.ts` → `backend/src/one-off/feat/issue-100-thumbnail-zip-generation/utils/__tests__/legacy-archive-recovery.util.tests.ts`）。移動に伴い相対importパスを修正。単体テスト・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
+  * **設計書**: `designs/technical_design.md`の「レガシー単一アーカイブのZIP64非対応と復旧（Issue #99フォローアップ）」節のファイルパス参照を`one-off/feat/issue-100-thumbnail-zip-generation/`配下に更新し、`one-off/`ディレクトリの位置づけ（ブランチ名サブディレクトリ単位での分離基準）を追記した。
+
 ### [2026-07-30] レガシー復旧で検証に失敗した9件のうち、写真5件を元データ（外付けHDD）から補完し、動画4件は削除して後始末した（Issue #99フォローアップ）
 * **修正の動機・概要**:
   - 前回対応で復旧できなかった9件（各年月ちょうど1件）について、ユーザーから元データの保管場所（写真ローカルバックフィル時に使用した外付けHDD）で該当ファイル名を確認したところ、写真は全て正常に表示できたとの報告があった。ユーザーから、外付けHDD上のファイル（`/Volumes/Elements/GooglePhoto_backup_20260715/flatten`）が壊れていないか確認した上で問題なければ各年月のGoogle Driveアーカイブへ追加し、動画（どちらにせよ`strip-videos-and-consolidate-archives.ts`で削除される対象のため）は復旧させずそのまま削除するよう依頼を受けた。

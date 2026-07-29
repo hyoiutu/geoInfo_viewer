@@ -7,14 +7,19 @@ import { ConfigService } from '@nestjs/config';
 import sharp from 'sharp';
 import { DataSource } from 'typeorm';
 import yazl from 'yazl';
-import { createDataSourceOptions } from '../database/database.config';
-import { GoogleDriveApiClient } from '../google-drive/google-drive-api.client';
-import { GoogleDriveAuthService } from '../google-drive/google-drive-auth.service';
-import { MonthlyPhotoArchiveEntity } from './entities/monthly-photo-archive.entity';
-import { MonthlyPhotoThumbnailArchiveEntity } from './entities/monthly-photo-thumbnail-archive.entity';
-import { PhotoEntity } from './entities/photo.entity';
-import { THUMBNAIL_WIDTH_PX } from './generate-thumbnail-archive-streaming.util';
-import { forEachZipEntry, openEntryReadStream, readStreamToBuffer, writeYazlOutput } from './zip-streaming.util';
+import { createDataSourceOptions } from '../../../database/database.config';
+import { GoogleDriveApiClient } from '../../../google-drive/google-drive-api.client';
+import { GoogleDriveAuthService } from '../../../google-drive/google-drive-auth.service';
+import { MonthlyPhotoArchiveEntity } from '../../../photos/entities/monthly-photo-archive.entity';
+import { MonthlyPhotoThumbnailArchiveEntity } from '../../../photos/entities/monthly-photo-thumbnail-archive.entity';
+import { PhotoEntity } from '../../../photos/entities/photo.entity';
+import { THUMBNAIL_WIDTH_PX } from '../../../photos/generate-thumbnail-archive-streaming.util';
+import {
+  forEachZipEntry,
+  openEntryReadStream,
+  readStreamToBuffer,
+  writeYazlOutput
+} from '../../../photos/zip-streaming.util';
 
 // legacy_archive_zip64_corruptionの復旧(recover-legacy-archives.ts)で検証に失敗し復旧できなかった
 // 9件のうち、写真5件。外付けHDD（写真ローカルバックフィル時の元データ）上で正常な状態を確認できたため、

@@ -6,13 +6,17 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, In } from 'typeorm';
 import yazl from 'yazl';
-import { createDataSourceOptions } from '../database/database.config';
-import { GoogleDriveApiClient } from '../google-drive/google-drive-api.client';
-import { GoogleDriveAuthService } from '../google-drive/google-drive-auth.service';
-import { MonthlyPhotoArchiveEntity } from './entities/monthly-photo-archive.entity';
-import { PhotoEntity } from './entities/photo.entity';
-import { decompressAndVerifyEntry, type RecoveredZipEntry, scanLocalFileHeaders } from './legacy-archive-recovery.util';
-import { writeYazlOutput } from './zip-streaming.util';
+import { createDataSourceOptions } from '../../../database/database.config';
+import { GoogleDriveApiClient } from '../../../google-drive/google-drive-api.client';
+import { GoogleDriveAuthService } from '../../../google-drive/google-drive-auth.service';
+import { MonthlyPhotoArchiveEntity } from '../../../photos/entities/monthly-photo-archive.entity';
+import { PhotoEntity } from '../../../photos/entities/photo.entity';
+import { writeYazlOutput } from '../../../photos/zip-streaming.util';
+import {
+  decompressAndVerifyEntry,
+  type RecoveredZipEntry,
+  scanLocalFileHeaders
+} from './utils/legacy-archive-recovery.util';
 
 // part列が存在しなかった時代の「その年月の全写真を含む唯一のzip」を表す特別な値
 // (strip-videos-and-consolidate-archives.tsのLEGACY_WHOLE_MONTH_PARTと同じ意味)
