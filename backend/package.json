@@ -12,7 +12,8 @@
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/data-source.ts",
     "seed:municipalities": "ts-node src/municipalities/seed-municipalities.ts",
     "flatten:photos-local": "ts-node src/photos/flatten-local-photo-directory.ts",
-    "backfill:photos-local": "ts-node src/photos/backfill-photos-from-local.ts"
+    "backfill:photos-local": "ts-node src/photos/backfill-photos-from-local.ts",
+    "strip-videos:photos": "ts-node src/photos/strip-videos-and-consolidate-archives.ts"
   },
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",

@@ -202,3 +202,16 @@ Google Takeoutで一括ダウンロードした写真をローカルへ展開す
 - アクセストークンは全体で1回だけ取得するのではなく月のグループごとに取得し直す。対象件数が多く実行が長時間に及ぶとアクセストークンが途中で失効しうるため（`GoogleDriveAuthService`は有効期限内であればキャッシュを返すため、都度呼び出すコストは小さい）
 - Node.jsの`fs.readFileSync`は実行環境のメモリ量に関わらず2GiB（`2 ** 31 - 1`バイト）を超えるファイルを読み込めない（`RangeError: File size is greater than 2 GiB`）。実際に約55,000件規模のGoogle Photosライブラリ（動画を含む）で2.5GB超の動画ファイルにより発生した。段階2でメタデータ解決のため写真1件分の実バイナリを読み込む直前に`statSync`でファイルサイズを確認し、上限を超える場合は読み込み自体を試みずスキップする（`skippedTooLargePaths`としてカウントし、完了時にパス一覧を出力。段階3では既にメタデータ解決の時点で除外済みのため到達しない）
 - スクリプト内のログ出力は`console.log`ではなく`fs.writeSync`による同期出力（`log`ヘルパー関数）を使う。`console.log`は標準出力がパイプ（`tee`等）へ接続されている場合Node.jsによって非同期にバッファリングされることがあり、プロセスが外部要因（ネットワークハング等）で停止した場合にバッファ済みだが未フラッシュの行が失われ、どこまで進行したか実行ログから追跡できなくなる問題が実際に発生したため（Issue #23）。あわせて、月グループの処理開始時に写真件数・合計バイト数をログ出力し、Google Driveへの振り分け・アップロード完了時にも完了ログを出す（どの月のどの段階で停止したか特定できるようにするため）
+
+## 月別アーカイブからの動画削除・part統合（Issue #97）
+写真グリッド表示（静止画プレビューのみで動画再生機能は無い）に動画は使われておらず、容量のみを圧迫していた。動画を多く含む月ほど月別アーカイブzipのダウンロードに時間がかかり、写真グリッドの表示が遅い原因になっていたため、`backend/src/photos/strip-videos-and-consolidate-archives.ts`（`pnpm --filter backend run strip-videos:photos`）で既存の月別アーカイブzipから動画エントリを削除する一括処理を用意した。元のGoogle Photos側のデータには影響しない（このアプリ用にGoogle Driveへコピーした分のみが対象）。
+
+- `isVideoFile`（`video-file.util.ts`）で拡張子（`.mp4`/`.mov`/`.avi`/`.mkv`/`.3gp`/`.webm`）から動画かどうかを判定する
+- `consolidateArchiveWithoutVideos`（`consolidate-monthly-archive.util.ts`）は、1つの年月分の全アーカイブ（サイズ超過によりpart分割されていた場合は複数）から読み込んだ全エントリを受け取り、動画エントリを除外した上で1つの新規zipへ統合する純粋関数。異なる元アーカイブ由来で同名ファイルが衝突する場合は`mergeMonthlyArchive`と共通の`resolveUniquePath`で連番を付けて回避し、新規エントリはSTORED（無圧縮、`monthly-archive.util.ts`からexportした`ZIP_COMPRESSION_METHOD_STORED`を共通利用）で追加する
+- オーケストレーション（`strip-videos-and-consolidate-archives.ts`）は年月ごとに以下を行う
+  1. 対象年月の全アーカイブ（part分割されていた場合は複数）の合計サイズを`GoogleDriveApiClient.getFileMetadata`で事前確認し、2GiBを超える場合はメモリ不足クラッシュ（Issue #23で発生した問題と同種）を避けるため今回はスキップし、完了時にスキップした年月一覧を出力する
+  2. 対象アーカイブを全てダウンロードし、`consolidateArchiveWithoutVideos`で統合。動画も無く既に単一アーカイブの場合は何もせず処理済みとして記録するのみ
+  3. 統合後のzipを新規Driveファイルとしてアップロードし、`photos`テーブルの保持対象の写真は新しい`source_file_id`/`archive_path`へ更新、動画の`PhotoEntity`は削除する
+  4. `monthly_photo_archives`の当該年月の行を全て削除し、新しいzipを指す1行（`part = LEGACY_WHOLE_MONTH_PART`）を挿入する。この時点でDB側は新しいzipを正しく参照した一貫性のある状態になる
+  5. 古いDriveファイルの削除は上記4の後に行うベストエフォートな後始末とする（失敗してもDB側の整合性は既に保たれているため、この年月の処理自体は成功として扱う。失敗時はDrive容量が無駄になるのみで手動削除が必要）
+- 中断・再実行時の重複防止は、専用の`video_stripped_year_months`テーブル（マイグレーション`CreateVideoStrippedYearMonths`、年月のみを保持する進捗管理専用テーブル）で行う。`monthly_photo_archives`本体のスキーマ・スキップ判定ロジックは変更しない（本処理による統合後のアーカイブも`part = LEGACY_WHOLE_MONTH_PART`という同じ状態になるため、既存のスキップ判定とは独立した専用の記録が必要だった）

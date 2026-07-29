@@ -196,6 +196,25 @@ export class GoogleDriveApiClient {
   }
 
   /**
+   * 指定したファイルを削除する
+   * @param accessToken Google Driveのアクセストークン
+   * @param fileId 削除対象のDriveファイルID
+   */
+  async deleteFile(accessToken: string, fileId: string): Promise<void> {
+    try {
+      await firstValueFrom(
+        this.httpService.delete(`${GOOGLE_DRIVE_API_BASE_URL}/files/${fileId}`, {
+          // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization)に合わせる
+          headers: { Authorization: `Bearer ${accessToken}` },
+          timeout: GOOGLE_DRIVE_REQUEST_TIMEOUT_MS
+        })
+      );
+    } catch (error) {
+      throw toGoogleDriveApiException(error);
+    }
+  }
+
+  /**
    * リフレッシュトークンを使い、Googleから新しいアクセストークンを取得する
    * @param params クライアントID・シークレット・リフレッシュトークン
    * @returns Googleのトークンレスポンス

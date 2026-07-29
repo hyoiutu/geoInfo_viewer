@@ -4,8 +4,9 @@ import type { PhotoWithMetadata } from './group-photos-by-year-month.util';
 
 const DUPLICATE_SUFFIX_START = 2;
 // adm-zipのzip内エントリ圧縮方式定数(STORED=無圧縮)。adm-zipのパッケージ自体はこれをexportしていないため
-// ここに直接定義する（node_modules/adm-zip/util/constants.js参照）
-const ZIP_COMPRESSION_METHOD_STORED = 0;
+// ここに直接定義する（node_modules/adm-zip/util/constants.js参照）。
+// 月別アーカイブの動画除去・統合（consolidate-monthly-archive.util.ts）でも同じ理由で必要なためexportする
+export const ZIP_COMPRESSION_METHOD_STORED = 0;
 
 /** mergeMonthlyArchiveの戻り値のうち、追加した写真1件分（元の写真とマージ後アーカイブ内でのパス） */
 export type MergedMonthlyArchiveEntry = {
