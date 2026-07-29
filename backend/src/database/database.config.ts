@@ -2,6 +2,7 @@ import { CyclingActivityEntity } from '../activities/entities/cycling-activity.e
 import { SyncStateEntity } from '../activities/entities/sync-state.entity';
 import { MunicipalityEntity } from '../municipalities/entities/municipality.entity';
 import { MonthlyPhotoArchiveEntity } from '../photos/entities/monthly-photo-archive.entity';
+import { MonthlyPhotoThumbnailArchiveEntity } from '../photos/entities/monthly-photo-thumbnail-archive.entity';
 import { PhotoEntity } from '../photos/entities/photo.entity';
 import { VideoStrippedYearMonthEntity } from '../photos/entities/video-stripped-year-month.entity';
 
@@ -29,7 +30,8 @@ type DataSourceOptions = {
     typeof MunicipalityEntity,
     typeof PhotoEntity,
     typeof MonthlyPhotoArchiveEntity,
-    typeof VideoStrippedYearMonthEntity
+    typeof VideoStrippedYearMonthEntity,
+    typeof MonthlyPhotoThumbnailArchiveEntity
   ];
   /** マイグレーションファイルの探索パス */
   migrations: string[];
@@ -53,7 +55,8 @@ export const createDataSourceOptions = (env: NodeJS.ProcessEnv): DataSourceOptio
     MunicipalityEntity,
     PhotoEntity,
     MonthlyPhotoArchiveEntity,
-    VideoStrippedYearMonthEntity
+    VideoStrippedYearMonthEntity,
+    MonthlyPhotoThumbnailArchiveEntity
   ],
   migrations: ['dist/migrations/*.js']
 });

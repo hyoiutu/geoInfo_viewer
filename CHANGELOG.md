@@ -14,6 +14,156 @@
 
 ## 変更履歴
 
+### [2026-07-30] 一回限りの復旧スクリプトを`backend/src/one-off/<追加したブランチ名>/`へ分離した
+* **修正の動機・概要**:
+  - `recover-legacy-archives.ts`・`finalize-legacy-recovery.ts`は、対象年月・ファイルがハードコードされた繰り返し実行しない一回限りの復旧作業用スクリプトであり、`photos/`配下の恒久的なパイプライン（`generate-thumbnail-archives.ts`・`strip-videos-and-consolidate-archives.ts`等）と性質が異なる。ユーザーからの指摘を受け、`backend/src/one-off/`ディレクトリへ分離した。さらに、複数の一回限りの作業が積み重なった際にどの作業がどのファイル群を追加したのか追跡できるよう、そのスクリプトを追加したブランチ名のサブディレクトリ配下に置く方式へ改めた。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/recover-legacy-archives.ts` → `backend/src/one-off/feat/issue-100-thumbnail-zip-generation/recover-legacy-archives.ts`（移動）。
+    - `backend/src/photos/finalize-legacy-recovery.ts` → `backend/src/one-off/feat/issue-100-thumbnail-zip-generation/finalize-legacy-recovery.ts`（移動）。
+    - `backend/src/photos/legacy-archive-recovery.util.ts` → `backend/src/one-off/feat/issue-100-thumbnail-zip-generation/utils/legacy-archive-recovery.util.ts`（移動）。上記2スクリプトのうち`recover-legacy-archives.ts`からのみimportされており、他のモジュールから一切参照されていないことを確認した上で、追加元スクリプトと同じブランチ名サブディレクトリの`utils/`へ移動した。一方`zip-streaming.util.ts`・`generate-thumbnail-archive-streaming.util.ts`は恒久的パイプライン（`generate-thumbnail-archives.ts`・`consolidate-monthly-archive-streaming.util.ts`）からも参照されているため`photos/`直下に残した。
+    - 対応する単体テストファイルも同様に移動（`backend/src/photos/__tests__/legacy-archive-recovery.util.tests.ts` → `backend/src/one-off/feat/issue-100-thumbnail-zip-generation/utils/__tests__/legacy-archive-recovery.util.tests.ts`）。移動に伴い相対importパスを修正。単体テスト・lint・typecheckは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
+  * **設計書**: `designs/technical_design.md`の「レガシー単一アーカイブのZIP64非対応と復旧（Issue #99フォローアップ）」節のファイルパス参照を`one-off/feat/issue-100-thumbnail-zip-generation/`配下に更新し、`one-off/`ディレクトリの位置づけ（ブランチ名サブディレクトリ単位での分離基準）を追記した。
+
+### [2026-07-30] レガシー復旧で検証に失敗した9件のうち、写真5件を元データ（外付けHDD）から補完し、動画4件は削除して後始末した（Issue #99フォローアップ）
+* **修正の動機・概要**:
+  - 前回対応で復旧できなかった9件（各年月ちょうど1件）について、ユーザーから元データの保管場所（写真ローカルバックフィル時に使用した外付けHDD）で該当ファイル名を確認したところ、写真は全て正常に表示できたとの報告があった。ユーザーから、外付けHDD上のファイル（`/Volumes/Elements/GooglePhoto_backup_20260715/flatten`）が壊れていないか確認した上で問題なければ各年月のGoogle Driveアーカイブへ追加し、動画（どちらにせよ`strip-videos-and-consolidate-archives.ts`で削除される対象のため）は復旧させずそのまま削除するよう依頼を受けた。
+  - 外付けHDD上で5件の写真ファイルをsharpでデコード検証し、全て正常なJPEGであることを確認した（うち1件は、以前の検証失敗ログに記録されていた「期待される展開後サイズ」と完全に一致するサイズであり、Google Drive側のデータが壊れていたことが裏付けられた）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/finalize-legacy-recovery.ts`（新規、`pnpm exec ts-node src/photos/finalize-legacy-recovery.ts`）: 外部HDD上の写真5件を、各年月の現行（動画削除・サムネイル生成済みの）フルサイズアーカイブ・サムネイルアーカイブへそれぞれ追加し、`photos.source_file_id`を新アーカイブへ更新する。動画4件は`photos`テーブルの該当行のみを削除する。既存の`zip-streaming.util.ts`のヘルパー（`forEachZipEntry`・`openEntryReadStream`・`readStreamToBuffer`・`writeYazlOutput`）を再利用し、既存エントリを全て保持したまま1件追加する`addEntryToArchive`を実装した。
+    - 対象9件（写真5件のDriveファイルID・動画4件のDriveファイルID）は既知の固定リストのためハードコード。既存方針（スタンドアロンCLIスクリプトのオーケストレーション部分は専用テストを持たない）に従い専用テストなし。lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
+  * **設計書**: 変更なし（本対応は既存の復旧フローの最終後始末であり、恒久的な仕組みの追加ではないため）。
+* **実データでの適用と最終結果**:
+  - 適用前にDB（`photos`・`monthly_photo_archives`・`monthly_photo_thumbnail_archives`）をバックアップ。
+  - 写真5件（2024-03, 2024-08, 2025-04, 2025-05, 2025-11）を追加し、いずれも実際にDriveから最新アーカイブをダウンロードして対象ファイルが含まれ正常にデコードできること・サムネイルも正しく生成されていることを確認した（外付けHDD側と完全一致するサイズ・寸法）。古いアーカイブの削除エラーは0件。
+  - 動画4件（2020-09, 2024-02, 2024-11, 2025-03）の`photos`行を削除した（各1件、削除件数一致）。
+  - `photos`テーブル総数は46,928件→46,924件（動画4件削除分と一致）。
+  - Issue #97/#99/#100フォローアップを通じた最終結果: 全178年月で動画削除・サムネイル生成が完了。レガシー破損9年月は対象6,847件中6,843件（99.94%）を復旧・補完できた。残る4件（動画のみ、元々グリッド表示に不要なため意図的に削除）は`photos`テーブルから除外済みで、これ以上の対応は不要。
+
+### [2026-07-29] レガシー単一アーカイブのZIP64破損9年月を、ローカルファイルヘッダー直接走査により復旧した（Issue #99フォローアップ）
+* **修正の動機・概要**:
+  - Issue #100フォローアップの一連の対応が完了した後、ユーザーから「残る9年月のZIP64破損アーカイブは外部HDDに接続しない限り復旧は不可能という話だったと思うが認識は合っているか」との確認があった。記録を確認したところ、「復旧要否はユーザー確認待ち」という保留状態までしか記録されておらず、「外部HDDが無ければ不可能」という結論は確定していなかった。むしろ`adm-zip`等の寛容なパーサーで部分的に読み出せる可能性が未検証のまま残っていたため、ユーザーから「復旧を試してほしい」との依頼を受けた。
+  - 2025-05のアーカイブ（4.2GiB）で調査した結果、破損しているのはZIP形式末尾のセントラルディレクトリ（インデックス情報）のみで、各エントリ本体（ローカルファイルヘッダー＋データ）自体はファイル内に無傷で残っていることが判明した。Info-Zipの`zip -FF`（バイト単位の全走査による修復）を試したが2.5時間以上経過しても完了しなかったため、このアプリのアーカイブ構造を活かした専用の高速スキャナーを実装した（ローカルファイルヘッダーの宣言サイズを使って次のヘッダー位置へ直接ジャンプする方式。4.4GBを約5秒で走査可能）。733件全てCRC32一致で復旧できることを確認し、ユーザーの承認を得て全9年月に適用した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/legacy-archive-recovery.util.ts`（新規）: `scanLocalFileHeaders`（ローカルファイルヘッダーを先頭から辿りエントリを検出）、`parseLocalFileHeader`、`decompressAndVerifyEntry`（展開しサイズ・CRC32を検証）。
+    - `backend/src/photos/recover-legacy-archives.ts`（新規、`pnpm exec ts-node src/photos/recover-legacy-archives.ts`）: オーケストレーションスクリプト。エントリの検証を全て完了させてから出力zipの書き込みを開始する2パス構成（1パスで検証と書き込みを同時に進めると、検証エラー発生時にyazlの出力ストリームが中途半端な状態のまま残り、後から`ENOENT`でrejectされた際にどこにもcatchされない「unhandled promise rejection」でプロセス全体がクラッシュする事故が実際に発生したため、設計変更した）。1件でも検証に失敗したエントリがあっても年月全体を諦めず、検証に成功したエントリのみ`photos.source_file_id`を更新する。
+    - 対応する単体テストを新規追加（TDD、Red-Green。`scanLocalFileHeaders`・`decompressAndVerifyEntry`を実際のZIPローカルファイルヘッダー構造を模したフィクスチャで検証）。`recover-legacy-archives.ts`自体は既存方針（スタンドアロンCLIスクリプトのオーケストレーション部分は専用テストを持たない）に従い専用テストなし。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
+  * **設計書**: `designs/technical_design.md`の「月別アーカイブからの動画削除・part統合（Issue #97 / #99）」節の「既知の制約」を、復旧ツールの設計・実データ結果に合わせて更新した。
+* **実データでの適用と最終結果**:
+  - 適用前にDB（`photos`・`monthly_photo_archives`）をバックアップ。
+  - 全9年月（2020-09, 2024-02, 2024-03, 2024-08, 2024-11, 2025-03, 2025-04, 2025-05, 2025-11）に対して実行し、対象6,847件中**6,838件（99.9%）を復旧**した。復旧後アーカイブは`unzip`・`yauzl`（実アプリが使用するライブラリ）双方で正常に開けることを確認済み。
+  - 残り9件（各年月ちょうど1件ずつ、CRC32またはサイズ不一致）は元データ自体が書き込み当時から部分的に破損していたと考えられ、この方式では復旧不可能。該当`photos`行は元の（読めない）Driveファイルを指したまま残る。
+  - 古い（読めない）9つのDriveファイルは、安全確認のため削除せず残している。
+  - `photos`テーブル総数は47,441件→47,411件（Issue #97/#99/#100フォローアップで削除した動画30件分の差分と一致、整合性を確認済み）。
+  - 復旧した9年月は`video_stripped_year_months`・`monthly_photo_thumbnail_archives`に未記録の通常の未処理年月として扱われるため、続けて`strip-videos-and-consolidate-archives.ts`・`generate-thumbnail-archives.ts`を（`FORCE_REPROCESS_YEAR_MONTHS`無しの）通常のフローで実行した。動画483件を削除（写真6,838件を保持）、サムネイル生成も失敗0件で完了。これにより`video_stripped_year_months`・`monthly_photo_thumbnail_archives`とも**178/178年月（全年月）**が完了した状態になった。`photos`テーブル総数は47,411件→46,928件（動画483件削除分と一致）。
+
+### [2026-07-28] Android Motion Photo(.mp)のJPEG抽出専用実装を廃止し、動画として除外するよう簡素化した（Issue #100フォローアップ）
+* **修正の動機・概要**:
+  - 残り10件の`.mp`サムネイル失敗（Motion Photoのうち「JPEG先頭+動画後続」という構造を持たないバリエーション）について、ユーザーから「JPEG情報を全く持たないのか、それとも別の場所に持っているのか」との質問を受け、実データをダウンロードして調査した。対象ファイルは`ftyp`+`mdat`+`moov`のみで構成される単体で完結したMP4動画で、埋め込みJPEGは存在しなかった（当初「JPEGらしきバイト列」が見つかった件は、動画の圧縮データ内での偶然の2バイト一致という誤検出だったことも確認した）。一方、同じアーカイブ内に`<ファイル名>.mp.jpg`という兄弟ファイルが別エントリとして存在し、いずれも正常にデコードできる本来の解像度のJPEGで、既にサムネイルzipにも正しく含まれていることを確認した。
+  - ユーザーから「JPEGを実際に埋め込んだ`.mp`ファイルも同様に別ファイルとしてJPEGを持つのではないか、であれば`.mp`は全件サムネイル生成から除外してよいのでは」との指摘を受け、`photos`テーブル全体（約47,000件超）を検索したところ、`.mp`拡張子のファイルはデータセット全体で**わずか11件**しかなく、うち10件は上記の「動画のみ+兄弟jpgあり」パターンと確認済み、残り1件は既知のレガシーZIP64破損アーカイブ（Issue #99）に含まれておりサムネイル生成パイプライン自体を一度も通っていなかった。つまり「JPEG本体が`.mp`ファイル自体に埋め込まれ、抽出が必要だった」という実例は実データ上で1件も確認できなかった。
+  - この調査結果から、`extractJpegFromMotionPhoto`（Issue #100初回対応で実装）はYAGNIの観点から不要と判断し、削除した上で`.mp`を単純に動画拡張子として扱う方針に変更した（ユーザーと合意）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/video-file.util.ts`: `VIDEO_EXTENSIONS`に`.mp`を追加。
+    - `backend/src/photos/motion-photo.util.ts`・`backend/src/photos/__tests__/motion-photo.util.tests.ts`（削除）: `extractJpegFromMotionPhoto`と対応するテストを削除。
+    - `backend/src/photos/generate-thumbnail-archive-streaming.util.ts`: `resolveDecodableImageBuffer`から`.mp`のJPEG抽出分岐を削除（`.mp`は共通の動画判定`isVideoFile`で除外されるようになったため、この関数に到達しなくなった）。
+    - 対応する単体テストを更新（TDD、Red-Green。`.mp`がentries・failedEntriesのいずれにも含まれず動画として除外されることを検証）。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
+  * **設計書**: `designs/technical_design.md`の「グリッド・吹き出し表示用サムネイルZipの生成（Issue #100）」「月別アーカイブからの動画削除・part統合（Issue #97 / #99）」両節を、`.mp`を動画として扱う方針・その調査根拠に合わせて更新した。
+* **実データでの適用と最終結果**:
+  - 適用前にDB（`photos`・`monthly_photo_archives`・`video_stripped_year_months`・`monthly_photo_thumbnail_archives`）をバックアップ。
+  - `.mp`ファイルを含む4年月（2020-11, 2022-07, 2024-05, 2026-02）に対し`strip-videos-and-consolidate-archives.ts`を`FORCE_REPROCESS_YEAR_MONTHS`付きで実行し、`.mp`動画10件（想定と完全一致）を`monthly_photo_archives`・`photos`テーブルから削除した（処理済み年月4件、削除した動画10件、失敗した年月9件＝いずれも既知のレガシーZIP64破損月で対象外）。古いDriveファイルの削除エラーは0件。
+  - 続けて`generate-thumbnail-archives.ts`を同じ4年月に対して再実行し、サムネイルzipを更新した（処理済み年月4件、失敗した年月0件、サムネイル生成に失敗した写真0件）。
+  - サムネイル生成の失敗総数は**10件→0件**になった。Issue #100フォローアップ全体を通じた最終結果: **14,331件→0件**（対応可能な範囲内で完全に解消。処理不能な9年月のレガシーアーカイブ破損は既知の別課題として残る）。
+
+### [2026-07-27] 拡張子が失われた動画ファイルをISOBMFFの中身から検出し、月別アーカイブ・photosテーブルから実際に削除する対応を追加した（Issue #97/#99/#100フォローアップ）
+* **修正の動機・概要**:
+  - サムネイル生成の残り30件の失敗原因をユーザーから問われ調査した結果、そのうち20件（拡張子なし、`Input buffer contains unsupported image format`）の実体をGoogle Driveから実際にダウンロードして確認したところ、全てQuickTime動画（先頭バイトが`ftyp` + メジャーブランド`qt  `）だと判明した。iPhoneのLive Photoに付随する動画コンポーネントが、取り込みのどこかの段階で拡張子を失ったものと推測される。
+  - これは「サムネイル生成の失敗」ではなく、そもそも動画削除・part統合処理（Issue #97/#99）が拡張子ベースの判定（`isVideoFile`）で検出できず、写真として誤って`monthly_photo_archives`・`photos`テーブルに残ってしまっていたことが根本原因だった。ユーザーと相談の上、判定ロジックを追加した上で、月別アーカイブ・`photos`テーブルから実際に削除する対応とすることで合意した（単にサムネイル生成側でスキップするだけの対応は不採用とした）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/video-file.util.ts`: `looksLikeVideoContainer`（新規）を追加。ISOBMFFのftypボックス＋メジャーブランドを確認し、HEIC/HEIF系のメジャーブランド以外のftypコンテナを動画とみなす。
+    - `backend/src/photos/zip-streaming.util.ts`: `generate-thumbnail-archive-streaming.util.ts`にあった`readStreamToBuffer`を共有ユーティリティとして移動（DRY）。ストリームをyazlへ直接パイプする`addStreamEntryAndWait`は利用箇所が無くなったため削除。
+    - `backend/src/photos/generate-thumbnail-archive-streaming.util.ts`: 動画判定を拡張子（`isVideoFile`）に加え中身（`looksLikeVideoContainer`）でも行うよう変更。判定に中身の確認が必要なため、動画チェックをBuffer読み込み後に移動した。
+    - `backend/src/photos/consolidate-monthly-archive-streaming.util.ts`: 同様に動画判定を拡張子＋中身の両方で行うよう変更。従来はエントリの読み込みストリームを直接yazlの出力へパイプする設計だったが、中身を確認するためにいったんBufferとして読み切ってから`addBuffer`する設計に変更した（1エントリ分、数MB程度のみをメモリへ保持。Issue #99が対象とした「アーカイブ全体を同時に保持する」問題とは規模が異なり実用上問題ない）。
+    - `backend/src/photos/strip-videos-and-consolidate-archives.ts`: `FORCE_REPROCESS_YEAR_MONTHS`環境変数（`generate-thumbnail-archives.ts`と同じパターン）を追加し、判定ロジック改善後に既に処理済みの年月を選んで再処理できるようにした。
+    - 対応する単体テストを新規追加（TDD、Red-Green。実際にQuickTime動画のftyp+メジャーブランドを模したバイト列で検証）。`strip-videos-and-consolidate-archives.ts`自体は既存方針（スタンドアロンCLIスクリプトのオーケストレーション部分は専用テストを持たない）に従い専用テストなし。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
+  * **設計書**: `designs/technical_design.md`の「月別アーカイブからの動画削除・part統合（Issue #97 / #99）」節を、動画判定が拡張子＋中身の両方になったこと・`FORCE_REPROCESS_YEAR_MONTHS`による再処理の仕組みに合わせて更新した。
+* **実データ実行の結果**:
+  - 適用前にDB（`photos`・`monthly_photo_archives`・`video_stripped_year_months`）をバックアップ。
+  - `strip-videos-and-consolidate-archives.ts`を該当14年月に対し`FORCE_REPROCESS_YEAR_MONTHS`付きで実行し、動画20件（想定と完全一致）を`monthly_photo_archives`・`photos`テーブルから実際に削除した（処理済み年月14件、削除した動画20件、失敗した年月9件＝いずれも既知のレガシーZIP64破損月で今回の対象外）。古いDriveファイルの削除エラーは0件。
+  - 続けて`generate-thumbnail-archives.ts`を同じ14年月に対して再実行し、サムネイルzipを更新した（処理済み年月14件、失敗した年月0件、サムネイル生成に失敗した写真0件）。動画がソースアーカイブから完全に除去されたため、この14年月のサムネイル失敗は0件になった。
+  - サムネイル生成の失敗総数は**30件→10件**まで減少した（動画由来の20件が解消。残り10件は既知の`.mp`構造上の制約でこの対応の範囲外）。
+* **設計書**: 上記に加え、`designs/technical_design.md`の実データ実行結果に関する記載は数値を含まない設計方針のみのため追記なし（CHANGELOGにのみ記録）。
+
+### [2026-07-27] サムネイル生成で個別に失敗していたHEIC・Android Motion Photoを救済する対応を追加した（Issue #100フォローアップ）
+* **修正の動機・概要**:
+  - Issue #100実データ実行で14,331件の写真がサムネイル生成に失敗した件（原因は(1)一部HEICのlibheifセキュリティ上限抵触、(2)Android Motion Photo(`.mp`)をsharpが認識できない、の2種類）について、ユーザーから「HEICはJPGへ変換してから同様の手法で解決できないか」との相談を受けた。
+  - 調査の結果、sharpが内蔵するHEICデコーダ自体がlibheifであり、Node.js/npmで使える他のHEICデコードライブラリ（`heic-decode`等）もすべて内部的にlibheifをラップしているだけのため、npmパッケージを変えるだけでは同じセキュリティ上限に抵触し解決しないことが判明した。ユーザーと相談の上、libheif付属のCLIツール`heif-convert`を`--disable-limits`オプション付きで外部プロセスとして呼び出す方式を採用した（自分自身が撮影した信頼できる写真のみを扱うため、上限無効化を許容できると判断）。
+  - `.mp`（Android Motion Photo、JPEG本体の後ろにMP4動画データが連結されたハイブリッド形式）は、動画データの先頭を示すISOBMFFの`ftyp`ボックスの位置を検出し、その手前までを先頭のJPEG部分として抽出する方式で対応した。
+  - 実装後、ユーザーから「これを実行すれば残りのMPファイルからサムネイルが生成できる、既存分はスキップされ最短で済む、という認識で合っているか」との確認があった。調査の結果、`monthly_photo_thumbnail_archives`による中断・再開の重複防止は**年月単位**の完了記録のみで、年月内の個別写真の失敗（`failedEntries`）は記録されないため、単純に再実行しても対象169年月は全て「処理済み」としてスキップされ、今回の修正が一切適用されないことが判明した。前回実行時のログ（`/private/tmp/generate-thumbnails-run1.log`・`run2.log`）を解析したところ、失敗写真を含んでいた年月は169件中76件（2018-01〜2026-02に集中、失敗件数の合計は14,331件と一致）と特定できた。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/heic-conversion.util.ts`（新規）: `convertHeicBufferToJpegBuffer`。`heif-convert --disable-limits`を外部プロセスとして呼び出し、HEIC/HEIFバッファをJPEGバッファへ変換する。
+    - `backend/src/photos/motion-photo.util.ts`（新規）: `extractJpegFromMotionPhoto`。MP4の`ftyp`ボックス位置を検出し、その手前（先頭のJPEG部分）のみを抽出する。
+    - `backend/src/photos/generate-thumbnail-archive-streaming.util.ts`: `resolveDecodableImageBuffer`を追加し、`.heic`/`.heif`拡張子は`convertHeicBufferToJpegBuffer`、`.mp`拡張子は`extractJpegFromMotionPhoto`を経由してから`sharp().resize()`へ渡すようにした。変換・抽出に失敗した場合も既存の`failedEntries`記録の仕組みでそのエントリのみをスキップし、他のエントリ・年月全体への影響はない。
+    - `backend/src/photos/generate-thumbnail-archives.ts`: `FORCE_REPROCESS_YEAR_MONTHS`環境変数（カンマ区切りの年月）で指定した年月は、処理済みでも再処理するようにした。再処理で新しいサムネイルzipへの差し替えが成功した後、古いDriveファイルの削除をベストエフォートで行う処理も追加した（`strip-videos-and-consolidate-archives.ts`の古いアーカイブ削除と同じパターン）。ユーザーの希望により、DB行を直接削除する手動オペレーションではなく、スクリプト自体に正式な再処理の仕組みとして実装した。
+    - 対応する単体テストを新規追加（TDD、Red-Green。HEIC変換は`node:child_process`の`execFileSync`をモックして検証、Motion Photoの抽出は実際のJPEGバイト列とダミーの`ftyp`ボックスを結合したフィクスチャで検証）。`generate-thumbnail-archives.ts`自体は既存方針（スタンドアロンCLIスクリプトのオーケストレーション部分は専用テストを持たない、test_rules.md参照）に従い専用テストなし。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため。`heif-convert`はこの処理を実行する開発者のマシンにのみ必要な追加の外部依存だが、`generate-thumbnails:photos`スクリプト自体がREADME未記載のため、既存の記載パターンに合わせて追記しなかった）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため）。
+  * **設計書**: `designs/technical_design.md`の「グリッド・吹き出し表示用サムネイルZipの生成（Issue #100）」節を更新。あわせて、同節がf891076（1枚のデコード失敗が年月全体を巻き込まないようにする対応）反映前の「ストリームへパイプ」という古い記述のままだった乖離にも気づいたため、実装（Buffer化してから`sharp().toBuffer()`成功時のみ追加する方式）に合わせて修正した。`FORCE_REPROCESS_YEAR_MONTHS`環境変数による再処理・古いDriveファイル削除の仕組みも追記した。
+* **実データ実行1回目（`FORCE_REPROCESS_YEAR_MONTHS`で76年月を再処理）で判明した追加の問題（同PRへコミット追加）**:
+  - `heif-convert`のインストール・動作確認のためHomebrewでlibheifをアップグレードしたところ（開発機のバージョン1.17.3には`--disable-limits`オプションが無く、1.23.1への更新が必要だった）、既存の依存（cmake等）もソースからビルドし直す必要があり長時間を要した。
+  - 76年月の再処理により、失敗写真は14,331件→946件まで減少した。古いDriveファイルの自動削除も76件全て成功した。
+  - 残り946件のうち915件（96.8%）が同一のエラー「`Input file does not appear to start with a valid box length. Possibly could be a JPEG file instead.`」で失敗しており、これは新たな原因だった。**拡張子は`.HEIC`だが中身は実際にはJPEG等の別形式であるファイル**が実データに大量に存在しており、拡張子のみでheif-convertへのルーティングを判断していたことが原因と判明した。あわせて、動画拡張子`.m4v`（`MAH00074.m4v`）が`isVideoFile`の対象外だったため写真として誤処理されていたことも発見した。
+  - `resolveDecodableImageBuffer`を、拡張子に加えてバッファ先頭バイトが実際にISOBMFFの`ftyp`ボックスから始まっているか（`looksLikeHeicContainer`）も確認してから変換ルートを判断するよう修正した。あわせて`video-file.util.ts`の動画拡張子に`.m4v`を追加し、`extractJpegFromMotionPhoto`が抽出結果が空になるケース（一部の`.mp`が「JPEG先頭+動画後続」という構造を持たず、動画コンテナ自体が本体であることが判明）も明確にエラーとして検出するよう修正した（動作結果は変わらないが、エラーメッセージがより正確になった）。
+* **実データ実行2回目（上記修正後、残り55年月・946件を再処理）の結果**:
+  - 失敗写真は946件→**30件**まで減少した（古いDriveファイルの自動削除もエラー0件）。
+  - 残り30件の内訳: (1) 20件は拡張子が無いファイル（`Input buffer contains unsupported image format`。中身の形式は特定できておらず、libheifセキュリティ上限やHEIC/JPEG誤判定とは異なるエラーメッセージのため、別の未対応形式である可能性が高い）、(2) 10件は一部の`.mp`ファイル（Motion Photoのうち、JPEG先頭+動画後続という一般的な構造ではなく、動画コンテナ自体が本体でJPEGを抽出できない別バリエーション。今回の抽出方式では原理的に救済不可）。
+* **実データ実行2回目終了時点の結果**: 全169年月完了（年月単位の失敗0件）。個別写真の失敗は**14,331件→30件**（99.79%を救済）。`monthly_photo_thumbnail_archives`は169行（全年月分）を維持。
+* **ユーザーによる手動実行でのリグレッションと再発防止策の追加（同PRへコミット追加）**:
+  - ユーザーが`FORCE_REPROCESS_YEAR_MONTHS`の実行例をそのままコピー＆ペーストして実行した際、例示で使っていた省略記号`...`（「以下同様に76年月分続く」の意図）がリテラルな文字列として扱われ、カンマ区切りで一致した`2018-01`・`2018-02`・`2026-02`の3年月のみが再処理される事故が発生した（コミュニケーション上のミス）。
+  - さらに、この3年月の再処理結果は「失敗写真231件」となり、既に確認済みだった良い結果（この3年月合計9件）を悪化させた状態で上書きしてしまっていた（Google Drive・DBの確認では重複ファイル等のデータ破損は無かった）。原因はエラーログ`spawnSync heif-convert ENOENT`から特定: 実行環境で`heif-convert`コマンドが見つからなかった。
+  - 調査の結果、より本質的な設計上の弱点が判明した。修正前のコードは全ての`.heic`ファイルをsharp内蔵デコーダへ直接渡しており、セキュリティ上限を超えるファイルのみが失敗する設計だったが、修正後のコードは実際にHEICコンテナだと判定したファイルを**必ず`heif-convert`経由に一本化**しておりフォールバックが無かった。そのため`heif-convert`が使えない環境では、本来sharp単体で成功していたはずのHEICファイルまで含めて全滅し、しかもスクリプト自体は「正常終了」してしまうため気づきにくい。
+  - ユーザーとの相談の結果、`heif-convert`が使えない場合にsharpへ静かにフォールバックする案ではなく、**処理開始前に検証し使えない場合は何も処理せず即座にエラー終了する**方針を採用した（サイレントな品質劣化より、明示的な失敗の方が安全なため）。`heic-conversion.util.ts`に`assertHeifConvertAvailable`を追加し、`heif-convert --help`の実行結果（ENOENT・`--disable-limits`未対応のいずれか）を確認する。`generate-thumbnail-archives.ts`は`generateThumbnailArchives`の最初（DB接続・Drive通信より前）でこれを呼び出す。
+  - 対応する単体テストを新規追加（TDD、Red-Green。`node:child_process`の`execFileSync`をモックし、ENOENT・`--disable-limits`非対応・正常系の3パターンを検証。heif-convertは`--help`指定時もexit code 1で終了する実際の挙動を再現）。単体テスト・lint・typecheck・型キャストチェックは全てGreen。実機での動作確認として、実際の`heif-convert`（利用可能な状態）に対して正常終了することもスモークテスト済み。
+  - 影響を受けた3年月（2018-01, 2018-02, 2026-02）は、`heif-convert`が利用可能な環境で`FORCE_REPROCESS_YEAR_MONTHS`により再修復し、元の良好な結果（3年月合計9件）に戻した。
+  - **設計書**: `designs/technical_design.md`の「グリッド・吹き出し表示用サムネイルZipの生成（Issue #100）」節に、拡張子と中身の両方を確認する挙動の詳細、および`assertHeifConvertAvailable`による事前確認の設計意図を追記した。
+* **最終結果**: 全169年月完了（年月単位の失敗0件）。個別写真の失敗は**14,331件→30件**（99.79%を救済、3年月のリグレッション修復後の最終値）。
+
+### [2026-07-25] グリッド・吹き出し表示用に横300px幅のサムネイル専用Zipを生成する機能を実装した（Issue #100、自律モード）
+* **修正の動機・概要**:
+  - Issue #99完了後、ユーザーから依頼のあった「グリッド/吹き出し表示用に横300px(縦横比維持)のサムネイル画像のみを集めたZip（例: `2026-04-thumbnails`）を年月ごとに生成する」機能を自律的に実装した。既存のフルサイズzip（`monthly_photo_archives`）はそのまま残し、別ファイル・別テーブルで管理する。
+  - 生成対象はIssue #99で動画削除・part統合が完了済み（`video_stripped_year_months`に記録済み）の年月のみに限定した。破損等により未処理のまま残っている年月（後述）は、常に単一アーカイブ・動画なしという前提を満たさないため対象外とした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `backend/src/photos/zip-streaming.util.ts`（新規）: Issue #99の`consolidate-monthly-archive-streaming.util.ts`からyauzl/yazlの低レベルなzip逐次読み書きヘルパーを切り出し、本機能と共有できるようにした（DRY）。
+    - `backend/src/photos/generate-thumbnail-archive-streaming.util.ts`（新規）: `generateThumbnailArchiveStreaming`。元アーカイブのエントリを`sharp().resize({ width: 300 })`のストリームへパイプしてから出力zipへ追加する、ディスク経由のストリーミング処理。
+    - `backend/src/photos/entities/monthly-photo-thumbnail-archive.entity.ts`（新規）・`backend/src/migrations/1784947777761-CreateMonthlyPhotoThumbnailArchives.ts`（新規）: 年月とサムネイルzipのDriveファイルIDを記録する専用テーブル。実DBに適用済み（適用前にスキーマのバックアップ取得済み）。
+    - `backend/src/photos/generate-thumbnail-archives.ts`（新規）: オーケストレーションスクリプト（`pnpm --filter backend run generate-thumbnails:photos`）。1年月の失敗で全体を止めない設計はIssue #99と同じパターンを踏襲。
+    - `backend/package.json`: `sharp`を追加。
+    - 対応する単体テストを新規追加（TDD、Red-Green。sharpで動的生成したテスト用画像でリサイズ結果を検証）。単体テスト・lint・typecheck・型キャストチェックは全てGreen。
+  * **README.md**: 変更なし（開発者向けの一括メンテナンス処理のため）。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た挙動に変化はまだ無いため。グリッド/吹き出し表示側の実際の切り替えは本Issueのスコープ外で別Issue対応）。
+  * **設計書**: `designs/technical_design.md`に「グリッド・吹き出し表示用サムネイルZipの生成（Issue #100）」節を新設。あわせて、Issue #99実データ処理で判明したレガシー単一アーカイブのZIP64非対応による既知の制約も同節に追記した。
+* **実データ実行時に発見・対応した追加の問題（同PRへコミット追加）**:
+  - 実データ169年月に対して実行したところ、2020年以降の多数の月で「Security limit exceeded: Number of references in iref box (48) exceeds the security limits of 16 references」というエラーで年月全体の処理が失敗した。原因は、一部のHEIC写真（iPhoneのポートレートモード等で複数の補助画像を持つもの）がlibheifのセキュリティ上限（iref box内の参照数16件）を超えており、`sharp`によるデコードに失敗すること。当初の実装は、元アーカイブの読み込みストリームを直接`sharp`のリサイズ変換ストリームへパイプし出力zip（yazl）へ流し込む設計だったため、1枚の写真のデコード失敗がその年月全体の処理を巻き込んで失敗させていた（さらに、既にyazlの出力キューへ追加済みのストリームが途中でエラーになった場合、yazlの内部状態が後続エントリの書き込みへ進めなくなる恐れもあった）。
+  - `generate-thumbnail-archive-streaming.util.ts`を、各エントリをいったんBufferとして読み切り、`sharp().toBuffer()`によるリサイズが完全に成功した場合のみyazlへ`addBuffer`する設計へ変更した。これにより、1枚の写真の処理失敗（`failedEntries`として記録）が他の写真・年月全体の処理を止めることはなくなった。1エントリ分（写真1件、数MB程度）のみを一時的にメモリへ保持する形になるが、Issue #99が対象としていた「アーカイブ全体（数GB〜十数GB）を同時にメモリへ保持する」問題とは規模が異なり、実用上問題ない。
+* **実データ処理の最終結果（対象169年月完了）**:
+  - 全169年月（Issue #99で動画削除・part統合が完了した年月）でサムネイルzip生成が完了。年月単位での失敗は0件。
+  - 個別の写真単位では14,331件がサムネイル生成に失敗した。原因は2種類確認: (1) 一部のHEIC写真がlibheifのセキュリティ上限（iref box参照数16件超）に抵触してデコードできない、(2) 一部のAndroid Motion Photo形式（`.MP`拡張子、JPEG本体に動画が埋め込まれたハイブリッド形式）を`sharp`が画像として認識できない。いずれも既知のライブラリ制約であり、元のフルサイズ写真データ（`photos`/`monthly_photo_archives`）には一切影響しない。将来的にサムネイル網羅率を上げる場合は、libheifのセキュリティ上限緩和やMotion Photo形式からのJPEG部分抽出等の追加対応を検討する余地がある。
+
 ### [2026-07-25] 動画削除・part統合処理をストリーミング化し、2GiB超でスキップされていた残り年月も処理できるようにした（Issue #99、自律モード）
 * **修正の動機・概要**:
   - Issue #97の一括処理は全178年月中141件が完了したが、月合計サイズが2GiBを超える37年月（実データで最大約16.28GiB）は、zip全体をメモリ上へ保持する実装のままだとメモリ枯渇を招く恐れがあるため、安全のため未処理のままスキップしていた。
