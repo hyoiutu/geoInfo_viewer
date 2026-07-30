@@ -1,6 +1,6 @@
 import { fireEvent, waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity } from '../../api/activitiesApi';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { MapWorkspace } from '../MapWorkspace';
@@ -263,6 +263,16 @@ describe('MapWorkspaceに関するテスト', () => {
   });
 
   describe('レイヤー変更に伴う非同期処理中のローディング表示に関するテスト（Issue #65）', () => {
+    // mockImplementationはbeforeEachのvi.clearAllMocks()では戻らないため、テスト本文の末尾で
+    // 手動で戻すと、途中のアサーションが失敗した場合に復元処理へ到達せず後続テストへ状態が漏れる
+    // （テストの疎結合性、test_rules.mdルール4）。成否に関わらず必ず実行されるafterEachで戻す
+    afterEach(async () => {
+      const { syncCyclingActivities } = await import('../../api/activitiesApi');
+      const { fetchMunicipalityBoundaries } = await import('../../api/municipalitiesApi');
+      vi.mocked(syncCyclingActivities).mockResolvedValue({ success: true });
+      vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue({ type: 'FeatureCollection', features: [] });
+    });
+
     test('自転車ログをOFF→ONにして実行すると、同期・参照取得が完了するまでレイヤーダイアログが閉じずマウスカーソルがローディング状態になり、完了すると元に戻る', async () => {
       const { syncCyclingActivities } = await import('../../api/activitiesApi');
       let resolveSync: (() => void) | undefined;
@@ -291,8 +301,6 @@ describe('MapWorkspaceに関するテスト', () => {
       resolveSync?.();
 
       await waitFor(() => expect(getByTestId('map-workspace-root')).not.toHaveStyle({ cursor: 'wait' }));
-      // mockImplementationはclearAllMocksでは戻らないため、後続テストへ影響しないよう明示的に既定の動作へ戻す
-      vi.mocked(syncCyclingActivities).mockResolvedValue({ success: true });
     });
 
     test('行政区画の年代を変更して実行すると、境界データの取得が完了するまでレイヤーダイアログが閉じない', async () => {
@@ -326,8 +334,6 @@ describe('MapWorkspaceに関するテスト', () => {
       }
 
       await waitFor(() => expect(() => getByRole('checkbox', { name: '道路' })).toThrow());
-      // mockImplementationはclearAllMocksでは戻らないため、後続テストへ影響しないよう明示的に既定の動作へ戻す
-      vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue({ type: 'FeatureCollection', features: [] });
     });
   });
 
