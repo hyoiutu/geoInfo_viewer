@@ -282,7 +282,7 @@ describe('MapWorkspaceに関するテスト', () => {
             resolveSync = () => resolve({ success: true });
           })
       );
-      const { getByRole, getByTestId } = renderWithChakra(<MapWorkspace />);
+      const { getByRole, queryByRole, getByTestId } = renderWithChakra(<MapWorkspace />);
 
       fireEvent.click(getByRole('button', { name: 'レイヤー切り替え' }));
       const checkbox = await waitFor(() => getByRole('checkbox', { name: '自転車ログ' }));
@@ -292,11 +292,14 @@ describe('MapWorkspaceに関するテスト', () => {
 
       await waitFor(() => expect(syncCyclingActivities).toHaveBeenCalledTimes(1));
       expect(getByTestId('map-workspace-root')).toHaveStyle({ cursor: 'wait' });
+      // waitFor(() => expect(getByRole(...)))はチェックボックスが存在する間ずっと1回目の同期チェックで
+      // 即座に成功してしまい「閉じていないこと」の検証にならないため、否定条件をwaitForしタイムアウトで
+      // 失敗することを期待する（PR #110レビュー対応。同じ問題が他の単独原因テストにも残存していた）
       await expect(
-        waitFor(() => expect(getByRole('checkbox', { name: '自転車ログ' })), {
+        waitFor(() => expect(queryByRole('checkbox', { name: '自転車ログ' })).not.toBeInTheDocument(), {
           timeout: DIALOG_STILL_OPEN_CHECK_TIMEOUT_MS
         })
-      ).resolves.toBeTruthy();
+      ).rejects.toThrow();
 
       resolveSync?.();
 
@@ -317,7 +320,7 @@ describe('MapWorkspaceに関するテスト', () => {
             pendingResolvers.push(() => resolve({ type: 'FeatureCollection', features: [] }));
           })
       );
-      const { getByRole, getByLabelText } = renderWithChakra(<MapWorkspace />);
+      const { getByRole, queryByRole, getByLabelText } = renderWithChakra(<MapWorkspace />);
 
       fireEvent.click(getByRole('button', { name: 'レイヤー切り替え' }));
       await waitFor(() => getByRole('checkbox', { name: '道路' }));
@@ -326,8 +329,10 @@ describe('MapWorkspaceに関するテスト', () => {
 
       await waitFor(() => expect(fetchMunicipalityBoundaries).toHaveBeenCalledWith('2000-10-01'));
       await expect(
-        waitFor(() => expect(getByRole('checkbox', { name: '道路' })), { timeout: DIALOG_STILL_OPEN_CHECK_TIMEOUT_MS })
-      ).resolves.toBeTruthy();
+        waitFor(() => expect(queryByRole('checkbox', { name: '道路' })).not.toBeInTheDocument(), {
+          timeout: DIALOG_STILL_OPEN_CHECK_TIMEOUT_MS
+        })
+      ).rejects.toThrow();
 
       for (const resolve of pendingResolvers) {
         resolve();
