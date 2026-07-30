@@ -182,11 +182,18 @@ describe('MapWorkspaceに関するテスト', () => {
     // レート制限間隔が極小の環境では、開始操作の直後の最初の状態取得時点で既に完了しており、
     // isRunning:trueの状態をフロントエンドが一度も観測できないことがある。
     // getBackfillStatusの既定モック（isRunning:falseを即座に返す）はまさにこのケースを表す
-    const { getByRole, getByText } = renderWithChakra(<MapWorkspace />);
+    const { getByRole, queryByRole, getByText } = renderWithChakra(<MapWorkspace />);
 
     fireEvent.click(getByRole('button', { name: '設定' }));
     const backfillButton = await waitFor(() => getByRole('button', { name: '自転車ログ初期取り込み' }));
     fireEvent.click(backfillButton);
+
+    // SettingsDialogは初期取り込みボタン押下と同時に自身を閉じるが、AppDialogの閉じる(×)ボタンは
+    // BackfillProgressFooterの閉じるボタンと同じaria-label「閉じる」を持つため、SettingsDialogの
+    // 退場アニメーションがDOMから消えきる前に後続のgetByRole('閉じる')を呼ぶと、2件ヒットして
+    // 失敗することがある（フルスイート実行時に断続的に再現）。toggleLayerViaDialogヘルパーと同様、
+    // 前のダイアログが実際に閉じきったことを先に待ってから、フッターの閉じるボタンを検証する
+    await waitFor(() => expect(queryByRole('button', { name: '自転車ログ初期取り込み' })).not.toBeInTheDocument());
 
     await waitFor(() => expect(getByText('取得が完了しました')).toBeInTheDocument());
     expect(getByRole('button', { name: '閉じる' })).toBeInTheDocument();
