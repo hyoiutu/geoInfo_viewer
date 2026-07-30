@@ -210,6 +210,23 @@ describe('MapWorkspaceに関するテスト', () => {
     await waitFor(() => expect(startForceRefetch).toHaveBeenCalledTimes(1));
   });
 
+  test('強制再取得ボタン経由でも、対象件数が少なく開始直後に完了する場合に進捗フッターに完了状態が表示される（Issue #86）', async () => {
+    // onStartBackfillと同じ修正(showBackfillFooter呼び出し)がonStartForceRefetchにも入っているため、
+    // 強制再取得の入口でも同様にisRunning:trueを観測せずフッターが表示されることを検証する
+    const { getByRole, queryByRole, getByText } = renderWithChakra(<MapWorkspace />);
+
+    fireEvent.click(getByRole('button', { name: '設定' }));
+    const forceRefetchButton = await waitFor(() => getByRole('button', { name: '自転車ログ強制再取得' }));
+    fireEvent.click(forceRefetchButton);
+
+    // SettingsDialogの退場アニメーションとBackfillProgressFooterの閉じるボタンのaria-label衝突を避けるため、
+    // 前のダイアログが実際に閉じきったことを先に待ってから、フッターの閉じるボタンを検証する
+    await waitFor(() => expect(queryByRole('button', { name: '自転車ログ強制再取得' })).not.toBeInTheDocument());
+
+    await waitFor(() => expect(getByText('取得が完了しました')).toBeInTheDocument());
+    expect(getByRole('button', { name: '閉じる' })).toBeInTheDocument();
+  });
+
   // ダイアログの開閉・入力・地図クリックと複数回のwaitForを経る重いテストのため、
   // フルスイート並列実行時のCPU負荷でデフォルトタイムアウト(5000ms)を超えることがあるため延長する
   test('選択・フォーカス中のアクティビティがフィルタで除外されると、選択・フォーカスが解除される', async () => {
