@@ -5,6 +5,7 @@ import type { CyclingActivity } from '../api/activitiesApi';
 import type { ActivityFilter } from '../types/activityFilter';
 import type { LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
+import { resolveLayerSettingsChange } from '../utils/resolveLayerSettingsChange';
 import { FilterDialog } from './FilterDialog';
 import { LayerDialog } from './LayerDialog';
 import { SettingsDialog } from './SettingsDialog';
@@ -69,8 +70,12 @@ export const MapControls = ({
   }, [isApplyingLayerSettings]);
 
   const handleApplyLayerSettings = (visibility: LayerVisibility, era: MunicipalityEra) => {
-    const willChangeEra = era !== appliedEra;
-    const willSyncCyclingLog = visibility['bicycle-log'] && !appliedVisibility['bicycle-log'];
+    const { willChangeEra, willSyncCyclingLog } = resolveLayerSettingsChange(
+      appliedVisibility,
+      appliedEra,
+      visibility,
+      era
+    );
     onApplyLayerSettings(visibility, era);
     // 行政区画データ取得・自転車ログ同期のいずれも発生しない場合は、待たずに即座に閉じる。
     // いずれか発生する場合は、isApplyingLayerSettingsがfalseに戻るまで閉じない（上記useEffect）

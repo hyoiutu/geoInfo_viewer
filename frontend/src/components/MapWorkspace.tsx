@@ -10,6 +10,7 @@ import { type ActivityFilter, DEFAULT_ACTIVITY_FILTER } from '../types/activityF
 import type { LayerVisibility } from '../types/layer';
 import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 import { filterActivities } from '../utils/filterActivities';
+import { resolveLayerSettingsChange } from '../utils/resolveLayerSettingsChange';
 import { ActivityDetailSidebar } from './ActivityDetailSidebar';
 import { BackfillProgressFooter } from './BackfillProgressFooter';
 import { ErrorDialog } from './ErrorDialog';
@@ -79,8 +80,7 @@ export const MapWorkspace = () => {
     // いずれも変化を検知して反応するため、ここで「今回変化するかどうか」を先に判定しておく必要がある。
     // 完了通知(onAdminBoundaryDataApplied/onSyncComplete)を待つ対象を、実行直後の同じレンダーで
     // 確定させることで、非同期処理の開始前に誤って「待つものが無い」と判定してしまう競合を避ける（Issue #65）
-    const willChangeEra = nextEra !== era;
-    const willSyncCyclingLog = nextVisibility['bicycle-log'] && !visibility['bicycle-log'];
+    const { willChangeEra, willSyncCyclingLog } = resolveLayerSettingsChange(visibility, era, nextVisibility, nextEra);
     setVisibility(nextVisibility);
     setEra(nextEra);
     setFocusedMunicipality(null);
