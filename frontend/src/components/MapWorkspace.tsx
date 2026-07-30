@@ -47,10 +47,9 @@ export const MapWorkspace = () => {
   const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus();
   const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =
     useBackfillProgressFooter(backfillStatus);
-  const handleCyclingLogSyncComplete = () => {
-    setPendingLayerApply((current) => (current ? { ...current, waitingForCyclingLog: false } : current));
-  };
-  const { activities } = useCyclingActivities(visibility['bicycle-log'], handleCyclingLogSyncComplete);
+  const { activities } = useCyclingActivities(visibility['bicycle-log'], () =>
+    setPendingLayerApply((current) => (current ? { ...current, waitingForCyclingLog: false } : current))
+  );
   const { selectedActivities, focusedActivity, selectActivities, focusActivity, clearFocus, clearSelection } =
     useActivitySelection(activities, filter);
 
