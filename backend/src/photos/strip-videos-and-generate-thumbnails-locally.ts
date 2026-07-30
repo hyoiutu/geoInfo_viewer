@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { appendFileSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { assertHeifConvertAvailable } from './heic-conversion.util';
 import { isFileTooLargeToRead, scanLocalPhotoDirectory } from './local-photo-directory.util';
 import { isLocalFileVideo } from './local-video-detection.util';
@@ -54,7 +54,7 @@ const resolveVideoTakenAtForLog = async (absolutePath: string): Promise<Date | n
  * （確認に失敗した場合の事故防止の理由は`heic-conversion.util.ts`のTSDoc参照）
  * @param flatDirectoryPath 処理対象のローカルフラットディレクトリパス（動画は削除、写真はそのまま残す）
  * @param thumbnailDirectoryPath 生成したサムネイルの出力先ディレクトリパス（無ければ作成する）
- * @param deletionLogPath 削除した動画の記録先ログファイルパス（追記型、無ければ作成する）
+ * @param deletionLogPath 削除した動画の記録先ログファイルパス（追記型、ファイル自体・親ディレクトリともに無ければ作成する）
  */
 const stripVideosAndGenerateThumbnailsLocally = async (
   flatDirectoryPath: string,
@@ -63,6 +63,10 @@ const stripVideosAndGenerateThumbnailsLocally = async (
 ): Promise<void> => {
   assertHeifConvertAvailable();
   mkdirSync(thumbnailDirectoryPath, { recursive: true });
+  // appendFileSyncはdeletionLogPath自体は無ければ作成するが、親ディレクトリまでは作成しない。
+  // 親ディレクトリが存在しない状態で動画を検出すると、後続のappendFileSyncがENOENTで例外を投げ、
+  // try/catchで囲われていないためスクリプト全体が未捕捉のまま停止してしまう（PR #114レビュー対応）
+  mkdirSync(dirname(deletionLogPath), { recursive: true });
 
   const { photoEntries } = scanLocalPhotoDirectory(flatDirectoryPath);
   log(`${photoEntries.length}件のファイルを検出しました`);
