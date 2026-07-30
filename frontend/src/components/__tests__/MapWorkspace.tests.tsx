@@ -335,6 +335,54 @@ describe('MapWorkspaceに関するテスト', () => {
 
       await waitFor(() => expect(() => getByRole('checkbox', { name: '道路' })).toThrow());
     });
+
+    test('行政区画の年代変更・自転車ログON→ONが同時に実行された場合、片方の完了だけではダイアログは閉じず、両方完了して初めて閉じる（Issue #65）', async () => {
+      const { syncCyclingActivities } = await import('../../api/activitiesApi');
+      const { fetchMunicipalityBoundaries } = await import('../../api/municipalitiesApi');
+      let resolveSync: (() => void) | undefined;
+      vi.mocked(syncCyclingActivities).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSync = () => resolve({ success: true });
+          })
+      );
+      const pendingBoundaryResolvers: (() => void)[] = [];
+      vi.mocked(fetchMunicipalityBoundaries).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            pendingBoundaryResolvers.push(() => resolve({ type: 'FeatureCollection', features: [] }));
+          })
+      );
+      const { getByRole, getByLabelText, queryByRole } = renderWithChakra(<MapWorkspace />);
+
+      fireEvent.click(getByRole('button', { name: 'レイヤー切り替え' }));
+      await waitFor(() => getByRole('checkbox', { name: '自転車ログ' }));
+      fireEvent.click(getByRole('checkbox', { name: '自転車ログ' }));
+      await waitFor(() => expect(getByRole('checkbox', { name: '自転車ログ' })).toBeChecked());
+      fireEvent.change(getByLabelText('行政区画の年代'), { target: { value: '2000-10-01' } });
+      fireEvent.click(getByRole('button', { name: '実行' }));
+
+      await waitFor(() => expect(syncCyclingActivities).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(fetchMunicipalityBoundaries).toHaveBeenCalledWith('2000-10-01'));
+
+      // 自転車ログ同期のみ完了させても、行政区画データ取得がまだのためダイアログは閉じたままのはず。
+      // 「一定時間待ってもチェックボックスが存在し続けること」を確認する（queryByRoleがnullを返し続ける
+      // ことをwaitForで待ち、タイムアウトで失敗する＝閉じなかったことを表す）。getByRoleをwaitFor内で
+      // 呼ぶ方式は、状態更新がまだ反映されていないタイミングでの1回目の同期的なチェックだけで
+      // 成功してしまい、実際には閉じてしまう不具合を見逃すおそれがあるため使わない
+      resolveSync?.();
+      await expect(
+        waitFor(() => expect(queryByRole('checkbox', { name: '自転車ログ' })).not.toBeInTheDocument(), {
+          timeout: DIALOG_STILL_OPEN_CHECK_TIMEOUT_MS
+        })
+      ).rejects.toThrow();
+
+      // 残る行政区画データ取得も完了すると、ようやくダイアログが閉じる
+      for (const resolve of pendingBoundaryResolvers) {
+        resolve();
+      }
+      await waitFor(() => expect(() => getByRole('checkbox', { name: '自転車ログ' })).toThrow());
+    });
   });
 
   test('複数のエラーが発生した場合、エラーダイアログにスタックして表示される', async () => {
