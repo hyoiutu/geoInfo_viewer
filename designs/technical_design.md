@@ -307,3 +307,13 @@ Google Takeoutで一括ダウンロードした写真をローカルへ展開す
   - `PhotoBalloonClusterBadge`はクラスタにまとまっている写真の件数のみを円形バッジで表示する（個別のサムネイルは表示しない）
 - **`applyPhotoBalloons`**（`mapLayerInteraction.ts`）が、`markersRef`が保持する直前のマーカー・React rootを全て`remove()`/`unmount()`した後、`clusterIndex`（null時は何も追加せず終了）から`map.getBounds()`・`map.getZoom()`で現在の表示範囲・ズームレベルにおけるクラスタ・個別写真を求め、新しいマーカーとして追加する。`applyStartGoalMarkers`と同じ「差分更新ではなく毎回全消去→再構築」の設計を踏襲する（1アクティビティあたりの写真件数は多くても数十件程度のため軽量）
 - **`MapView.tsx`側の結線**: 新規`photos: Photo[]` propを追加。`photoClusterIndexRef`（`photos`が変わるたびに`buildPhotoClusterIndex`で再構築）・`photoBalloonMarkersRef`の2つの`useRef`を持つ。`photos`を依存配列に含む`useEffect`が、インデックス再構築後ただちに現在の表示範囲で`applyPhotoBalloons`を呼ぶ（フォーカス変化・フォーカス解除の反映はこの経路）。加えて、地図のパン・ズーム操作でクラスタリング結果自体が変わりうるため、マウント時に一度だけ`map.on('moveend', ...)`を登録し、`photoClusterIndexRef.current`（refのため常に最新のインデックスを参照する、クロージャの陳腐化対策は既存の他ハンドラと同じパターン）を使って`applyPhotoBalloons`を再実行する
+
+## 写真の拡大プレビュー表示（Issue #108）
+アクティビティパネル（`PhotoGridItem`、Issue #105）・地図上の吹き出し（`PhotoBalloonThumbnail`、Issue #107）いずれのサムネイルをクリックした場合も、共通の拡大プレビューダイアログでフルサイズ画像（`/photos/:id/image`。Issue #106のHEIC事前変換が完了していればJPEG化済み）を表示する。ユーザー確定済みの仕様として、(1) 矢印キー（→/←）で前後の写真へ移動できる、(2) 吹き出し由来・パネル由来のクリックで見た目・挙動を共通化する、の2点がある。
+
+- **状態の一元管理**: プレビュー中の写真は「`photos`配列内でのindex」（`previewPhotoIndex: number | null`、`MapWorkspace.tsx`）として管理する。パネル・吹き出しいずれのクリックも共通の`handlePhotoClick(photoId)`を呼び、Issue #107で既に`MapWorkspace`へ集約済みの`photos`配列から対象のindexを検索して設定する。これにより「見た目・挙動の共通化」（ユーザー回答）を、UIコンポーネントを1つに集約する形で満たす（吹き出し由来・パネル由来で別々のモーダル実装を持たない）
+- **`PhotoPreviewModal`**（新規、`components/`）は、共通ダイアログラッパー`AppDialog`（既存、`Dialog.Root`/`Backdrop`/`Positioner`/`Content`等のChakra UI Dialog構造を集約したもの）の上に構築する。`selectedIndex`が`null`の間は`isOpen=false`として非表示にする
+  - 前後移動は、`selectedIndex`の前後に隣接するindexへの移動として実装し、`hasPrevious`/`hasNext`（配列の先頭・末尾での境界判定）で前後ボタンの無効化を制御する。矢印キーでの移動（ユーザー回答）は、ダイアログが開いている間だけ`window`への`keydown`リスナーを登録する`useEffect`で実装し、`hasPrevious`/`hasNext`と同じ境界判定を使う
+  - フルサイズ画像は`PhotoPreviewImage`（内部コンポーネント）が`key={photo.id}`でラップして表示する。前後移動のたびに`photo.id`が変わり`key`が変わることでReactがコンポーネントを再マウントするため、読み込み中フラグ（`isLoaded`）が写真ごとに自然にリセットされ、都度ローディングスピナーを表示できる（`useEffect`等での手動リセットが不要）
+- クリック元の結線: `PhotoGridItem`は`onClick` propを追加しクリック領域全体（`Box`）に設定。`PhotoBalloonThumbnail`は、写真吹き出しのDOM要素自体が`maplibregl.Marker`用の独立したReact root（`ChakraProvider`配下外、Issue #107参照）にあるため、クリック領域を`<button>`（ネイティブでキーボード操作にも対応するため、`<img>`に直接`role="button"`を付けるのではなく`<button>`でラップする方針にした。`<img>`はHTML仕様上インタラクティブでない要素であり、biomeのa11yルール（`useSemanticElements`）もこれを指摘した）とし、内側に`<img>`を配置する
+

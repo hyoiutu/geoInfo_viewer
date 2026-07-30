@@ -37,6 +37,8 @@ type ActivityDetailSidebarProps = {
   photos: Photo[];
   /** 写真一覧の取得中かどうか */
   isPhotosLoading: boolean;
+  /** サムネイルがクリックされたときに、対象の写真IDを渡して呼ばれるコールバック（拡大プレビュー表示用、Issue #108） */
+  onPhotoClick: (photoId: number) => void;
 };
 
 /** ActivityListのprops */
@@ -107,12 +109,16 @@ type PhotoGridProps = {
   photos: Photo[];
   /** 取得中かどうか */
   isLoading: boolean;
+  /** サムネイルがクリックされたときに、対象の写真IDを渡して呼ばれるコールバック（Issue #108） */
+  onPhotoClick: (photoId: number) => void;
 };
 
 /** PhotoGridItemのprops */
 type PhotoGridItemProps = {
   /** 表示対象の写真 */
   photo: Photo;
+  /** サムネイルがクリックされたときに呼ばれるコールバック（Issue #108） */
+  onClick: () => void;
 };
 
 /**
@@ -120,13 +126,13 @@ type PhotoGridItemProps = {
  * アイコンを表示し、実バイナリの読み込み（`<Image>`の`onLoad`）が完了し次第、読み込めた写真から
  * 順に表示へ切り替える（全件の読み込み完了を待たない、Issue #23フォローアップ）。
  * サムネイル優先・失敗時のフルサイズへのフォールバックは`usePhotoThumbnailFallback`（Issue #105/#107で
- * 地図上の写真吹き出しと共通化）が担う
+ * 地図上の写真吹き出しと共通化）が担う。クリックすると拡大プレビュー（Issue #108）を開く
  */
-const PhotoGridItem = ({ photo }: PhotoGridItemProps) => {
+const PhotoGridItem = ({ photo, onClick }: PhotoGridItemProps) => {
   const { src, isLoaded, handleLoad, handleError } = usePhotoThumbnailFallback(photo.id);
 
   return (
-    <Box position="relative" width="100%" aspectRatio="1">
+    <Box position="relative" width="100%" aspectRatio="1" cursor="pointer" onClick={onClick}>
       <Image
         src={src}
         alt={photo.fileName}
@@ -164,7 +170,7 @@ const PhotoGridItem = ({ photo }: PhotoGridItemProps) => {
  * 撮影された写真一覧を、取得中・0件・複数件の状態に応じて表示する。
  * プレビューは全て正方形にし、横長・縦長の写真は両端を均等にカットして表示する（`objectFit="cover"`、Issue #23）
  */
-const PhotoGrid = ({ photos, isLoading }: PhotoGridProps) => {
+const PhotoGrid = ({ photos, isLoading, onPhotoClick }: PhotoGridProps) => {
   if (isLoading) {
     return <Text>{PHOTOS_LOADING_LABEL}</Text>;
   }
@@ -174,7 +180,7 @@ const PhotoGrid = ({ photos, isLoading }: PhotoGridProps) => {
   return (
     <SimpleGrid columns={PHOTO_GRID_COLUMNS} gap="2">
       {photos.map((photo) => (
-        <PhotoGridItem key={photo.id} photo={photo} />
+        <PhotoGridItem key={photo.id} photo={photo} onClick={() => onPhotoClick(photo.id)} />
       ))}
     </SimpleGrid>
   );
@@ -194,6 +200,8 @@ type ActivityDetailProps = {
   photos: Photo[];
   /** 写真一覧の取得中かどうか */
   isPhotosLoading: boolean;
+  /** サムネイルがクリックされたときに、対象の写真IDを渡して呼ばれるコールバック（Issue #108） */
+  onPhotoClick: (photoId: number) => void;
 };
 
 /** フォーカス中のアクティビティの詳細（詳細画面）を表示する。フォーカス中のアクティビティ・行政区画の年代が変わるたびに通過自治体を取得する */
@@ -203,7 +211,8 @@ const ActivityDetail = ({
   adminBoundaryEra,
   onMunicipalityFocus,
   photos,
-  isPhotosLoading
+  isPhotosLoading,
+  onPhotoClick
 }: ActivityDetailProps) => {
   const view = toActivityDetailView(activity);
   const { municipalities, isLoading: isMunicipalitiesLoading } = usePassedMunicipalities(activity.id, adminBoundaryEra);
@@ -226,7 +235,7 @@ const ActivityDetail = ({
         onMunicipalityFocus={onMunicipalityFocus}
       />
       <Text fontWeight="bold">写真</Text>
-      <PhotoGrid photos={photos} isLoading={isPhotosLoading} />
+      <PhotoGrid photos={photos} isLoading={isPhotosLoading} onPhotoClick={onPhotoClick} />
     </Flex>
   );
 };
@@ -245,7 +254,8 @@ export const ActivityDetailSidebar = ({
   adminBoundaryEra = MUNICIPALITY_ERA_CURRENT,
   onMunicipalityFocus,
   photos,
-  isPhotosLoading
+  isPhotosLoading,
+  onPhotoClick
 }: ActivityDetailSidebarProps) => {
   if (activities.length === NO_ACTIVITIES) {
     return null;
@@ -270,6 +280,7 @@ export const ActivityDetailSidebar = ({
           onMunicipalityFocus={onMunicipalityFocus}
           photos={photos}
           isPhotosLoading={isPhotosLoading}
+          onPhotoClick={onPhotoClick}
         />
       ) : (
         <ActivityList activities={activities} onFocus={onFocus} onBackFromList={onBackFromList} />

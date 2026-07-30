@@ -30,9 +30,14 @@ const mountMarkerElement = (node: ReactNode): PhotoBalloonMarkerElement => {
  * 単一写真の吹き出し用のDOM要素・React rootを組み立てる
  * @param photoId 対象の写真ID
  * @param fileName altテキストに使うファイル名
+ * @param onClick クリックされたときに呼ばれるコールバック（拡大プレビュー表示用、Issue #108）
  */
-export const createPhotoBalloonThumbnailElement = (photoId: number, fileName: string): PhotoBalloonMarkerElement =>
-  mountMarkerElement(createElement(PhotoBalloonThumbnail, { photoId, fileName }));
+export const createPhotoBalloonThumbnailElement = (
+  photoId: number,
+  fileName: string,
+  onClick: () => void
+): PhotoBalloonMarkerElement =>
+  mountMarkerElement(createElement(PhotoBalloonThumbnail, { photoId, fileName, onClick }));
 
 /**
  * クラスタ（近接する複数写真をまとめたもの）の吹き出し用のDOM要素・React rootを組み立てる

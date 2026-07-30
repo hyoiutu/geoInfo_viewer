@@ -25,7 +25,7 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
 });
 
 /** 写真関連のprops（photos/isPhotosLoading）はIssue #107でMapWorkspace側へ持ち上げたため、テストでは既定値を明示的に渡す */
-const DEFAULT_PHOTOS_PROPS = { photos: [] as Photo[], isPhotosLoading: false };
+const DEFAULT_PHOTOS_PROPS = { photos: [] as Photo[], isPhotosLoading: false, onPhotoClick: vi.fn() };
 
 describe('ActivityDetailSidebarに関するテスト', () => {
   beforeEach(() => {
@@ -288,6 +288,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onMunicipalityFocus={vi.fn()}
         photos={[]}
         isPhotosLoading={true}
+        onPhotoClick={vi.fn()}
       />
     );
 
@@ -311,11 +312,35 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onMunicipalityFocus={vi.fn()}
         photos={photos}
         isPhotosLoading={false}
+        onPhotoClick={vi.fn()}
       />
     );
 
     expect(screen.getByAltText('a.jpg')).toHaveAttribute('src', resolvePhotoThumbnailUrl(1));
     expect(screen.getByAltText('b.jpg')).toHaveAttribute('src', resolvePhotoThumbnailUrl(2));
+  });
+
+  test('サムネイルをクリックすると、対象の写真IDでonPhotoClickが呼ばれる（Issue #108）', () => {
+    const photos: Photo[] = [{ id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null }];
+    const activity = createActivity({ id: '42' });
+    const onPhotoClick = vi.fn();
+
+    renderWithChakra(
+      <ActivityDetailSidebar
+        activities={[activity]}
+        focusedActivity={activity}
+        onFocus={vi.fn()}
+        onBackFromDetail={vi.fn()}
+        onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
+        photos={photos}
+        isPhotosLoading={false}
+        onPhotoClick={onPhotoClick}
+      />
+    );
+    fireEvent.click(screen.getByAltText('a.jpg'));
+
+    expect(onPhotoClick).toHaveBeenCalledWith(1);
   });
 
   test('サムネイルの読み込みに失敗した場合、フルサイズ画像のURLへフォールバックする（Issue #105）', async () => {
@@ -332,6 +357,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onMunicipalityFocus={vi.fn()}
         photos={photos}
         isPhotosLoading={false}
+        onPhotoClick={vi.fn()}
       />
     );
 
@@ -358,6 +384,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onMunicipalityFocus={vi.fn()}
         photos={photos}
         isPhotosLoading={false}
+        onPhotoClick={vi.fn()}
       />
     );
 
@@ -388,6 +415,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onMunicipalityFocus={vi.fn()}
         photos={photos}
         isPhotosLoading={false}
+        onPhotoClick={vi.fn()}
       />
     );
 
