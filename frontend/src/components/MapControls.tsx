@@ -146,6 +146,7 @@ export const MapControls = ({
         appliedEra={appliedEra}
         onApply={handleApplyLayerSettings}
         onClose={() => setIsLayerDialogOpen(false)}
+        isApplyingLayerSettings={isApplyingLayerSettings}
       />
       <FilterDialog
         isOpen={isFilterDialogOpen}

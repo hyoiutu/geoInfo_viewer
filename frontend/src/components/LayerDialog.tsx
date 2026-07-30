@@ -48,6 +48,13 @@ type LayerDialogProps = {
   onApply: (visibility: LayerVisibility, era: MunicipalityEra) => void;
   /** ダイアログを閉じる（閉じるボタン押下・背景クリック等）ときに呼ばれるコールバック */
   onClose: () => void;
+  /**
+   * 直前の実行に伴う非同期処理（行政区画データ取得・自転車ログ同期）が完了しておらず、
+   * ダイアログがまだ開いたまま待機中かどうか。trueの間は実行ボタンを無効化し、待機中の
+   * 多重実行によってMapWorkspace側のpendingLayerApplyが上書きされ、未完了の非同期処理の
+   * 追跡が失われる不具合を防ぐ（Issue #65 PR#110レビュー対応）
+   */
+  isApplyingLayerSettings: boolean;
 };
 
 /**
@@ -55,7 +62,14 @@ type LayerDialogProps = {
  * 入力中(draft)の表示状態・年代はこのコンポーネント内部で保持し、「実行」を押したときのみonApplyで確定値を通知する。
  * 閉じるボタン等で閉じた場合、入力中の内容は破棄される（Issue #53）
  */
-export const LayerDialog = ({ isOpen, appliedVisibility, appliedEra, onApply, onClose }: LayerDialogProps) => {
+export const LayerDialog = ({
+  isOpen,
+  appliedVisibility,
+  appliedEra,
+  onApply,
+  onClose,
+  isApplyingLayerSettings
+}: LayerDialogProps) => {
   const [draftVisibility, setDraftVisibility] = useState(appliedVisibility);
   const [draftEra, setDraftEra] = useState(appliedEra);
 
@@ -90,7 +104,7 @@ export const LayerDialog = ({ isOpen, appliedVisibility, appliedEra, onApply, on
           <Button onClick={handleReset} variant="ghost" size="sm">
             リセット
           </Button>
-          <Button onClick={handleApply} size="sm">
+          <Button onClick={handleApply} size="sm" disabled={isApplyingLayerSettings}>
             実行
           </Button>
         </>

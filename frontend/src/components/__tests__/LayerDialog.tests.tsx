@@ -22,6 +22,7 @@ const renderDialog = (overrides: Partial<Parameters<typeof LayerDialog>[0]> = {}
       isOpen
       appliedVisibility={DEFAULT_VISIBILITY}
       appliedEra={MUNICIPALITY_ERA_CURRENT}
+      isApplyingLayerSettings={false}
       onApply={vi.fn()}
       onClose={vi.fn()}
       {...overrides}
@@ -78,6 +79,18 @@ describe('LayerDialogに関するテスト', () => {
     expect(onApply).toHaveBeenCalledWith({ ...DEFAULT_VISIBILITY, 'aerial-photo': true }, MUNICIPALITY_ERA_CURRENT);
   });
 
+  test('isApplyingLayerSettingsがtrueの場合、実行ボタンが無効化される', () => {
+    renderDialog({ isApplyingLayerSettings: true });
+
+    expect(screen.getByRole('button', { name: '実行' })).toBeDisabled();
+  });
+
+  test('isApplyingLayerSettingsがfalseの場合、実行ボタンは無効化されない', () => {
+    renderDialog({ isApplyingLayerSettings: false });
+
+    expect(screen.getByRole('button', { name: '実行' })).not.toBeDisabled();
+  });
+
   test('閉じるボタンを押すと、onCloseが呼ばれる（入力中の変更は破棄される）', () => {
     const onClose = vi.fn();
     renderDialog({ onClose });
@@ -97,6 +110,7 @@ describe('LayerDialogに関するテスト', () => {
         isOpen={false}
         appliedVisibility={DEFAULT_VISIBILITY}
         appliedEra={MUNICIPALITY_ERA_CURRENT}
+        isApplyingLayerSettings={false}
         onApply={vi.fn()}
         onClose={vi.fn()}
       />
@@ -106,6 +120,7 @@ describe('LayerDialogに関するテスト', () => {
         isOpen
         appliedVisibility={DEFAULT_VISIBILITY}
         appliedEra={MUNICIPALITY_ERA_CURRENT}
+        isApplyingLayerSettings={false}
         onApply={vi.fn()}
         onClose={vi.fn()}
       />
