@@ -1,7 +1,7 @@
 import { waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import type { CyclingActivity, PassedMunicipality } from '../../api/activitiesApi';
+import type { CyclingActivity, PassedMunicipality, Photo } from '../../api/activitiesApi';
 import { fetchMunicipalityBoundaries } from '../../api/municipalitiesApi';
 import {
   ADMIN_BOUNDARY_FOCUSED_SOURCE_ID,
@@ -84,7 +84,8 @@ const DEFAULT_SELECTION_PROPS = {
   filteredActivities: DEFAULT_FILTERED_ACTIVITIES,
   adminBoundaryEra: 'current' as const,
   focusedMunicipality: DEFAULT_FOCUSED_MUNICIPALITY,
-  onFocusMunicipality: vi.fn()
+  onFocusMunicipality: vi.fn(),
+  photos: []
 };
 
 const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity => ({
@@ -157,6 +158,13 @@ vi.mock('maplibre-gl', () => {
   // BICYCLE_LOG_SUMMARY_MAX_ZOOM(10)より大きいズームレベルをデフォルトとし、
   // 既存のテストは通常ズーム時の挙動として扱う（Issue #61）
   const getZoom = vi.fn(() => 15);
+  // 写真吹き出し（Issue #107）のクラスタリングが表示範囲を必要とするため、世界全体を覆う範囲をデフォルトとする
+  const getBounds = vi.fn(() => ({
+    getWest: () => -180,
+    getSouth: () => -85,
+    getEast: () => 180,
+    getNorth: () => 85
+  }));
   const MapMock = vi.fn().mockImplementation(function MockMap() {
     return {
       remove,
@@ -170,7 +178,8 @@ vi.mock('maplibre-gl', () => {
       queryRenderedFeatures,
       addControl,
       panTo,
-      getZoom
+      getZoom,
+      getBounds
     };
   });
   const MarkerMock = vi.fn().mockImplementation(function MockMarker(options: { element: HTMLElement }) {
@@ -984,6 +993,93 @@ describe('MapViewに関するテスト', () => {
       // 後から地図に追加された方（配列の末尾）がスタートのマーカーであり、DOM上で手前に描画される
       const lastMarker = getMarkerInstances()[getMarkerInstances().length - 1];
       expect(lastMarker.element.innerHTML).toEqual(createStartMarkerElement().element.innerHTML);
+    });
+  });
+
+  describe('写真吹き出し表示に関するテスト（Issue #107）', () => {
+    /** mapInstance.onで登録された'moveend'ハンドラを取り出す */
+    const getMoveEndHandler = (mapInstance: ReturnType<typeof getMapInstance>) => {
+      const call = mapInstance.on.mock.calls.find(([event]: [string]) => event === 'moveend');
+      return call?.[1];
+    };
+
+    const createPhoto = (overrides: Partial<Photo>): Photo => ({
+      id: 1,
+      fileName: 'a.jpg',
+      takenAt: '2026-07-01T00:00:00.000Z',
+      location: { type: 'Point', coordinates: [139.767, 35.681] },
+      ...overrides
+    });
+
+    test('photosが空の場合、マーカーは追加されない', () => {
+      renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} photos={[]} />);
+
+      expect(getMarkerInstances()).toHaveLength(0);
+    });
+
+    test('位置情報を持つ写真がある場合、その位置にサムネイル画像を持つマーカーが表示される', async () => {
+      const photo = createPhoto({
+        id: 42,
+        fileName: 'IMG_42.jpg',
+        location: { type: 'Point', coordinates: [139.767, 35.681] }
+      });
+
+      renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} photos={[photo]} />);
+
+      await waitFor(() => expect(getMarkerInstances()).toHaveLength(1));
+      const marker = getMarkerInstances()[0];
+      expect(marker.lngLat).toEqual([139.767, 35.681]);
+      expect(marker.element.querySelector('img')?.alt).toBe('IMG_42.jpg');
+    });
+
+    test('位置情報を持たない写真は無視される', () => {
+      const photo = createPhoto({ location: null });
+
+      renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} photos={[photo]} />);
+
+      expect(getMarkerInstances()).toHaveLength(0);
+    });
+
+    test('近接する複数の写真は1つのクラスタとしてまとめられ、件数バッジが表示される', async () => {
+      const photos = [
+        createPhoto({ id: 1, location: { type: 'Point', coordinates: [139.767, 35.681] } }),
+        createPhoto({ id: 2, location: { type: 'Point', coordinates: [139.7671, 35.6811] } }),
+        createPhoto({ id: 3, location: { type: 'Point', coordinates: [139.7672, 35.6812] } })
+      ];
+
+      renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} photos={photos} />);
+
+      await waitFor(() => expect(getMarkerInstances()).toHaveLength(1));
+      expect(getMarkerInstances()[0].element.textContent).toBe('3');
+    });
+
+    test('フォーカス解除でphotosが空になると、表示中の吹き出しが全て取り除かれる', async () => {
+      const photo = createPhoto({});
+      const { rerender } = renderWithChakra(
+        <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} photos={[photo]} />
+      );
+      await waitFor(() => expect(getMarkerInstances()).toHaveLength(1));
+      const previousMarkers = getMarkerInstances();
+
+      rerender(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} photos={[]} />);
+
+      await waitFor(() => {
+        for (const marker of previousMarkers) {
+          expect(marker.remove).toHaveBeenCalled();
+        }
+      });
+    });
+
+    test('地図の移動(moveend)が発生すると、現在の表示範囲・ズームレベルで吹き出しが再描画される', async () => {
+      const photo = createPhoto({});
+      renderWithChakra(<MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} photos={[photo]} />);
+      await waitFor(() => expect(getMarkerInstances()).toHaveLength(1));
+      const mapInstance = getMapInstance();
+      mapInstance.getBounds.mockClear();
+
+      getMoveEndHandler(mapInstance)();
+
+      expect(mapInstance.getBounds).toHaveBeenCalledTimes(1);
     });
   });
 

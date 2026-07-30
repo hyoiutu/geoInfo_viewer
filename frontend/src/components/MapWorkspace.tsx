@@ -6,6 +6,7 @@ import { useActivitySelection } from '../hooks/useActivitySelection';
 import { useBackfillProgressFooter } from '../hooks/useBackfillProgressFooter';
 import { useBackfillStatus } from '../hooks/useBackfillStatus';
 import { useCyclingActivities } from '../hooks/useCyclingActivities';
+import { usePhotos } from '../hooks/usePhotos';
 import { type ActivityFilter, DEFAULT_ACTIVITY_FILTER } from '../types/activityFilter';
 import type { LayerVisibility } from '../types/layer';
 import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
@@ -55,6 +56,9 @@ export const MapWorkspace = () => {
   const { activities } = useCyclingActivities(visibility['bicycle-log'], handleCyclingLogSyncComplete);
   const { selectedActivities, focusedActivity, selectActivities, focusActivity, clearFocus, clearSelection } =
     useActivitySelection(activities, filter);
+  // アクティビティパネルの写真表示（Issue #105）・地図上の写真吹き出し表示（Issue #107）の両方が
+  // 同じ写真一覧を必要とするため、ここで1回だけ取得して両方へpropsとして渡す
+  const { photos, isLoading: isPhotosLoading } = usePhotos(focusedActivity?.id ?? null);
 
   const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
 
@@ -106,6 +110,7 @@ export const MapWorkspace = () => {
             focusedMunicipality={focusedMunicipality}
             onFocusMunicipality={setFocusedMunicipality}
             onAdminBoundaryDataApplied={handleAdminBoundaryDataApplied}
+            photos={photos}
           />
           <MapControls
             appliedVisibility={visibility}
@@ -140,6 +145,8 @@ export const MapWorkspace = () => {
         onBackFromList={clearSelection}
         adminBoundaryEra={era}
         onMunicipalityFocus={setFocusedMunicipality}
+        photos={photos}
+        isPhotosLoading={isPhotosLoading}
       />
       <ErrorDialog />
     </Flex>

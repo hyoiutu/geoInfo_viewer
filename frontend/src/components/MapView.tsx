@@ -4,7 +4,7 @@ import { useSetAtom } from 'jotai';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useRef, useState } from 'react';
-import type { CyclingActivity, PassedMunicipality } from '../api/activitiesApi';
+import type { CyclingActivity, PassedMunicipality, Photo } from '../api/activitiesApi';
 import { addErrorAtom } from '../atoms/errorsAtom';
 import { BICYCLE_LOG_SOURCE_ID, BICYCLE_LOG_SUMMARY_SOURCE_ID } from '../constants/bicycleLog';
 import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
@@ -15,8 +15,10 @@ import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
 import {
   applyFocusedMunicipalityLayer,
   applyLayerVisibility,
+  applyPhotoBalloons,
   applySelectionLayers,
   applyStartGoalMarkers,
+  type PhotoBalloonMarkerEntry,
   panToMunicipalityCentroid,
   registerAdminBoundaryClickHandler,
   registerBicycleLogClickHandler,
@@ -32,6 +34,7 @@ import {
   applyAdminBoundaryData,
   getOrFetchMunicipalityBoundaries
 } from '../utils/mapLayerSetup';
+import { buildPhotoClusterIndex, type PhotoClusterIndex } from '../utils/photoBalloonCluster.util';
 
 const OSM_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 const DEFAULT_ZOOM = 12;
@@ -62,6 +65,8 @@ type MapViewProps = {
    * コールバック。レイヤーダイアログのローディング状態解除に使う（Issue #65）
    */
   onAdminBoundaryDataApplied?: () => void;
+  /** フォーカス中のアクティビティの写真一覧（地図上の吹き出し表示用、Issue #107） */
+  photos: Photo[];
 };
 
 /**
@@ -80,7 +85,8 @@ export const MapView = ({
   adminBoundaryEra,
   focusedMunicipality,
   onFocusMunicipality,
-  onAdminBoundaryDataApplied
+  onAdminBoundaryDataApplied,
+  photos
 }: MapViewProps) => {
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
 
@@ -88,6 +94,8 @@ export const MapView = ({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
   const startGoalMarkersRef = useRef<StartGoalMarkerEntry[]>([]);
+  const photoBalloonMarkersRef = useRef<PhotoBalloonMarkerEntry[]>([]);
+  const photoClusterIndexRef = useRef<PhotoClusterIndex | null>(null);
   const historicalBoundariesCacheRef = useRef<Map<MunicipalityEra, FeatureCollection>>(new Map());
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
   // クリックハンドラはマウント時に一度だけ登録するため、最新の値をrefで参照する（クロージャの陳腐化対策）
@@ -153,6 +161,12 @@ export const MapView = ({
           hoverPopupRef.current?.remove();
         }
       );
+      // 写真吹き出しはクラスタリング結果が表示範囲・ズームレベルに依存するため、パン・ズーム操作の
+      // たびに現在のクラスタインデックス（photoClusterIndexRef、写真一覧が変わるたびに再構築される）を
+      // 使って再計算する（Issue #107）
+      map.on('moveend', () => {
+        applyPhotoBalloons(map, photoBalloonMarkersRef, photoClusterIndexRef.current);
+      });
       setIsStyleLoaded(true);
     });
 
@@ -200,6 +214,19 @@ export const MapView = ({
 
     applyStartGoalMarkers(map, startGoalMarkersRef, focusedActivity);
   }, [focusedActivity, isStyleLoaded]);
+
+  // フォーカス中のアクティビティの写真一覧が変化するたびに、クラスタリングインデックスを再構築し、
+  // 現在の表示範囲・ズームレベルで写真吹き出しを再描画する。未フォーカス（photosが空配列）になった
+  // 場合はクラスタリング結果も0件になり、吹き出しが全て消える
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isStyleLoaded) {
+      return;
+    }
+
+    photoClusterIndexRef.current = buildPhotoClusterIndex(photos);
+    applyPhotoBalloons(map, photoBalloonMarkersRef, photoClusterIndexRef.current);
+  }, [photos, isStyleLoaded]);
 
   // layerVisibility・選択中の行政区画年代が変化するたびに各レイヤーの表示/非表示を反映する
   useEffect(() => {

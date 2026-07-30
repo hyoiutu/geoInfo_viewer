@@ -14,6 +14,19 @@
 
 ## 変更履歴
 
+### [2026-07-30] アクティビティフォーカス時に写真を地図上へ吹き出し表示するようにした（Issue #107）
+* **修正の動機・概要**:
+  - 位置情報付きメディア表示機能のうち、地図上の吹き出し表示（Issue #23本文の要望）が未実装のまま残っていた。ユーザーとの相談の結果、フォーカス時に全写真の読み込みを一斉開始し完了したものから順に表示、近接写真はクラスタリングでまとめる、フォーカス解除で全消去、位置情報が無い写真は非表示、という仕様で実装した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `usePhotos`の呼び出しを`ActivityDetailSidebar`内部から`MapWorkspace.tsx`へ持ち上げ、`photos`/`isPhotosLoading`を`MapView`・`ActivityDetailSidebar`の両方へpropsとして渡すよう変更（同じ写真一覧をパネル表示・地図表示で共有するため）。`usePhotos`は`activityId: string | null`を受け付け、`null`時は取得を行わないようにした。
+    - 新規`supercluster`（`@types/supercluster`）依存を追加し、`photoBalloonCluster.util.ts`（`buildPhotoClusterIndex`/`getVisiblePhotoClusters`）でクラスタリングロジックを実装。
+    - 新規`usePhotoThumbnailFallback`フックへ、サムネイル優先・失敗時フルサイズフォールバックのロジックを切り出し、`PhotoGridItem`（Issue #105）・新規`PhotoBalloonThumbnail`の両方から共通利用するようにした（DRY）。
+    - 新規`PhotoBalloonThumbnail`/`PhotoBalloonClusterBadge`（`components/`）・`photoBalloonElement.ts`（`maplibregl.Marker`用のDOM要素組み立て、`startGoalMarkerElement.ts`と同じパターン）・`mapLayerInteraction.ts`の`applyPhotoBalloons`を追加。`MapView.tsx`に`photos` propと、写真変化時・地図のパン/ズーム（`moveend`）時にマーカーを再描画する処理を追加。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`「位置情報付きメディア表示機能」に、地図上の吹き出し表示の挙動（クラスタリング・フォーカス解除時の消去・位置情報が無い写真の扱い）を追記。
+  * **設計書**: `designs/technical_design.md`に新規節「地図上の写真吹き出し表示（Issue #107）」を追加。「未実装」としていた既存記述も実装済みへ更新。
+
 ### [2026-07-30] フルサイズのHEIC写真を事前一括変換しJPEGとして配信するようにした（Issue #106）
 * **修正の動機・概要**:
   - `GET /photos/:id/image`は元サイズの写真を加工せずそのまま返しており、`.heic`写真は多くのブラウザ（Safari以外）がネイティブにデコードできず表示に失敗していた。ユーザーとの相談の結果、リクエストの都度変換するのではなく、事前一括変換（既存のフルサイズアーカイブ内の`.heic`エントリを`.jpg`エントリへ直接置き換え、元のHEICバイト列は保持しない）方式を採用した。

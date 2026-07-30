@@ -152,7 +152,7 @@ root/
 - `MapControls`に4つ目のアイコンボタン（`lucide-react`の`ChartColumn`、aria-label「統計データ」）を追加する。既存のレイヤー・フィルタ・設定アイコンと同じ`IconButton`（`borderRadius="full" shadow="md"`）のスタイルを踏襲する
 
 # 位置情報付きメディア表示機能（写真データ取り込み基盤）
-Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの直接連携ではなくGoogle Takeout（増分エクスポート）＋Google Drive経由の取り込み方式を採用した（詳細な調査経緯・GCP設定はIssue #23のコメント参照）。以下は、Google Drive上のTakeoutエクスポート（zip）から写真のメタデータをバックエンドのDBへ取り込むパイプラインの設計である。写真閲覧機能そのもののうちサイドバーのグリッド表示は実装済み（後述）、地図上の吹き出し表示は未実装である。
+Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの直接連携ではなくGoogle Takeout（増分エクスポート）＋Google Drive経由の取り込み方式を採用した（詳細な調査経緯・GCP設定はIssue #23のコメント参照）。以下は、Google Drive上のTakeoutエクスポート（zip）から写真のメタデータをバックエンドのDBへ取り込むパイプラインの設計である。写真閲覧機能そのもののうちサイドバーのグリッド表示・地図上の吹き出し表示はいずれも実装済み（後述）。
 
 - 取り込みは`POST /photos/ingest`（`PhotosController`、リクエストボディ`{ fileId: string }`）で、ユーザーがブラウザ上のGoogle Picker UIで選択したTakeout zipのGoogle Drive上のfileIdをトリガーとして受け取る想定（Picker UI自体は未実装。現時点ではfileIdを直接指定して動作確認する）
 - 当初は「マスターデータ（Takeout zip）はDriveに置いたまま、表示時に必要になった写真だけをローカルへ遅延キャッシュする」設計方針だったが、実データ検証により1つのTakeout zip（最大2GB）に14年分の写真が撮影時期を問わず分散して含まれることが判明し、この方式では1回の表示のために複数の巨大zipをダウンロードする必要が生じ非現実的と判断した。そのため、取り込み時にTakeout zipの写真を撮影年月ごとに再構成した別zip（月別アーカイブ）へ振り分けてGoogle Drive上に保存し直す方式へ変更した（Issue #23）。取り込みと月別再構成は1つのパイプライン（`PhotoIngestService.ingest`）内で行う
@@ -189,7 +189,7 @@ Issue #23「写真閲覧機能」の実現方式として、Google Photos APIの
   - 各`Image`の`src`は`resolvePhotoImageUrl`（`frontend/src/api/photosApi.ts`）が返す`GET /photos/:id/image`のURLをそのまま指定する。画像はバイナリで返るためJSON用の`fetch`ラッパーは持たず、ブラウザの`<img>`に直接URLを渡して読み込ませる
   - `usePhotos`の`isLoading`（「写真を取得中...」表示の切り替え）は、メタデータ取得（`GET /activities/:id/photos`、撮影日時等のみを返す軽量なDBクエリ）の完了のみを表し、写真の実バイナリ取得（`GET /photos/:id/image`、月別アーカイブzipのダウンロードを伴いうる重い処理）の完了は含まない。当初この2つを区別していなかったため、メタデータ取得完了時点で「取得中...」表示が消えるにもかかわらず、実際に写真が表示されるまでには（月別アーカイブzipが未キャッシュの場合、Google Driveからのダウンロードを伴い）数十秒かかることがあり、ユーザーから「表示準備ができる前にローディング表示が消える」という指摘を受けて改善した（Issue #23フォローアップ）
   - 改善後は、メタデータ取得完了後ただちに写真の枚数分の`PhotoGridItem`（新規、`ActivityDetailSidebar.tsx`）を表示する。各`PhotoGridItem`は`isImageLoaded`（`useState`）で自身の画像の読み込み完了を個別に管理し、未完了の間は`Image`を`visibility="hidden"`にしつつファイル名＋`Spinner`（ChakraUI）を重ねて表示、`Image`の`onLoad`（`onError`時も同様に扱い、読み込み失敗時にスピナーが表示され続けることを防ぐ）で読み込み済みへ切り替える。全件の読み込み完了を待たず、写真ごとに読み込めたものから順に表示される
-- 地図上の吹き出し表示（位置情報をもとにした表示、Issue本文の要望）は本対応の対象外で未実装
+- 地図上の吹き出し表示（位置情報をもとにした表示、Issue本文の要望）は本対応の対象外としたが、Issue #107で実装済み（後述「地図上の写真吹き出し表示（Issue #107）」参照）
 
 ## 写真ローカルフラット化ツール
 Google Takeoutで一括ダウンロードした写真をローカルへ展開すると、アルバム単位・年月単位等でディレクトリが細かくネストされた状態になる。既存写真の一括取り込み（写真ローカルバックフィル、別途対応）は入力としてサブディレクトリの無い1つのフラットなディレクトリを前提とするため、ネストされた展開データをフラット化する前処理ツール`backend/src/photos/flatten-local-photo-directory.ts`（`pnpm --filter backend run flatten:photos-local -- <展開済みディレクトリ> <出力先ディレクトリ>`）を用意した。
@@ -296,3 +296,14 @@ Google Takeoutで一括ダウンロードした写真をローカルへ展開す
   - 進捗管理には、`video_stripped_year_months`のような専用テーブルを新設せず、`photos.file_name`が`.heic`/`.heif`拡張子であること自体を「未処理」の判定基準として使う（`ILike`で大文字小文字を無視して検索）。変換が完了した写真は`file_name`/`archive_path`が`.jpg`へ更新されるため、次回実行時のクエリに自然と現れなくなり、追加のテーブルなしに冪等性を保てる。拡張子だけHEICで実際には別形式のエントリ（変換されずそのまま残る）は次回以降も毎回クエリに現れ続け無駄なダウンロード・再確認が発生するが、手動トリガーのバッチ処理でありコストは小さいため許容する
   - `photos.source_file_id`（月別アーカイブzip）単位でグループ化し、1つのzipにつき1回のダウンロード・アップロードで対象写真をまとめて変換する。変換後のzipは同じ`driveFileId`へ`updateFileContent`で上書きする（動画削除・統合の`strip-videos-and-consolidate-archives.ts`とは異なり、新規ファイル作成＋旧ファイル削除の手順は取らない。複数の元ファイルを統合するわけではなく1つのアーカイブを編集するだけのため、`MonthlyPhotoArchiveService.reorganize`の追記時と同じ「既存ファイルへの上書き」で十分と判断した）
   - 1つのzipの処理に失敗しても、他のzipの処理は継続する（`strip-videos-and-consolidate-archives.ts`と同じ設計）。実行前に必ず`assertHeifConvertAvailable`でheif-convertの可用性を確認する
+
+## 地図上の写真吹き出し表示（Issue #107）
+アクティビティがフォーカスされた時点で、そのアクティビティに紐づく写真（Issue #105と同じ`usePhotos`の取得結果）のサムネイルを地図上のGPS座標へ吹き出しとして表示する。ユーザー確定済みの仕様として、(1) フォーカス時点で全写真の読み込みを一斉に開始し完了したものから順に表示する、(2) 近接する写真はクラスタリングしてまとめる、(3) フォーカス解除時は吹き出しを全て消す、(4) 位置情報を持たない写真は表示しない（撮影日時とアクティビティの軌跡からの位置補完は、軌跡データに時刻情報が無いため見送り）、の4点がある。
+
+- **`usePhotos`の呼び出し元をMapWorkspaceへ集約**: `ActivityDetailSidebar`（パネル表示）と`MapView`（吹き出し表示）の両方が同じ写真一覧を必要とするため、`usePhotos`の呼び出しを`MapWorkspace.tsx`へ持ち上げ、`photos`/`isPhotosLoading`を両コンポーネントへpropsとして渡すよう変更した。`usePhotos`は`activityId: string | null`を受け付けるようになり（未フォーカス時は`null`を渡す）、`null`の場合は取得を行わず即座に空配列・`isLoading: false`を返す。`ActivityDetailSidebar`は内部で保持していた`usePhotos`呼び出しを廃止し、`photos`/`isPhotosLoading`を必須propsとして受け取るだけになった
+- **クラスタリング**: `supercluster`（新規依存追加、型定義は`@types/supercluster`）を使う。`buildPhotoClusterIndex`（`photoBalloonCluster.util.ts`）が、位置情報を持つ写真のみを対象にクラスタリングインデックスを構築する（`PHOTO_BALLOON_CLUSTER_RADIUS_PX`=60px、`PHOTO_BALLOON_CLUSTER_MAX_ZOOM`=20）。`getVisiblePhotoClusters`が、指定した表示範囲(bbox)・ズームレベルで実際に表示すべきクラスタ・個別写真の一覧（`PhotoBalloonPoint[]`）を返す。いずれも純粋関数でMapLibreの`Map`インスタンスに依存しないため、実データに近い座標を使った単体テストで挙動を直接検証できる
+- **マーカー表示**: クラスタ・個別写真いずれも`maplibregl.Marker`（DOM Marker）として表示する。`createPhotoBalloonThumbnailElement`/`createPhotoBalloonClusterElement`（`photoBalloonElement.ts`）が、`startGoalMarkerElement.ts`の`createMarkerElement`と同じパターン（`react-dom/client`の独立したReact rootを`flushSync`で同期マウントし、`maplibregl.Marker`の`element`オプションへ渡す）でDOM要素を組み立てる。マウント先のReact rootはアプリ本体の`ChakraProvider`配下に含まれないため、`PhotoBalloonThumbnail`・`PhotoBalloonClusterBadge`（いずれも`components/`配下）はChakra UIコンポーネントを使わず、`startGoalMarkerElement.ts`と同様プレーンなDOM要素・インラインstyleとして実装した（Chakraコンポーネントを使うと`ChakraProvider`のcontextが無くエラーになる）
+  - `PhotoBalloonThumbnail`は単一写真のサムネイルを円形のバッジとして表示する。サムネイル優先・失敗時にフルサイズへフォールバックするロジックは`usePhotoThumbnailFallback`（新規フック）へ切り出し、`PhotoGridItem`（アクティビティパネルのグリッド表示、Issue #105）と共通化した（DRY）。読み込み完了まで`visibility: hidden`にする点も`PhotoGridItem`と同じで、これにより「読み込みが完了した写真から順に表示」という要求を、進捗管理を別途実装せず`<img>`の`onLoad`だけで自然に満たしている
+  - `PhotoBalloonClusterBadge`はクラスタにまとまっている写真の件数のみを円形バッジで表示する（個別のサムネイルは表示しない）
+- **`applyPhotoBalloons`**（`mapLayerInteraction.ts`）が、`markersRef`が保持する直前のマーカー・React rootを全て`remove()`/`unmount()`した後、`clusterIndex`（null時は何も追加せず終了）から`map.getBounds()`・`map.getZoom()`で現在の表示範囲・ズームレベルにおけるクラスタ・個別写真を求め、新しいマーカーとして追加する。`applyStartGoalMarkers`と同じ「差分更新ではなく毎回全消去→再構築」の設計を踏襲する（1アクティビティあたりの写真件数は多くても数十件程度のため軽量）
+- **`MapView.tsx`側の結線**: 新規`photos: Photo[]` propを追加。`photoClusterIndexRef`（`photos`が変わるたびに`buildPhotoClusterIndex`で再構築）・`photoBalloonMarkersRef`の2つの`useRef`を持つ。`photos`を依存配列に含む`useEffect`が、インデックス再構築後ただちに現在の表示範囲で`applyPhotoBalloons`を呼ぶ（フォーカス変化・フォーカス解除の反映はこの経路）。加えて、地図のパン・ズーム操作でクラスタリング結果自体が変わりうるため、マウント時に一度だけ`map.on('moveend', ...)`を登録し、`photoClusterIndexRef.current`（refのため常に最新のインデックスを参照する、クロージャの陳腐化対策は既存の他ハンドラと同じパターン）を使って`applyPhotoBalloons`を再実行する
