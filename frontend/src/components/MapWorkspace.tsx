@@ -29,6 +29,15 @@ type PendingLayerApply = {
 };
 
 /**
+ * `pendingLayerApply`のうち指定フィールドのみを完了(false)にする更新関数を返す。
+ * 行政区画データ取得・自転車ログ同期のいずれの完了ハンドラからも共通で使う（Issue #65レビュー対応）
+ */
+const clearPendingLayerApplyFlag =
+  (field: keyof PendingLayerApply) =>
+  (current: PendingLayerApply | null): PendingLayerApply | null =>
+    current ? { ...current, [field]: false } : current;
+
+/**
  * 地図・Map Controls・各種ダイアログを組み合わせたアプリのメイン画面。
  * 各種状態のうち「確定済みの結果」（レイヤー表示状態・フィルタ条件・アクティビティの選択状態）のみをここで一元管理し、
  * 各コンポーネントへpropsとして渡す。ダイアログの開閉・入力中(draft)の内容はMapControls・各Dialogコンポーネント自身が
@@ -48,7 +57,7 @@ export const MapWorkspace = () => {
   const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =
     useBackfillProgressFooter(backfillStatus);
   const { activities } = useCyclingActivities(visibility['bicycle-log'], () =>
-    setPendingLayerApply((current) => (current ? { ...current, waitingForCyclingLog: false } : current))
+    setPendingLayerApply(clearPendingLayerApplyFlag('waitingForCyclingLog'))
   );
   const { selectedActivities, focusedActivity, selectActivities, focusActivity, clearFocus, clearSelection } =
     useActivitySelection(activities, filter);
@@ -71,7 +80,7 @@ export const MapWorkspace = () => {
   };
 
   const handleAdminBoundaryDataApplied = () => {
-    setPendingLayerApply((current) => (current ? { ...current, waitingForAdminBoundary: false } : current));
+    setPendingLayerApply(clearPendingLayerApplyFlag('waitingForAdminBoundary'));
   };
 
   const handleApplyLayerSettings = (nextVisibility: LayerVisibility, nextEra: MunicipalityEra) => {
