@@ -76,6 +76,7 @@ description: 【試作段階】GitHub PRに対して「レビュー→レビュ�
 ## 🚫 制約・注意点
 
 - 本スキルは`pr-review-respond`スキルを内部的に複数回、自律モードとして呼び出す。AGENTS.md記載のpr-review-respond自律モードのルール（1コメント=1コミット、auto-commit経由でのコミット、検証省略禁止）はラウンドごとにそのまま適用される。
+- **複数PRへ横展開する場合の前提**: `pr-review-respond`は手順0で対象PRのブランチを専用のgit worktreeへチェックアウトし、メインの作業ディレクトリを切り替えない設計になっている（[pr-review-respondのSKILL.md](../pr-review-respond/SKILL.md)参照）。これにより、`pr-review-rally`自身・`multi-agent-review`のスキル定義ファイルがメインの作業ディレクトリ上に存在し続けるため、これらのスキルがどのブランチに存在するか（mainへマージ済みかどうか）に関わらず、オープンな複数PRへ連続してこのスキルを実行してよい。
 - **force push（`--force`/`-f`）はいかなる場合も絶対に禁止。** 通常のpushのみ許可される（branch_rules.md参照）。
 - `multi-agent-review`は【試作段階】のスキルであり、その既知の限界（観点間のアンカリング等、[multi-agent-reviewのSKILL.md](../multi-agent-review/SKILL.md)参照）が1ラウンド目の指摘にもそのまま及ぶ。
 - 3ラウンドを超えて指摘が残っていても、4ラウンド目以降を自動で継続してはならない。必ずユーザーへ報告し判断を仰ぐ。

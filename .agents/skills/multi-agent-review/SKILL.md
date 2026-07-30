@@ -19,7 +19,7 @@ description: 【試作段階】design_principles/react_rules/test_rules/typescri
 
 ### 1. レビュー対象の特定
 - ユーザーの指示からレビュー対象を特定する。
-  - PR番号が指定された場合: GitHub MCP（`pull_request_read`）またはローカルの`gh pr diff <PR番号>`で差分を取得する。
+  - PR番号が指定された場合: GitHub MCP（`pull_request_read`）またはローカルの`gh pr diff <PR番号>`で差分を取得する。**このとき対象PRのブランチをメインの作業ディレクトリで`git checkout`しない**（[pr-review-respondスキル](../pr-review-respond/SKILL.md)の手順0と同じ理由。作業ディレクトリの状態・スキル定義ファイル自体を保持したまま行う）。差分取得はリモート参照だけで完結するため、ローカルにチェックアウトする必要は無い。
   - PR番号の指定が無い場合: カレントブランチと、その派生元ブランチ（通常`main`）との差分（`git diff <派生元>...HEAD`）を対象とする。派生元が不明な場合はユーザーに確認する。
 
 ### 2. 5観点レビューエージェントの起動
