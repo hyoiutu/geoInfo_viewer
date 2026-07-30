@@ -7,6 +7,10 @@ import type { LayerVisibility } from '../../types/layer';
 import { MUNICIPALITY_ERA_CURRENT } from '../../types/municipalityEra';
 import { MapControls } from '../MapControls';
 
+// 「一定時間待っても発生しないこと」を確認するためのwaitForタイムアウト（ミリ秒）。
+// 短時間で確実に打ち切りたいだけであり、実際の非同期処理の所要時間とは無関係な値のため定数化する
+const ASSERT_NOT_YET_TIMEOUT_MS = 200;
+
 const DEFAULT_VISIBILITY: LayerVisibility = {
   'osm-poi': true,
   'osm-road': true,
@@ -94,7 +98,7 @@ describe('MapControlsに関するテスト', () => {
       rerender(buildControls({ onApplyLayerSettings, isApplyingLayerSettings: true }));
       await expect(
         waitFor(() => expect(screen.queryByRole('checkbox', { name: '道路' })).not.toBeInTheDocument(), {
-          timeout: 200
+          timeout: ASSERT_NOT_YET_TIMEOUT_MS
         })
       ).rejects.toThrow();
 
@@ -120,7 +124,7 @@ describe('MapControlsに関するテスト', () => {
       rerender(buildControls({ onApplyLayerSettings, isApplyingLayerSettings: true }));
       await expect(
         waitFor(() => expect(screen.queryByRole('checkbox', { name: '自転車ログ' })).not.toBeInTheDocument(), {
-          timeout: 200
+          timeout: ASSERT_NOT_YET_TIMEOUT_MS
         })
       ).rejects.toThrow();
 

@@ -26,6 +26,10 @@ vi.mock('../../api/municipalitiesApi', () => ({
   fetchMunicipalityBoundaries: vi.fn().mockResolvedValue({ type: 'FeatureCollection', features: [] })
 }));
 
+// 「ダイアログがまだ閉じていないこと」を短時間だけ確認するためのwaitForタイムアウト（ミリ秒）。
+// 実際の非同期処理の所要時間とは無関係な値のため定数化する（PR #110レビュー対応）
+const DIALOG_STILL_OPEN_CHECK_TIMEOUT_MS = 200;
+
 const FIXTURE_STYLE_LAYERS = [
   { id: 'background', type: 'background' },
   { id: 'road_motorway', type: 'line', 'source-layer': 'transportation' },
@@ -279,7 +283,9 @@ describe('MapWorkspaceに関するテスト', () => {
       await waitFor(() => expect(syncCyclingActivities).toHaveBeenCalledTimes(1));
       expect(getByTestId('map-workspace-root')).toHaveStyle({ cursor: 'wait' });
       await expect(
-        waitFor(() => expect(getByRole('checkbox', { name: '自転車ログ' })), { timeout: 200 })
+        waitFor(() => expect(getByRole('checkbox', { name: '自転車ログ' })), {
+          timeout: DIALOG_STILL_OPEN_CHECK_TIMEOUT_MS
+        })
       ).resolves.toBeTruthy();
 
       resolveSync?.();
@@ -312,7 +318,7 @@ describe('MapWorkspaceに関するテスト', () => {
 
       await waitFor(() => expect(fetchMunicipalityBoundaries).toHaveBeenCalledWith('2000-10-01'));
       await expect(
-        waitFor(() => expect(getByRole('checkbox', { name: '道路' })), { timeout: 200 })
+        waitFor(() => expect(getByRole('checkbox', { name: '道路' })), { timeout: DIALOG_STILL_OPEN_CHECK_TIMEOUT_MS })
       ).resolves.toBeTruthy();
 
       for (const resolve of pendingResolvers) {
