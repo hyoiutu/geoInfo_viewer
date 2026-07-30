@@ -1,8 +1,8 @@
 import 'dotenv/config';
-import { appendFileSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { assertHeifConvertAvailable } from './heic-conversion.util';
-import { MAX_READABLE_FILE_SIZE_BYTES, scanLocalPhotoDirectory } from './local-photo-directory.util';
+import { isFileTooLargeToRead, scanLocalPhotoDirectory } from './local-photo-directory.util';
 import { isLocalFileVideo } from './local-video-detection.util';
 import { extractMetadataFromExif } from './takeout-metadata.util';
 import { generateThumbnailBuffer } from './thumbnail-generation.util';
@@ -16,9 +16,10 @@ const log = (message: string): void => {
 };
 
 /**
- * 動画ファイル1件から、削除ログ記録用の撮影日時をEXIFから抽出する。`MAX_READABLE_FILE_SIZE_BYTES`
- * （2GiB）を超える動画は読み込み自体を試みない（`extractMetadataFromExif`のNode.js Buffer上限対策、
- * `backfill-photos-from-local.ts`と同じ制約）。EXIFが無い・パース失敗の場合も含め、いずれの場合も
+ * 動画ファイル1件から、削除ログ記録用の撮影日時をEXIFから抽出する。`isFileTooLargeToRead`
+ * （2GiB超過判定、`local-photo-directory.util.ts`）に該当する動画は読み込み自体を試みない
+ * （`extractMetadataFromExif`のNode.js Buffer上限対策、`backfill-photos-from-local.ts`と
+ * 同じ制約を共通のutilとして参照）。EXIFが無い・パース失敗の場合も含め、いずれの場合も
  * ベストエフォートでnullを返し、削除処理自体は継続する（Issue #104の検討事項「結論」に基づき、
  * 削除ログの撮影日時はEXIF撮影日時のみを使う。JSONサイドカーは動画に対して用意されないことが多く、
  * また削除自体は動画判定ロジックのみで完結すべきため参照しない）
@@ -26,7 +27,7 @@ const log = (message: string): void => {
  * @returns 抽出できた撮影日時。抽出できない場合はnull
  */
 const resolveVideoTakenAtForLog = async (absolutePath: string): Promise<Date | null> => {
-  if (statSync(absolutePath).size > MAX_READABLE_FILE_SIZE_BYTES) {
+  if (isFileTooLargeToRead(absolutePath)) {
     return null;
   }
   const metadata = await extractMetadataFromExif(readFileSync(absolutePath));

@@ -1,8 +1,14 @@
-import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { ftruncateSync, mkdtempSync, openSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { createLazyPhotoData, readLocalPhotoData, scanLocalPhotoDirectory } from '../local-photo-directory.util';
+import {
+  createLazyPhotoData,
+  isFileTooLargeToRead,
+  MAX_READABLE_FILE_SIZE_BYTES,
+  readLocalPhotoData,
+  scanLocalPhotoDirectory
+} from '../local-photo-directory.util';
 
 describe('scanLocalPhotoDirectoryに関するテスト', () => {
   let directoryPath: string;
@@ -116,5 +122,35 @@ describe('createLazyPhotoDataに関するテスト', () => {
     unlinkSync(join(directoryPath, 'IMG_1.jpg'));
 
     expect(() => result.data).toThrow();
+  });
+});
+
+describe('isFileTooLargeToReadに関するテスト（Issue #104レビュー対応。backfill-photos-from-local.ts・strip-videos-and-generate-thumbnails-locally.tsで重複していた2GiB超過判定を共通化）', () => {
+  let directoryPath: string;
+
+  beforeEach(() => {
+    directoryPath = mkdtempSync(join(tmpdir(), 'local-photo-directory-util-tests-'));
+  });
+
+  afterEach(() => {
+    rmSync(directoryPath, { recursive: true, force: true });
+  });
+
+  test('ファイルサイズがMAX_READABLE_FILE_SIZE_BYTES以下の場合、falseを返す', () => {
+    const filePath = join(directoryPath, 'IMG_1.jpg');
+    writeFileSync(filePath, 'jpeg-binary');
+
+    expect(isFileTooLargeToRead(filePath)).toBe(false);
+  });
+
+  test('ファイルサイズがMAX_READABLE_FILE_SIZE_BYTESを超える場合、trueを返す', () => {
+    const filePath = join(directoryPath, 'HUGE_VIDEO.mp4');
+    // 実際に2GiB超のファイルを作ると実行が重くなるため、疎な(sparse)ファイルとして
+    // 論理サイズだけを2GiB超に設定する（ディスク上の実使用量は増えない）
+    writeFileSync(filePath, Buffer.alloc(0));
+    const fileDescriptor = openSync(filePath, 'r+');
+    ftruncateSync(fileDescriptor, MAX_READABLE_FILE_SIZE_BYTES + 1);
+
+    expect(isFileTooLargeToRead(filePath)).toBe(true);
   });
 });
