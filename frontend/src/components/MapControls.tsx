@@ -62,6 +62,7 @@ export const MapControls = ({
 
   // 直前に適用中だった状態を覚えておき、true→falseの変化を検知する（Issue #65）
   const wasApplyingLayerSettingsRef = useRef(isApplyingLayerSettings);
+
   useEffect(() => {
     if (wasApplyingLayerSettingsRef.current && !isApplyingLayerSettings) {
       setIsLayerDialogOpen(false);
