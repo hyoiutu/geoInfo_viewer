@@ -112,6 +112,35 @@ const filePath = path.join(dir, file);
 
 ---
 
+# 同じ問題領域の既存実装が採用した設計判断（特に過去の事故を教訓にしたもの）を確認せず、より単純な旧世代のパターンへ回帰しない
+
+NG
+
+```typescript
+// 新規バッチ: 月別アーカイブzip(数GB〜十数GBになりうる)全体をBufferとしてメモリへロードする
+const zipBuffer = await googleDriveApiClient.downloadFile(accessToken, sourceFileId);
+// ...Buffer全体を編集... 
+await googleDriveApiClient.updateFileContent(accessToken, sourceFileId, convertedZipBuffer);
+```
+
+OK
+
+```typescript
+// 既存の類似バッチ(generate-thumbnail-archives.ts等)が、同じ「数GB〜十数GBになりうる
+// 月別アーカイブzipを1プロセス内でループ処理する」という問題領域で既にOOM事故(Issue #99)を
+// 教訓にストリーミング方式へ切り替えているため、新規バッチも同じ方式を踏襲する
+await googleDriveApiClient.downloadFileToPath(accessToken, sourceFileId, sourcePath);
+// ...1エントリ分のみをメモリへ保持しながらストリーミングで変換...
+await googleDriveApiClient.uploadFileFromPath(accessToken, sourceFileId, destPath);
+```
+
+新しいバッチ処理・スクリプトを実装する際、既存コードに同じ問題領域（同じ種類・規模のデータを扱う処理）を扱う実装が既に存在する場合は、その実装が現在の設計へたどり着いた経緯（TSDocコメント・CHANGELOG.md・関連Issue）を確認すること。特に、一見遠回りに見える実装（Buffer一括処理ではなくストリーミング処理等）が、過去の実データでの障害（OOM等）を踏まえて意図的に選ばれている場合、新規実装で「シンプルだから」と一見素直に見える旧世代のパターン（例: Buffer全体を読み書きする素朴なAPI）へ回帰すると、既に解決済みだったはずの障害を再発させる恐れがある。
+
+- 車輪の再発明を避ける原則（上記）が「既存ライブラリ・確立されたアルゴリズムを再実装しない」ことを扱うのに対し、本項目は「同一プロジェクト内の既存実装が到達した設計判断（特にトレードオフの結果）を再検討せず古い形へ後退しない」ことを扱う、視点の異なる教訓である。
+- **教訓**: PR #116（Issue #106、フルサイズHEIC事前一括変換）のレビューで、新規バッチ`convert-heic-photos-to-jpeg.ts`が`downloadFile`/`updateFileContent`（Buffer全体をメモリへ載せる方式）を使っていたが、同じ「月別アーカイブzip全体を1プロセス内でループ処理する」問題領域を扱う`generate-thumbnail-archives.ts`は、Issue #99のOOM事故（16GB機で16.6GB単一zipの処理に失敗）を教訓に既に`downloadFileToPath`/`uploadFileFromPath`（ストリーミング方式）へ切り替え済みだった、という指摘を受けた（2026-07-31）。実装時に「同じパターンを採用した」とPR説明文に書きつつも、実際には参照先の最新実装（ストリーミング版）ではなく初期段階のBuffer版の発想で実装してしまっていた。
+
+---
+
 # 割れ窓の法則を避ける: 小さな問題（エラーや警告）を放置しない
 
 NG
