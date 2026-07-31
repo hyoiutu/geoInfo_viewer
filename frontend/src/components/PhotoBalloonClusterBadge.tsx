@@ -19,6 +19,8 @@ type PhotoBalloonClusterBadgeProps = {
  */
 export const PhotoBalloonClusterBadge = ({ photoCount }: PhotoBalloonClusterBadgeProps) => (
   <div
+    aria-label={`${photoCount}件の写真`}
+    role="img"
     style={{
       width: PHOTO_BALLOON_CLUSTER_BADGE_SIZE_PX,
       height: PHOTO_BALLOON_CLUSTER_BADGE_SIZE_PX,

@@ -9,4 +9,10 @@ describe('PhotoBalloonClusterBadgeに関するテスト（Issue #107）', () => 
 
     expect(screen.getByText('5')).toBeInTheDocument();
   });
+
+  test('スクリーンリーダー向けに件数を含むaria-labelを持つ', () => {
+    renderWithChakra(<PhotoBalloonClusterBadge photoCount={5} />);
+
+    expect(screen.getByLabelText('5件の写真')).toBeInTheDocument();
+  });
 });
