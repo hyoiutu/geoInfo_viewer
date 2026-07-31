@@ -41,7 +41,12 @@ const log = (message: string): void => {
  * 1プロセス内でループ処理する本スクリプトでも再発させるリスクがあるため（PR #116レビュー対応）。
  *
  * 実行前に必ず`assertHeifConvertAvailable`でheif-convertの可用性を確認する
- * （確認に失敗した場合の事故防止の理由は`heic-conversion.util.ts`のTSDoc参照）
+ * （確認に失敗した場合の事故防止の理由は`heic-conversion.util.ts`のTSDoc参照）。
+ *
+ * Drive側のzip上書き成功後にDB更新（`photoRepository.save`）が失敗すると、Driveのエントリ名は
+ * 既に`.jpg`へ変わっているのにDBは旧`.heic`パスを保持したままになり、次回実行時に対象パスが
+ * zip内に見つからず静かにスキップされ続ける恒久的な不整合になりうる（PR #116レビュー対応）。
+ * この失敗は専用のtry/catchで検出し、手動修正に使えるパス対応表を添えてCRITICALログを残す
  */
 const convertHeicPhotosToJpeg = async (): Promise<void> => {
   assertHeifConvertAvailable();
@@ -98,7 +103,25 @@ const convertHeicPhotosToJpeg = async (): Promise<void> => {
           photo.archivePath = entry.archivePath;
           return photo;
         });
-        await photoRepository.save(updatedPhotos);
+
+        try {
+          await photoRepository.save(updatedPhotos);
+        } catch (saveError) {
+          // Drive側のzip上書き(直前のuploadFileFromPath)は既に成功しているため、ここで例外を
+          // 単に伝播させるだけだと、次回実行時に`heicPhotos`検出クエリ(photos.file_nameが
+          // 引き続き.heicのまま)には該当写真が含まれ続けるにもかかわらず、
+          // convertHeicArchiveEntriesStreamingは(Drive側で既にリネーム済みのため)対象パスを
+          // zip内に見つけられず「対象パスが存在しない」正常系として静かにスキップし続け、
+          // 恒久的に検出不能なDrive/DB不整合になってしまう（PR #116レビュー対応）。
+          // 通常のエラーログでは埋もれてしまうため、手動でのDB修正に使える変換前後のパス
+          // 対応表を明示したCRITICALログを残してから、アーカイブ単位の失敗として再送出する
+          log(
+            `[${sourceFileId}] CRITICAL: Drive上のzip更新(${converted.length}件)は成功しましたが、DB更新に失敗しました。手動でのDB修正が必要です。対応表(旧パス -> 新パス): ${converted
+              .map((entry) => `${entry.originalArchivePath} -> ${entry.archivePath}`)
+              .join(', ')}`
+          );
+          throw saveError;
+        }
       }
 
       convertedCount += converted.length;

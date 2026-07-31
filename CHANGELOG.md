@@ -14,6 +14,16 @@
 
 ## 変更履歴
 
+### [2026-07-31] PR #116のレビュー対応としてDrive更新後のDB更新失敗をCRITICALログで明示するようにした（Issue #106）
+* **修正の動機・概要**:
+  - PR #116のレビューで、`convert-heic-photos-to-jpeg.ts`が`uploadFileFromPath`（Drive側zip上書き）成功後に`photoRepository.save`（DB更新）が失敗すると、Drive側は既に`.jpg`へリネーム済みなのにDBは旧`.heic`パスを保持したままになり、次回実行時に`convertHeicArchiveEntriesStreaming`が対象パスをzip内に見つけられず「対象パスが存在しない」正常系として静かにスキップし続け、恒久的に検出不能な不整合になるとの指摘を受けた。DB更新を先に行う順序へ入れ替えても同種の逆向きの不整合が生じ根本解決にならないため、`save`失敗を専用のtry/catchで検出し、手動修正に使えるパス対応表を添えたCRITICALログを残してから再送出するようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `convert-heic-photos-to-jpeg.ts`: `photoRepository.save`を専用のtry/catchで囲み、失敗時はDrive側は更新済みだがDBが追随できていない旨と変換前後のパス対応表をログへ出力してから再送出するようにした（アーカイブ単位の失敗として`failedArchiveIds`にも引き続き記録される）。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部実装の変更のみで、ユーザーから見た挙動に変化はないため）。
+  * **設計書**: `designs/technical_design.md`の「フルサイズ写真のHEIC事前一括変換」節に、この対策の内容を追記した。
+
 ### [2026-07-31] PR #116のレビュー対応としてフルサイズHEIC変換パイプラインをディスク経由のストリーミング方式へ変更した（Issue #106）
 * **修正の動機・概要**:
   - PR #116のレビューで、`convert-heic-photos-to-jpeg.ts`が`GoogleDriveApiClient.downloadFile`/`updateFileContent`で月別アーカイブzip全体をBufferとしてメモリへ載せていた点について、既存アーカイブは数GB〜十数GBになりうり、`generate-thumbnail-archives.ts`がまさに同種のバッチでOOM事故（Issue #99）を教訓にストリーミング方式へ切り替えた経緯と矛盾するとの指摘を受けた。同種のOOMリスクを解消するため、ダウンロード・変換・アップロードの全経路をディスク経由のストリーミングへ変更した。
