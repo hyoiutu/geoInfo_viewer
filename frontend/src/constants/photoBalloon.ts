@@ -12,3 +12,5 @@ export const PHOTO_BALLOON_CLUSTER_BADGE_SIZE_PX = 32;
  * 対象外としてここに直接定義する（`constants/startGoalMarkers.ts`と同じ理由・同じ回避策。PR #117レビュー対応）
  */
 export const PHOTO_BALLOON_CLUSTER_BADGE_COLOR = 'var(--chakra-colors-blue-500)';
+/** クラスタバッジの件数テキストのフォントサイズ（px） */
+export const PHOTO_BALLOON_CLUSTER_BADGE_FONT_SIZE_PX = 14;
