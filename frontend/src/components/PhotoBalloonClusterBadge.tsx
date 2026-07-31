@@ -1,4 +1,4 @@
-import { PHOTO_BALLOON_CLUSTER_BADGE_SIZE_PX } from '../constants/photoBalloon';
+import { PHOTO_BALLOON_CLUSTER_BADGE_COLOR, PHOTO_BALLOON_CLUSTER_BADGE_SIZE_PX } from '../constants/photoBalloon';
 
 /** PhotoBalloonClusterBadgeのprops */
 type PhotoBalloonClusterBadgeProps = {
@@ -22,7 +22,7 @@ export const PhotoBalloonClusterBadge = ({ photoCount }: PhotoBalloonClusterBadg
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'var(--chakra-colors-blue-500, #3182ce)',
+      background: PHOTO_BALLOON_CLUSTER_BADGE_COLOR,
       color: 'white',
       border: '2px solid white',
       boxShadow: '0 0 4px rgba(0, 0, 0, 0.5)',
