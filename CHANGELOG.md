@@ -14,6 +14,19 @@
 
 ## 変更履歴
 
+### [2026-07-31] PR #116のレビュー対応としてフルサイズHEIC変換パイプラインをディスク経由のストリーミング方式へ変更した（Issue #106）
+* **修正の動機・概要**:
+  - PR #116のレビューで、`convert-heic-photos-to-jpeg.ts`が`GoogleDriveApiClient.downloadFile`/`updateFileContent`で月別アーカイブzip全体をBufferとしてメモリへ載せていた点について、既存アーカイブは数GB〜十数GBになりうり、`generate-thumbnail-archives.ts`がまさに同種のバッチでOOM事故（Issue #99）を教訓にストリーミング方式へ切り替えた経緯と矛盾するとの指摘を受けた。同種のOOMリスクを解消するため、ダウンロード・変換・アップロードの全経路をディスク経由のストリーミングへ変更した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - 新規`convert-heic-archive-entries-streaming.util.ts`: `convertHeicArchiveEntriesStreaming`を追加。ディスク上の月別アーカイブzipを`zip-streaming.util.ts`（`generate-thumbnail-archive-streaming.util.ts`等と共通）でエントリ単位に逐次読み書きし、1エントリ分（数MB程度）のみをメモリへ保持する。ファイル名衝突を見逃さないよう、変換前に全エントリ名を収集する2パス構成にした。
+    - 削除: `convert-heic-archive-entries.util.ts`（Buffer全体をメモリへ載せるAdmZip版、上記に置き換え不要となったため削除）。
+    - `convert-heic-photos-to-jpeg.ts`: `downloadFile`/`updateFileContent`（Buffer版）から`downloadFileToPath`/`uploadFileFromPath`（ストリーミング版）へ変更。ダウンロード・変換後のzipはアーカイブごとの一時作業ディレクトリ（`mkdtempSync`）に保持し、処理後に必ず削除する（`generate-thumbnail-archives.ts`と同じパターン）。
+    - `heic-conversion.util.ts`: TSDocのファイル参照を新ファイル名へ更新。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部実装の変更のみで、ユーザーから見た挙動に変化はないため）。
+  * **設計書**: `designs/technical_design.md`の「フルサイズ写真のHEIC事前一括変換」節を、ストリーミング方式への変更内容で更新した。
+
 ### [2026-07-30] フルサイズのHEIC写真を事前一括変換しJPEGとして配信するようにした（Issue #106）
 * **修正の動機・概要**:
   - `GET /photos/:id/image`は元サイズの写真を加工せずそのまま返しており、`.heic`写真は多くのブラウザ（Safari以外）がネイティブにデコードできず表示に失敗していた。ユーザーとの相談の結果、リクエストの都度変換するのではなく、事前一括変換（既存のフルサイズアーカイブ内の`.heic`エントリを`.jpg`エントリへ直接置き換え、元のHEICバイト列は保持しない）方式を採用した。

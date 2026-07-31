@@ -1,12 +1,14 @@
 import 'dotenv/config';
-import { writeSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, ILike } from 'typeorm';
 import { createDataSourceOptions } from '../database/database.config';
 import { GoogleDriveApiClient } from '../google-drive/google-drive-api.client';
 import { GoogleDriveAuthService } from '../google-drive/google-drive-auth.service';
-import { convertHeicArchiveEntries } from './convert-heic-archive-entries.util';
+import { convertHeicArchiveEntriesStreaming } from './convert-heic-archive-entries-streaming.util';
 import { PhotoEntity } from './entities/photo.entity';
 import { assertHeifConvertAvailable } from './heic-conversion.util';
 
@@ -30,6 +32,14 @@ const log = (message: string): void => {
  * `photos.source_file_id`（月別アーカイブzip）単位でグループ化し、1つのzipにつき1回のダウンロード・
  * アップロードで対象写真をまとめて変換する。1つのzipの処理に失敗しても、他のzipの処理は継続する
  * （`strip-videos-and-consolidate-archives.ts`と同じ設計）。
+ *
+ * アーカイブのダウンロード・変換・アップロードは`downloadFileToPath`/`convertHeicArchiveEntriesStreaming`/
+ * `uploadFileFromPath`によりディスク経由のストリーミングで行い、アーカイブ全体を同時にメモリへ
+ * 保持しない。既存アーカイブは月合計サイズが数GB〜十数GBになりうり、`downloadFile`/`updateFileContent`
+ * のようにBuffer全体をメモリへ載せる方式では、`generate-thumbnail-archives.ts`がストリーミング方式へ
+ * 切り替える契機となったOOM事故（Issue #99、16GB機で16.6GB単一zipの処理に失敗）を、複数アーカイブを
+ * 1プロセス内でループ処理する本スクリプトでも再発させるリスクがあるため（PR #116レビュー対応）。
+ *
  * 実行前に必ず`assertHeifConvertAvailable`でheif-convertの可用性を確認する
  * （確認に失敗した場合の事故防止の理由は`heic-conversion.util.ts`のTSDoc参照）
  */
@@ -61,19 +71,22 @@ const convertHeicPhotosToJpeg = async (): Promise<void> => {
   const failedArchiveIds: string[] = [];
 
   for (const [sourceFileId, photos] of photosBySourceFileId) {
+    // ダウンロード・変換後のzipは、このアーカイブの処理が終わるまでの作業ディレクトリへ一時的に
+    // 保存する。処理の成否に関わらず、次のアーカイブへ進む前に必ず削除する
+    // （generate-thumbnail-archives.tsと同じパターン、Issue #99・#106）
+    const workDir = mkdtempSync(join(tmpdir(), `convert-heic-${sourceFileId}-`));
     try {
       const accessToken = await googleDriveAuthService.getAccessToken();
-      const zipBuffer = await googleDriveApiClient.downloadFile(accessToken, sourceFileId);
+
+      const sourcePath = join(workDir, 'source.zip');
+      await googleDriveApiClient.downloadFileToPath(accessToken, sourceFileId, sourcePath);
 
       const targetArchivePaths = photos.map((photo) => photo.archivePath);
-      const {
-        zipBuffer: convertedZipBuffer,
-        converted,
-        failed
-      } = convertHeicArchiveEntries(zipBuffer, targetArchivePaths);
+      const destPath = join(workDir, 'converted.zip');
+      const { converted, failed } = await convertHeicArchiveEntriesStreaming(sourcePath, destPath, targetArchivePaths);
 
       if (converted.length > 0) {
-        await googleDriveApiClient.updateFileContent(accessToken, sourceFileId, convertedZipBuffer);
+        await googleDriveApiClient.uploadFileFromPath(accessToken, sourceFileId, destPath);
 
         const photoByArchivePath = new Map(photos.map((photo) => [photo.archivePath, photo]));
         const updatedPhotos = converted.map((entry) => {
@@ -101,6 +114,8 @@ const convertHeicPhotosToJpeg = async (): Promise<void> => {
       // （strip-videos-and-consolidate-archives.tsと同じ設計、Issue #99）
       console.error(`[${sourceFileId}] 処理に失敗したため、このアーカイブをスキップして次へ進みます:`, error);
       failedArchiveIds.push(sourceFileId);
+    } finally {
+      rmSync(workDir, { recursive: true, force: true });
     }
   }
 

@@ -34,7 +34,7 @@ const looksLikeHeicContainer = (buffer: Buffer): boolean => {
  * ファイル名の拡張子が.heic/.heifで、かつ中身も実際にISOBMFFのftypボックスから始まっている
  * （＝拡張子だけでなく内容としても実際にHEIC/HEIFである）かどうかを判定する。
  * サムネイル生成（`thumbnail-generation.util.ts`、Issue #100）・元サイズ写真の事前一括変換
- * （`convert-heic-archive-entries.util.ts`、Issue #106）の両方から使う共通の判定処理
+ * （`convert-heic-archive-entries-streaming.util.ts`、Issue #106）の両方から使う共通の判定処理
  * @param fileName 判定対象のファイル名（拡張子判定に使用）
  * @param buffer 判定対象のバッファ（中身の先頭バイト確認に使用）
  * @returns 拡張子・中身の両方が実際にHEIC/HEIFである場合true
