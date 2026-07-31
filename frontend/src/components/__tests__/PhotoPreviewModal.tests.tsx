@@ -96,6 +96,16 @@ describe('PhotoPreviewModalに関するテスト（Issue #108）', () => {
     expect(onNavigate).not.toHaveBeenCalled();
   });
 
+  test('末尾の写真で右矢印キーを押しても、onNavigateは呼ばれない', () => {
+    const photos = [createPhoto({ id: 1 }), createPhoto({ id: 2 })];
+    const onNavigate = vi.fn();
+
+    renderWithChakra(<PhotoPreviewModal photos={photos} selectedIndex={1} onClose={vi.fn()} onNavigate={onNavigate} />);
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
   test('閉じる(×)ボタンをクリックすると、onCloseが呼ばれる', () => {
     const onClose = vi.fn();
 
