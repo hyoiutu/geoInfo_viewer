@@ -1,6 +1,6 @@
 import { Box, IconButton, Image, Spinner } from '@chakra-ui/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Photo } from '../api/activitiesApi';
 import { resolvePhotoImageUrl } from '../api/photosApi';
 import { AppDialog } from './AppDialog';
@@ -38,41 +38,45 @@ export const PhotoPreviewModal = ({ photos, selectedIndex, onClose, onNavigate }
   const hasPrevious = selectedIndex !== null && selectedIndex > 0;
   const hasNext = selectedIndex !== null && selectedIndex < photos.length - NAVIGATION_STEP;
 
+  // 前後移動の計算・境界判定を1箇所にまとめ、矢印キーとボタンクリックの両方から呼ぶ
+  // （PR #118レビュー対応。以前はkeydownハンドラとボタン2つのonClickに同じ計算が3回重複していた）。
+  // useEffectの依存配列に含めるため、参照を安定させるべくuseCallbackでラップする
+  const goToPrevious = useCallback(() => {
+    if (selectedIndex !== null && hasPrevious) {
+      onNavigate(selectedIndex - NAVIGATION_STEP);
+    }
+  }, [selectedIndex, hasPrevious, onNavigate]);
+  const goToNext = useCallback(() => {
+    if (selectedIndex !== null && hasNext) {
+      onNavigate(selectedIndex + NAVIGATION_STEP);
+    }
+  }, [selectedIndex, hasNext, onNavigate]);
+
   // 矢印キーでの前後移動（Issue #108のユーザー回答）。ダイアログが開いている間のみ有効にする
   useEffect(() => {
-    if (!isOpen || selectedIndex === null) {
+    if (!isOpen) {
       return;
     }
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === KEY_ARROW_LEFT && hasPrevious) {
-        onNavigate(selectedIndex - NAVIGATION_STEP);
-      } else if (event.key === KEY_ARROW_RIGHT && hasNext) {
-        onNavigate(selectedIndex + NAVIGATION_STEP);
+      if (event.key === KEY_ARROW_LEFT) {
+        goToPrevious();
+      } else if (event.key === KEY_ARROW_RIGHT) {
+        goToNext();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, selectedIndex, hasPrevious, hasNext, onNavigate]);
+  }, [isOpen, goToPrevious, goToNext]);
 
   return (
     <AppDialog isOpen={isOpen} onClose={onClose} title={photo?.fileName ?? ''}>
       {photo && (
         <Box position="relative" display="flex" alignItems="center" justifyContent="center" gap="2">
-          <IconButton
-            onClick={() => selectedIndex !== null && onNavigate(selectedIndex - NAVIGATION_STEP)}
-            aria-label={PREVIOUS_BUTTON_LABEL}
-            disabled={!hasPrevious}
-            variant="ghost"
-          >
+          <IconButton onClick={goToPrevious} aria-label={PREVIOUS_BUTTON_LABEL} disabled={!hasPrevious} variant="ghost">
             <ChevronLeft />
           </IconButton>
           <PhotoPreviewImage key={photo.id} photo={photo} />
-          <IconButton
-            onClick={() => selectedIndex !== null && onNavigate(selectedIndex + NAVIGATION_STEP)}
-            aria-label={NEXT_BUTTON_LABEL}
-            disabled={!hasNext}
-            variant="ghost"
-          >
+          <IconButton onClick={goToNext} aria-label={NEXT_BUTTON_LABEL} disabled={!hasNext} variant="ghost">
             <ChevronRight />
           </IconButton>
         </Box>
