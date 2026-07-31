@@ -1,4 +1,4 @@
-import { Box, IconButton, Image, Spinner } from '@chakra-ui/react';
+import { Box, Center, IconButton, Image, Spinner } from '@chakra-ui/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import type { Photo } from '../api/activitiesApi';
@@ -99,7 +99,10 @@ const PhotoPreviewImage = ({ photo }: PhotoPreviewImageProps) => {
   const [isLoaded, setIsLoaded] = useState(false);
 
   return (
-    <Box position="relative" width="100%" minHeight="60vh" display="flex" alignItems="center" justifyContent="center">
+    // ui_rules.md「style propsが多くなりすぎる場合は専用コンポーネントかtheme recipeに切り出す」
+    // （5個超で切り出し推奨）に合わせ、中央寄せの3 propsで完結するChakra UIのCenterを使う
+    // （PR #118レビュー対応。以前はBoxにdisplay/alignItems/justifyContentを個別指定していた）
+    <Center position="relative" width="100%" minHeight="60vh">
       <Image
         src={resolvePhotoImageUrl(photo.id)}
         alt={photo.fileName}
@@ -111,10 +114,10 @@ const PhotoPreviewImage = ({ photo }: PhotoPreviewImageProps) => {
         onError={() => setIsLoaded(true)}
       />
       {!isLoaded && (
-        <Box position="absolute" inset="0" display="flex" alignItems="center" justifyContent="center">
+        <Center position="absolute" inset="0">
           <Spinner size="lg" />
-        </Box>
+        </Center>
       )}
-    </Box>
+    </Center>
   );
 };
