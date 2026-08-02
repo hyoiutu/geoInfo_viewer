@@ -14,15 +14,15 @@
 
 ## 変更履歴
 
-### [2026-08-02] レイヤーダイアログ待機中はページ全体の操作をグローバルに遮断するようにした（Issue #65、PR #110レビュー対応）
+### [2026-08-02] レイヤーダイアログ待機中は閉じる操作（×ボタン・背景クリック・Escapeキー）も無効化した（Issue #65、PR #110レビュー対応）
 * **修正の動機・概要**:
-  - レイヤーダイアログの「実行」「リセット」「閉じる(×)」ボタンを個別にdisabled化する対応を繰り返していたが、対応漏れ（閉じるボタン）が発生した。個々の要素を1つずつ無効化する方式では今後も同種の対応漏れが起きうるため、待機中はページ全体のマウスクリック・キーボード操作を一切受け付けないグローバルな仕組みに切り替えた。
+  - レイヤーダイアログの「実行」「リセット」「閉じる(×)」ボタンを個別にdisabled化する対応を繰り返していたが、対応漏れ（閉じるボタン）が発生した。当初は`window`へキャプチャフェーズのイベントリスナーを登録しページ全体の操作を遮断する独自実装（`useGlobalInputBlocker`）で対応したが、レビューによりChakra UI（内部の`@zag-js/dialog`）が標準で提供する`closeOnEscape`/`closeOnInteractOutside`propsで同じ目的（背景クリック・Escapeキーによるクローズの無効化）を達成できることが判明したため、車輪の再発明であった独自実装を廃止し、こちらへ置き換えた。ページ全体を遮断する方式は待機中に`ErrorDialog`が表示された場合にそれも操作不能にしてしまう副作用があったが、この置き換えにより解消される。
 * **各ファイルへの影響と変更内容**:
   * **実装**:
-    - `frontend/src/hooks/useGlobalInputBlocker.ts`を新設。`isActive`がtrueの間、`click`/`mousedown`/`mouseup`/`dblclick`/`contextmenu`/`keydown`/`keyup`/`keypress`をキャプチャフェーズで`window`に登録しpreventDefault・stopPropagationすることで、背景クリック・Escapeキーによるダイアログクローズを含め、ネストしたどの要素にもイベントが到達しないようにする。`MapWorkspace.tsx`から`isApplyingLayerSettings`を渡して呼び出す。
-    - `AppDialog.tsx`に`closeDisabled`propを追加し、`LayerDialog.tsx`から待機中は閉じる(×)ボタンを無効化するよう渡す（グローバル遮断と合わせた多重の防御）。
+    - `AppDialog.tsx`の`closeDisabled`propがtrueの間、閉じる(×)ボタンの無効化に加え`Dialog.Root`の`closeOnEscape`/`closeOnInteractOutside`をfalseにするよう変更。`LayerDialog.tsx`から待機中はこのpropを渡す。
+    - `frontend/src/hooks/useGlobalInputBlocker.ts`（および対応するテスト）を削除。`MapWorkspace.tsx`からの呼び出しも削除。
   * **README.md**: 変更なし。
-  * **仕様書**: `specs/system_specification.md`の「レイヤ一覧表示機能」に、待機中は「リセット」「閉じる(×)」ボタンも操作不可になること、アプリ画面全体でクリック・キーボード操作を受け付けなくなることを追記。
+  * **仕様書**: `specs/system_specification.md`の「レイヤ一覧表示機能」を、「アプリ画面全体でクリック・キーボード操作を受け付けない」という記述から「閉じる(×)ボタン・背景クリック・Escapeキーによるダイアログクローズが無効化される」という実際の挙動に合わせて修正。
 
 ### [2026-08-02] レイヤーダイアログの待機中はチェックボックス・年代選択も無効化し、pendingLayerApplyのフラグクリア処理をutils/へ切り出した（Issue #65、PR #110 pr-review-rally対応）
 * **修正の動機・概要**:
