@@ -14,6 +14,17 @@
 
 ## 変更履歴
 
+### [2026-08-02] レイヤーダイアログの待機中はチェックボックス・年代選択も無効化し、pendingLayerApplyのフラグクリア処理をutils/へ切り出した（Issue #65、PR #110 pr-review-rally対応）
+* **修正の動機・概要**:
+  - `clearPendingLayerApplyFlag`がHooksを使わない純粋な状態更新ロジックであるにもかかわらずコンポーネントファイル（`MapWorkspace.tsx`）に直接定義されており、design_principles.mdのSRP規約に反していたため、utils/へ切り出した。
+  - レイヤーダイアログの「実行」ボタンは非同期処理の待機中は無効化されていたが、チェックボックス・行政区画の年代選択は無効化されておらず、待機中に加えた変更が、待機完了によるダイアログの自動クローズ（draft内容を破棄する）で気づかれないまま失われる経路が残っていたため、これらも待機中は無効化するようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `clearPendingLayerApplyFlag`・`PendingLayerApply`型を`MapWorkspace.tsx`から`frontend/src/utils/pendingLayerApply.ts`へ切り出し。
+    - `LayerDialog.tsx`の`Checkbox.Root`・`AdminBoundaryEraSelect`（`NativeSelect.Root`）に`disabled={isApplyingLayerSettings}`を追加。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「レイヤ一覧表示機能」に、待機中はチェックボックス・年代選択・実行ボタンが操作不可になる旨を追記。
+
 ### [2026-07-31] 低ズームレベル軽量表示導入時の既存アクティビティの挙動を仕様書へ明記した（Issue #61、PR #109レビュー対応）
 * **修正の動機・概要**:
   - `summaryPath`は本機能導入後に詳細取得（新規同期・フォースリフェッチ）したアクティビティにしか設定されないため、本機能導入前から取得済みだったアクティビティは、ユーザーが「フォースリフェッチ」を実行するまでの間、ズームレベル10以下では地図上に表示されなくなる（`cyclingActivitySummaryToGeoJson`が`summaryPath === null`のアクティビティを除外するため）。この移行期間の挙動が仕様書に記載されておらず、PRレビューで指摘を受けたため追記した。
