@@ -14,6 +14,16 @@
 
 ## 変更履歴
 
+### [2026-08-02] レイヤーダイアログ待機中はページ全体の操作をグローバルに遮断するようにした（Issue #65、PR #110レビュー対応）
+* **修正の動機・概要**:
+  - レイヤーダイアログの「実行」「リセット」「閉じる(×)」ボタンを個別にdisabled化する対応を繰り返していたが、対応漏れ（閉じるボタン）が発生した。個々の要素を1つずつ無効化する方式では今後も同種の対応漏れが起きうるため、待機中はページ全体のマウスクリック・キーボード操作を一切受け付けないグローバルな仕組みに切り替えた。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/hooks/useGlobalInputBlocker.ts`を新設。`isActive`がtrueの間、`click`/`mousedown`/`mouseup`/`dblclick`/`contextmenu`/`keydown`/`keyup`/`keypress`をキャプチャフェーズで`window`に登録しpreventDefault・stopPropagationすることで、背景クリック・Escapeキーによるダイアログクローズを含め、ネストしたどの要素にもイベントが到達しないようにする。`MapWorkspace.tsx`から`isApplyingLayerSettings`を渡して呼び出す。
+    - `AppDialog.tsx`に`closeDisabled`propを追加し、`LayerDialog.tsx`から待機中は閉じる(×)ボタンを無効化するよう渡す（グローバル遮断と合わせた多重の防御）。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「レイヤ一覧表示機能」に、待機中は「リセット」「閉じる(×)」ボタンも操作不可になること、アプリ画面全体でクリック・キーボード操作を受け付けなくなることを追記。
+
 ### [2026-08-02] レイヤーダイアログの待機中はチェックボックス・年代選択も無効化し、pendingLayerApplyのフラグクリア処理をutils/へ切り出した（Issue #65、PR #110 pr-review-rally対応）
 * **修正の動機・概要**:
   - `clearPendingLayerApplyFlag`がHooksを使わない純粋な状態更新ロジックであるにもかかわらずコンポーネントファイル（`MapWorkspace.tsx`）に直接定義されており、design_principles.mdのSRP規約に反していたため、utils/へ切り出した。
