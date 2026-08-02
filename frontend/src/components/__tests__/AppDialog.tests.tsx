@@ -5,9 +5,11 @@ import { AppDialog } from '../AppDialog';
 
 // Chakra UI（内部の@zag-js/dismissable）はEscapeキー・背景クリックの検知リスナーを
 // requestAnimationFrame経由で遅延登録するため、「呼ばれないこと」を確認する際はこの遅延を
-// またいで複数回発火し続ける必要がある
-const DISMISS_RETRY_COUNT = 5;
-const waitForNextTick = () => new Promise((resolve) => setTimeout(resolve, 20));
+// またいで複数回発火し続ける必要がある。「閉じること」を確認する側のwaitFor（デフォルトタイムアウト1000ms）と
+// 同程度の猶予を持たせ、システム負荷が高い環境でも登録前にリトライを使い切らないようにする（PR #110レビュー対応）
+const DISMISS_RETRY_INTERVAL_MS = 50;
+const DISMISS_RETRY_COUNT = 20;
+const waitForNextTick = () => new Promise((resolve) => setTimeout(resolve, DISMISS_RETRY_INTERVAL_MS));
 
 describe('AppDialogに関するテスト', () => {
   test('isOpenがfalseの場合、ダイアログは表示されない', () => {
