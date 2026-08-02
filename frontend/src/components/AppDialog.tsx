@@ -13,6 +13,8 @@ type AppDialogProps = {
   title: ReactNode;
   /** ヘッダー右上の閉じる(×)ボタンを表示するか（省略時はtrue。独自の閉じる手段のみ提供する場合はfalseにする） */
   showCloseButton?: boolean;
+  /** 閉じる(×)ボタンを無効化するか（省略時はfalse。非同期処理待機中などダイアログを閉じさせたくない場合にtrueにする） */
+  closeDisabled?: boolean;
   /** Dialog.Rootのrole（省略時は'dialog'） */
   role?: 'dialog' | 'alertdialog';
   /** フッターに表示する内容（省略時はDialog.Footer自体を表示しない） */
@@ -31,6 +33,7 @@ export const AppDialog = ({
   onClose,
   title,
   showCloseButton = true,
+  closeDisabled = false,
   role = 'dialog',
   footer,
   children
@@ -52,6 +55,7 @@ export const AppDialog = ({
               {showCloseButton && (
                 <Button
                   onClick={onClose}
+                  disabled={closeDisabled}
                   aria-label={CLOSE_BUTTON_LABEL}
                   variant="ghost"
                   size="sm"

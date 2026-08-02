@@ -52,8 +52,8 @@ type LayerDialogProps = {
   onClose: () => void;
   /**
    * 直前の実行に伴う非同期処理（行政区画データ取得・自転車ログ同期）が完了しておらず、
-   * ダイアログがまだ開いたまま待機中かどうか。trueの間は実行ボタン・リセットボタン・チェックボックス・
-   * 年代選択プルダウンを全て無効化する。実行ボタンの無効化は、待機中の多重実行によってMapWorkspace側の
+   * ダイアログがまだ開いたまま待機中かどうか。trueの間は実行ボタン・リセットボタン・閉じる(×)ボタン・
+   * チェックボックス・年代選択プルダウンを全て無効化する。実行ボタンの無効化は、待機中の多重実行によってMapWorkspace側の
    * pendingLayerApplyが上書きされ未完了の非同期処理の追跡が失われる不具合を防ぐ（Issue #65
    * PR#110レビュー対応）。他の入力の無効化は、待機完了時にダイアログが自動的に閉じ入力中(draft)の
    * 内容が破棄される際、待機中に加えた変更がユーザーの直接操作を伴わないまま気づかれず失われることを
@@ -103,6 +103,7 @@ export const LayerDialog = ({
     <AppDialog
       isOpen={isOpen}
       onClose={onClose}
+      closeDisabled={isApplyingLayerSettings}
       title="レイヤー切り替え"
       footer={
         <>

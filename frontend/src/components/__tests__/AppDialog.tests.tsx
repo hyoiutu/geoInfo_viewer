@@ -38,6 +38,26 @@ describe('AppDialogに関するテスト', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  test('closeDisabledがtrueの場合、閉じる(×)ボタンが無効化される（PR #110レビュー対応）', () => {
+    renderWithChakra(
+      <AppDialog isOpen onClose={vi.fn()} title="タイトル" closeDisabled>
+        本文
+      </AppDialog>
+    );
+
+    expect(screen.getByRole('button', { name: '閉じる' })).toBeDisabled();
+  });
+
+  test('closeDisabledを渡さない場合、閉じる(×)ボタンは無効化されない', () => {
+    renderWithChakra(
+      <AppDialog isOpen onClose={vi.fn()} title="タイトル">
+        本文
+      </AppDialog>
+    );
+
+    expect(screen.getByRole('button', { name: '閉じる' })).not.toBeDisabled();
+  });
+
   test('showCloseButtonがfalseの場合、閉じる(×)ボタンは表示されない', () => {
     renderWithChakra(
       <AppDialog isOpen onClose={vi.fn()} title="タイトル" showCloseButton={false}>

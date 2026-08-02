@@ -119,6 +119,18 @@ describe('LayerDialogに関するテスト', () => {
     expect(screen.getByRole('button', { name: 'リセット' })).not.toBeDisabled();
   });
 
+  test('isApplyingLayerSettingsがtrueの場合、閉じる(×)ボタンも無効化される（PR #110レビュー対応）', () => {
+    renderDialog({ isApplyingLayerSettings: true });
+
+    expect(screen.getByRole('button', { name: '閉じる' })).toBeDisabled();
+  });
+
+  test('isApplyingLayerSettingsがfalseの場合、閉じる(×)ボタンは無効化されない', () => {
+    renderDialog({ isApplyingLayerSettings: false });
+
+    expect(screen.getByRole('button', { name: '閉じる' })).not.toBeDisabled();
+  });
+
   test('閉じるボタンを押すと、onCloseが呼ばれる（入力中の変更は破棄される）', () => {
     const onClose = vi.fn();
     renderDialog({ onClose });

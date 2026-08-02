@@ -6,6 +6,7 @@ import { useActivitySelection } from '../hooks/useActivitySelection';
 import { useBackfillProgressFooter } from '../hooks/useBackfillProgressFooter';
 import { useBackfillStatus } from '../hooks/useBackfillStatus';
 import { useCyclingActivities } from '../hooks/useCyclingActivities';
+import { useGlobalInputBlocker } from '../hooks/useGlobalInputBlocker';
 import { type ActivityFilter, DEFAULT_ACTIVITY_FILTER } from '../types/activityFilter';
 import type { LayerVisibility } from '../types/layer';
 import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
@@ -47,6 +48,9 @@ export const MapWorkspace = () => {
 
   const isApplyingLayerSettings =
     pendingLayerApply !== null && (pendingLayerApply.waitingForAdminBoundary || pendingLayerApply.waitingForCyclingLog);
+  // レイヤーダイアログの非同期処理待機中は、ページ全体のマウスクリック・キーボード操作を一切受け付けない
+  // ようにする（個々のボタンのdisabled対応漏れが繰り返し発生したため、Issue #65、PR #110レビュー対応）
+  useGlobalInputBlocker(isApplyingLayerSettings);
 
   // フォーカス中のアクティビティ・行政区画の年代が変わると、通過自治体一覧の内容自体が変わり
   // 直前にフォーカスしていた自治体が無関係になるため、行政区画のフォーカスも解除する（Issue #76）
