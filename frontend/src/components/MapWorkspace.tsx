@@ -10,32 +10,13 @@ import { type ActivityFilter, DEFAULT_ACTIVITY_FILTER } from '../types/activityF
 import type { LayerVisibility } from '../types/layer';
 import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 import { filterActivities } from '../utils/filterActivities';
+import { clearPendingLayerApplyFlag, type PendingLayerApply } from '../utils/pendingLayerApply';
 import { resolveLayerSettingsChange } from '../utils/resolveLayerSettingsChange';
 import { ActivityDetailSidebar } from './ActivityDetailSidebar';
 import { BackfillProgressFooter } from './BackfillProgressFooter';
 import { ErrorDialog } from './ErrorDialog';
 import { MapControls } from './MapControls';
 import { MapView } from './MapView';
-
-/**
- * レイヤーダイアログの実行によって発生した非同期処理（行政区画データ取得・自転車ログ同期）のうち、
- * まだ完了していないものを表す。いずれもfalseになった時点でレイヤーダイアログを閉じてよい（Issue #65）
- */
-type PendingLayerApply = {
-  /** 行政区画データの取得・地図への反映がまだ完了していないか */
-  waitingForAdminBoundary: boolean;
-  /** 自転車ログの同期・参照取得がまだ完了していないか */
-  waitingForCyclingLog: boolean;
-};
-
-/**
- * `pendingLayerApply`のうち指定フィールドのみを完了(false)にする更新関数を返す。
- * 行政区画データ取得・自転車ログ同期のいずれの完了ハンドラからも共通で使う（Issue #65レビュー対応）
- */
-const clearPendingLayerApplyFlag =
-  (field: keyof PendingLayerApply) =>
-  (current: PendingLayerApply | null): PendingLayerApply | null =>
-    current ? { ...current, [field]: false } : current;
 
 /**
  * 地図・Map Controls・各種ダイアログを組み合わせたアプリのメイン画面。
