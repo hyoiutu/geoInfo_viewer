@@ -13,7 +13,11 @@ type AppDialogProps = {
   title: ReactNode;
   /** ヘッダー右上の閉じる(×)ボタンを表示するか（省略時はtrue。独自の閉じる手段のみ提供する場合はfalseにする） */
   showCloseButton?: boolean;
-  /** 閉じる(×)ボタンを無効化するか（省略時はfalse。非同期処理待機中などダイアログを閉じさせたくない場合にtrueにする） */
+  /**
+   * ダイアログを閉じられなくするか（省略時はfalse。非同期処理待機中などダイアログを閉じさせたくない場合にtrueにする）。
+   * trueの間は閉じる(×)ボタンを無効化するのに加え、Escapeキー・背景クリックによるクローズも無効化する
+   * （Chakra UIが内部で使う@zag-js/dialogの`closeOnEscape`/`closeOnInteractOutside`props、いずれもデフォルトtrue）
+   */
   closeDisabled?: boolean;
   /** Dialog.Rootのrole（省略時は'dialog'） */
   role?: 'dialog' | 'alertdialog';
@@ -45,7 +49,13 @@ export const AppDialog = ({
   };
 
   return (
-    <Dialog.Root open={isOpen} onOpenChange={handleOpenChange} role={role}>
+    <Dialog.Root
+      open={isOpen}
+      onOpenChange={handleOpenChange}
+      role={role}
+      closeOnEscape={!closeDisabled}
+      closeOnInteractOutside={!closeDisabled}
+    >
       <Portal>
         <Dialog.Backdrop />
         <Dialog.Positioner>
