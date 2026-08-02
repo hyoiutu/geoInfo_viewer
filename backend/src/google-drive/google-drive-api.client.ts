@@ -4,7 +4,7 @@ import type { Readable } from 'node:stream';
 import { HttpService } from '@nestjs/axios';
 import { Injectable } from '@nestjs/common';
 import { firstValueFrom } from 'rxjs';
-import { toGoogleDriveApiException } from '../common/errors/google-drive-api.exception';
+import { isTransientGoogleDriveApiError, toGoogleDriveApiException } from '../common/errors/google-drive-api.exception';
 import {
   GOOGLE_DRIVE_API_BASE_URL,
   GOOGLE_DRIVE_FILE_METADATA_FIELDS,
@@ -43,6 +43,14 @@ const GOOGLE_DRIVE_STREAMING_TRANSFER_TIMEOUT_MS = 120 * 60 * 1000;
 // 応答が無いまま無限に待ち続けることは無いようにする
 const UPLOAD_CHUNK_TIMEOUT_MS = 2 * 60 * 1000;
 
+// アップロードのセッション開始・各チャンク送信が一時的な接続断（EPIPE/ECONNRESET等）で失敗した場合の
+// 最大試行回数（1回目の実行を含む）。多数のアーカイブを連続処理するバッチ処理（convert-heic-photos-to-jpeg.ts等）
+// の実行時、コネクションプールの使い回しに起因すると見られるEPIPE/ECONNRESETが実際に複数回再現した
+// （Issue #106フォローアップ）
+export const UPLOAD_RETRY_MAX_ATTEMPTS = 3;
+// 再試行までの待機時間。接続断からの回復を待つための短い間隔
+const UPLOAD_RETRY_DELAY_MS = 5 * 1000;
+
 /**
  * Google Drive APIのレジューマブルアップロードにおいて、チャンクのPUTレスポンスとして正常とみなす
  * HTTPステータスかどうかを判定する。中間チャンクは200番台ではなく308（Resume Incomplete、
@@ -52,6 +60,33 @@ const UPLOAD_CHUNK_TIMEOUT_MS = 2 * 60 * 1000;
  * @returns 正常なレスポンスとみなす場合true
  */
 const isValidUploadChunkStatus = (status: number): boolean => (status >= 200 && status < 300) || status === 308;
+
+/**
+ * アップロード関連のリクエスト（セッション開始・各チャンクのPUT）を、一時的な接続断
+ * （`isTransientGoogleDriveApiError`が真になるエラー）の場合に限り、一定間隔を空けて再試行する。
+ * サーバーから明示的なレスポンス（404/401/429等）を受け取った場合や、最大試行回数に達した場合は
+ * そのままエラーを再送出する（呼び出し元のtry/catchでAppExceptionへ変換される）
+ * @param operation 実行する非同期処理（同じ内容を再試行できるよう副作用のない関数として渡すこと）
+ * @param maxAttempts 最大試行回数（1回目の実行を含む）
+ * @param delayMs 再試行までの待機時間（ミリ秒）。テストでは0を渡し待機を省略する
+ * @returns operationの戻り値
+ */
+const withUploadRetry = async <T>(operation: () => Promise<T>, maxAttempts: number, delayMs: number): Promise<T> => {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      if (attempt >= maxAttempts || !isTransientGoogleDriveApiError(error)) {
+        throw error;
+      }
+      console.error(
+        `Google Drive APIとの通信が一時的に失敗しました（${attempt}/${maxAttempts}回目）。${delayMs}ms後に再試行します:`,
+        error
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+};
 
 /**
  * Google Drive REST APIへの生のHTTPアクセスを担うクライアント。
@@ -199,7 +234,12 @@ export class GoogleDriveApiClient {
    *    内容全体を1回のPUTで送信する実装だった際、数GB規模のzipでTLSの書き込みエラー(EPROTO)が
    *    実際に発生したため、チャンク分割へ変更した。各チャンクには`Content-Range`ヘッダーで
    *    全体のうちどの範囲かを明示する。失敗時のチャンク単位の再開（途中のチャンクから再送する）は
-   *    実装していない（失敗した場合はエラーとして呼び出し元へ伝播し、月単位で最初から再試行する）
+   *    実装していない（失敗した場合はエラーとして呼び出し元へ伝播し、月単位で最初から再試行する）。
+   *    ただしセッション開始・各チャンクのPUTがEPIPE/ECONNRESET等の一時的な接続断で失敗した場合に限り、
+   *    `withUploadRetry`により同一リクエストを`UPLOAD_RETRY_MAX_ATTEMPTS`回まで即座に再試行する
+   *    （「途中から再開する」のではなく「同じリクエストをもう一度送る」だけなので、上記の設計とは矛盾しない。
+   *    Issue #106フォローアップ、多数のアーカイブを連続処理した際にコネクションプールの使い回しに
+   *    起因すると見られるEPIPE/ECONNRESETが実際に複数回再現した）
    * 各リクエストには`timeout`を設定する。ネットワーク接続がスタックした場合、axiosはtimeout未指定だと
    * 応答を無限に待ち続けエラーにもならないため、プロセスがCPU/ネットワークどちらも使わず無音のまま
    * 進行しなくなる不具合が写真ローカルバックフィルの実行時に実際に発生した（Issue #23）
@@ -208,45 +248,57 @@ export class GoogleDriveApiClient {
    * @param content アップロードするバイナリ本体
    * @param chunkSizeBytes 1チャンクあたりのサイズ。テストで小さい値へ差し替えられるよう引数化しているが、
    * 通常は省略しデフォルト（`UPLOAD_CHUNK_SIZE_BYTES`）を使うこと
+   * @param retryDelayMs 一時的な接続断からの再試行までの待機時間。テストでは0を渡し待機を省略する
    */
   async updateFileContent(
     accessToken: string,
     fileId: string,
     content: Buffer,
-    chunkSizeBytes: number = UPLOAD_CHUNK_SIZE_BYTES
+    chunkSizeBytes: number = UPLOAD_CHUNK_SIZE_BYTES,
+    retryDelayMs: number = UPLOAD_RETRY_DELAY_MS
   ): Promise<void> {
     try {
-      const sessionResponse = await firstValueFrom(
-        this.httpService.patch(
-          `${GOOGLE_DRIVE_UPLOAD_BASE_URL}/files/${fileId}`,
-          {},
-          {
-            headers: {
-              // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization/Content-Type)に合わせる
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json; charset=UTF-8',
-              'X-Upload-Content-Type': 'application/zip',
-              'X-Upload-Content-Length': String(content.length)
-            },
-            params: { uploadType: 'resumable' },
-            timeout: GOOGLE_DRIVE_REQUEST_TIMEOUT_MS
-          }
-        )
+      const sessionResponse = await withUploadRetry(
+        () =>
+          firstValueFrom(
+            this.httpService.patch(
+              `${GOOGLE_DRIVE_UPLOAD_BASE_URL}/files/${fileId}`,
+              {},
+              {
+                headers: {
+                  // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization/Content-Type)に合わせる
+                  Authorization: `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json; charset=UTF-8',
+                  'X-Upload-Content-Type': 'application/zip',
+                  'X-Upload-Content-Length': String(content.length)
+                },
+                params: { uploadType: 'resumable' },
+                timeout: GOOGLE_DRIVE_REQUEST_TIMEOUT_MS
+              }
+            )
+          ),
+        UPLOAD_RETRY_MAX_ATTEMPTS,
+        retryDelayMs
       );
 
       const uploadSessionUrl: string = sessionResponse.headers.location;
       for (let start = 0; start < content.length; start += chunkSizeBytes) {
         const end = Math.min(start + chunkSizeBytes, content.length);
-        await firstValueFrom(
-          this.httpService.put(uploadSessionUrl, content.subarray(start, end), {
-            headers: {
-              'Content-Type': 'application/zip',
-              'Content-Range': `bytes ${start}-${end - 1}/${content.length}`
-            },
-            maxRedirects: 0,
-            validateStatus: isValidUploadChunkStatus,
-            timeout: UPLOAD_CHUNK_TIMEOUT_MS
-          })
+        await withUploadRetry(
+          () =>
+            firstValueFrom(
+              this.httpService.put(uploadSessionUrl, content.subarray(start, end), {
+                headers: {
+                  'Content-Type': 'application/zip',
+                  'Content-Range': `bytes ${start}-${end - 1}/${content.length}`
+                },
+                maxRedirects: 0,
+                validateStatus: isValidUploadChunkStatus,
+                timeout: UPLOAD_CHUNK_TIMEOUT_MS
+              })
+            ),
+          UPLOAD_RETRY_MAX_ATTEMPTS,
+          retryDelayMs
         );
       }
     } catch (error) {
@@ -266,33 +318,42 @@ export class GoogleDriveApiClient {
    * @param sourcePath アップロードするファイルのパス
    * @param chunkSizeBytes 1チャンクあたりのサイズ。テストで小さい値へ差し替えられるよう引数化しているが、
    * 通常は省略しデフォルト（`UPLOAD_CHUNK_SIZE_BYTES`）を使うこと
+   * @param retryDelayMs セッション開始・各チャンクのPUTが一時的な接続断（EPIPE/ECONNRESET等）で失敗した
+   * 場合の再試行までの待機時間。`updateFileContent`と同じ理由（Issue #106フォローアップ）。
+   * テストでは0を渡し待機を省略する
    */
   async uploadFileFromPath(
     accessToken: string,
     fileId: string,
     sourcePath: string,
-    chunkSizeBytes: number = UPLOAD_CHUNK_SIZE_BYTES
+    chunkSizeBytes: number = UPLOAD_CHUNK_SIZE_BYTES,
+    retryDelayMs: number = UPLOAD_RETRY_DELAY_MS
   ): Promise<void> {
     const fileHandle = await open(sourcePath, 'r');
     try {
       const { size: totalSizeBytes } = await fileHandle.stat();
 
-      const sessionResponse = await firstValueFrom(
-        this.httpService.patch(
-          `${GOOGLE_DRIVE_UPLOAD_BASE_URL}/files/${fileId}`,
-          {},
-          {
-            headers: {
-              // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization/Content-Type)に合わせる
-              Authorization: `Bearer ${accessToken}`,
-              'Content-Type': 'application/json; charset=UTF-8',
-              'X-Upload-Content-Type': 'application/zip',
-              'X-Upload-Content-Length': String(totalSizeBytes)
-            },
-            params: { uploadType: 'resumable' },
-            timeout: GOOGLE_DRIVE_REQUEST_TIMEOUT_MS
-          }
-        )
+      const sessionResponse = await withUploadRetry(
+        () =>
+          firstValueFrom(
+            this.httpService.patch(
+              `${GOOGLE_DRIVE_UPLOAD_BASE_URL}/files/${fileId}`,
+              {},
+              {
+                headers: {
+                  // biome-ignore lint/style/useNamingConvention: HTTPヘッダー名の正規表記(Authorization/Content-Type)に合わせる
+                  Authorization: `Bearer ${accessToken}`,
+                  'Content-Type': 'application/json; charset=UTF-8',
+                  'X-Upload-Content-Type': 'application/zip',
+                  'X-Upload-Content-Length': String(totalSizeBytes)
+                },
+                params: { uploadType: 'resumable' },
+                timeout: GOOGLE_DRIVE_REQUEST_TIMEOUT_MS
+              }
+            )
+          ),
+        UPLOAD_RETRY_MAX_ATTEMPTS,
+        retryDelayMs
       );
 
       const uploadSessionUrl: string = sessionResponse.headers.location;
@@ -303,16 +364,21 @@ export class GoogleDriveApiClient {
         // 既に次のチャンクの内容へ上書きされてしまう恐れがあるため
         const chunkBuffer = Buffer.alloc(end - start);
         const { bytesRead } = await fileHandle.read(chunkBuffer, 0, end - start, start);
-        await firstValueFrom(
-          this.httpService.put(uploadSessionUrl, chunkBuffer.subarray(0, bytesRead), {
-            headers: {
-              'Content-Type': 'application/zip',
-              'Content-Range': `bytes ${start}-${end - 1}/${totalSizeBytes}`
-            },
-            maxRedirects: 0,
-            validateStatus: isValidUploadChunkStatus,
-            timeout: UPLOAD_CHUNK_TIMEOUT_MS
-          })
+        await withUploadRetry(
+          () =>
+            firstValueFrom(
+              this.httpService.put(uploadSessionUrl, chunkBuffer.subarray(0, bytesRead), {
+                headers: {
+                  'Content-Type': 'application/zip',
+                  'Content-Range': `bytes ${start}-${end - 1}/${totalSizeBytes}`
+                },
+                maxRedirects: 0,
+                validateStatus: isValidUploadChunkStatus,
+                timeout: UPLOAD_CHUNK_TIMEOUT_MS
+              })
+            ),
+          UPLOAD_RETRY_MAX_ATTEMPTS,
+          retryDelayMs
         );
       }
     } catch (error) {
