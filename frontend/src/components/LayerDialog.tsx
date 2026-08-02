@@ -12,11 +12,13 @@ type AdminBoundaryEraSelectProps = {
   era: MunicipalityEra;
   /** 年代が変更されたときに呼ばれるコールバック */
   onChange: (era: MunicipalityEra) => void;
+  /** trueの間はプルダウンを無効化する（Issue #65 PR#110レビュー対応、下記disabled参照） */
+  disabled: boolean;
 };
 
 /** 行政区画レイヤーの表示年代を選ぶプルダウン */
-const AdminBoundaryEraSelect = ({ era, onChange }: AdminBoundaryEraSelectProps) => (
-  <NativeSelect.Root size="sm" width="auto" marginLeft="6">
+const AdminBoundaryEraSelect = ({ era, onChange, disabled }: AdminBoundaryEraSelectProps) => (
+  <NativeSelect.Root size="sm" width="auto" marginLeft="6" disabled={disabled}>
     <NativeSelect.Field
       aria-label="行政区画の年代"
       value={era}
@@ -50,9 +52,12 @@ type LayerDialogProps = {
   onClose: () => void;
   /**
    * 直前の実行に伴う非同期処理（行政区画データ取得・自転車ログ同期）が完了しておらず、
-   * ダイアログがまだ開いたまま待機中かどうか。trueの間は実行ボタンを無効化し、待機中の
-   * 多重実行によってMapWorkspace側のpendingLayerApplyが上書きされ、未完了の非同期処理の
-   * 追跡が失われる不具合を防ぐ（Issue #65 PR#110レビュー対応）
+   * ダイアログがまだ開いたまま待機中かどうか。trueの間は実行ボタン・チェックボックス・年代選択
+   * プルダウンを全て無効化する。実行ボタンの無効化は、待機中の多重実行によってMapWorkspace側の
+   * pendingLayerApplyが上書きされ未完了の非同期処理の追跡が失われる不具合を防ぐ（Issue #65
+   * PR#110レビュー対応）。他の入力の無効化は、待機完了時にダイアログが自動的に閉じ入力中(draft)の
+   * 内容が破棄される際、待機中に加えた変更がユーザーの直接操作を伴わないまま気づかれず失われることを
+   * 防ぐ（PR #110再レビュー対応）
    */
   isApplyingLayerSettings: boolean;
 };
@@ -115,6 +120,7 @@ export const LayerDialog = ({
           <Flex key={layerDefinition.id} direction="column" gap="2">
             <Checkbox.Root
               checked={draftVisibility[layerDefinition.id]}
+              disabled={isApplyingLayerSettings}
               onCheckedChange={() => toggleDraft(layerDefinition.id)}
             >
               <Checkbox.HiddenInput />
@@ -124,7 +130,7 @@ export const LayerDialog = ({
               <Checkbox.Label>{layerDefinition.name}</Checkbox.Label>
             </Checkbox.Root>
             {layerDefinition.id === 'admin-boundary' && (
-              <AdminBoundaryEraSelect era={draftEra} onChange={setDraftEra} />
+              <AdminBoundaryEraSelect era={draftEra} onChange={setDraftEra} disabled={isApplyingLayerSettings} />
             )}
           </Flex>
         ))}

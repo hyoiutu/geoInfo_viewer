@@ -91,6 +91,22 @@ describe('LayerDialogに関するテスト', () => {
     expect(screen.getByRole('button', { name: '実行' })).not.toBeDisabled();
   });
 
+  test('isApplyingLayerSettingsがtrueの場合、各レイヤーのチェックボックスも無効化される（待機中の変更が気づかれないまま破棄されるのを防ぐ、PR #110レビュー対応）', () => {
+    renderDialog({ isApplyingLayerSettings: true });
+
+    for (const layerDefinition of LAYER_DEFINITIONS) {
+      expect(screen.getByRole('checkbox', { name: layerDefinition.name })).toBeDisabled();
+    }
+  });
+
+  test('isApplyingLayerSettingsがfalseの場合、各レイヤーのチェックボックスは無効化されない', () => {
+    renderDialog({ isApplyingLayerSettings: false });
+
+    for (const layerDefinition of LAYER_DEFINITIONS) {
+      expect(screen.getByRole('checkbox', { name: layerDefinition.name })).not.toBeDisabled();
+    }
+  });
+
   test('閉じるボタンを押すと、onCloseが呼ばれる（入力中の変更は破棄される）', () => {
     const onClose = vi.fn();
     renderDialog({ onClose });
@@ -134,6 +150,12 @@ describe('LayerDialogに関するテスト', () => {
       renderDialog({ appliedEra: '2000-10-01' });
 
       expect(screen.getByRole('combobox', { name: '行政区画の年代' })).toHaveValue('2000-10-01');
+    });
+
+    test('isApplyingLayerSettingsがtrueの場合、年代選択プルダウンも無効化される（PR #110レビュー対応）', () => {
+      renderDialog({ isApplyingLayerSettings: true });
+
+      expect(screen.getByRole('combobox', { name: '行政区画の年代' })).toBeDisabled();
     });
 
     test('年代を変更し実行ボタンを押すと、onApplyが変更後の年代で呼ばれる', () => {
