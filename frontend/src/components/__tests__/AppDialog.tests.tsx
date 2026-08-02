@@ -66,6 +66,20 @@ describe('AppDialogに関するテスト', () => {
     expect(screen.getByRole('button', { name: '閉じる' })).not.toBeDisabled();
   });
 
+  test('closeDisabledがtrueの場合、Dialog.CloseTrigger（×ボタンと同じ位置に重なる無名のクローズ要素）も無効化される（PR #110レビュー対応）', () => {
+    renderWithChakra(
+      <AppDialog isOpen onClose={vi.fn()} title="タイトル" closeDisabled>
+        本文
+      </AppDialog>
+    );
+
+    const closeTrigger = document.querySelector('[data-scope="dialog"][data-part="close-trigger"]');
+    if (!(closeTrigger instanceof HTMLElement)) {
+      throw new Error('close-trigger element not found');
+    }
+    expect(closeTrigger).toBeDisabled();
+  });
+
   test('closeDisabledがfalseの場合、Escapeキーを押すとonCloseが呼ばれる（PR #110レビュー対応）', async () => {
     // Chakra UI（内部の@zag-js/dismissable）はEscapeキー検知リスナーをrequestAnimationFrame経由で
     // 遅延登録するため、登録完了前に発火したイベントは検知されない。登録完了後に発火が成功するまで

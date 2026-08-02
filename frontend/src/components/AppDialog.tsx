@@ -79,7 +79,7 @@ export const AppDialog = ({
             </Dialog.Header>
             <Dialog.Body>{children}</Dialog.Body>
             {footer && <Dialog.Footer>{footer}</Dialog.Footer>}
-            <Dialog.CloseTrigger />
+            <Dialog.CloseTrigger disabled={closeDisabled} />
           </Dialog.Content>
         </Dialog.Positioner>
       </Portal>
