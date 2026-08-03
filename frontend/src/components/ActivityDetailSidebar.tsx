@@ -1,7 +1,7 @@
 import { Box, Button, Flex, Image, SimpleGrid, Spinner, Text } from '@chakra-ui/react';
 import { useState } from 'react';
 import type { CyclingActivity, PassedMunicipality, Photo } from '../api/activitiesApi';
-import { resolvePhotoImageUrl } from '../api/photosApi';
+import { resolvePhotoImageUrl, resolvePhotoThumbnailUrl } from '../api/photosApi';
 import { usePassedMunicipalities } from '../hooks/usePassedMunicipalities';
 import { usePhotos } from '../hooks/usePhotos';
 import { layout } from '../theme';
@@ -116,15 +116,27 @@ type PhotoGridItemProps = {
 /**
  * 写真1件分のグリッドセル。メタデータ（ファイル名）が判明した時点で即座にファイル名・ローディング
  * アイコンを表示し、実バイナリの読み込み（`<Image>`の`onLoad`）が完了し次第、読み込めた写真から
- * 順に表示へ切り替える（全件の読み込み完了を待たない、Issue #23フォローアップ）
+ * 順に表示へ切り替える（全件の読み込み完了を待たない、Issue #23フォローアップ）。
+ * まずサムネイル画像（`resolvePhotoThumbnailUrl`）の読み込みを試み、サムネイルアーカイブが
+ * 存在しない年月（未処理・失敗年月）等で404になった場合のみ、フルサイズ画像（`resolvePhotoImageUrl`）へ
+ * フォールバックする（Issue #105）
  */
 const PhotoGridItem = ({ photo }: PhotoGridItemProps) => {
   const [isImageLoaded, setIsImageLoaded] = useState(false);
+  const [hasThumbnailFailed, setHasThumbnailFailed] = useState(false);
+
+  const handleError = () => {
+    if (!hasThumbnailFailed) {
+      setHasThumbnailFailed(true);
+      return;
+    }
+    setIsImageLoaded(true);
+  };
 
   return (
     <Box position="relative" width="100%" aspectRatio="1">
       <Image
-        src={resolvePhotoImageUrl(photo.id)}
+        src={hasThumbnailFailed ? resolvePhotoImageUrl(photo.id) : resolvePhotoThumbnailUrl(photo.id)}
         alt={photo.fileName}
         width="100%"
         height="100%"
@@ -133,7 +145,7 @@ const PhotoGridItem = ({ photo }: PhotoGridItemProps) => {
         borderRadius="md"
         visibility={isImageLoaded ? 'visible' : 'hidden'}
         onLoad={() => setIsImageLoaded(true)}
-        onError={() => setIsImageLoaded(true)}
+        onError={handleError}
       />
       {!isImageLoaded && (
         <Flex

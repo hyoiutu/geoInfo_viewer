@@ -14,6 +14,20 @@
 
 ## 変更履歴
 
+### [2026-07-30] アクティビティパネルの写真表示をサムネイル経由に切り替えた（Issue #105）
+* **修正の動機・概要**:
+  - アクティビティパネルの写真グリッドは、Issue #100でサムネイル専用zipを生成する仕組みが実装済みだったにもかかわらず一切参照されておらず、引き続きフルサイズ月別アーカイブzipを直接ダウンロードして表示していたため表示が遅かった。新規のサムネイル取得エンドポイントを追加し、パネル表示を切り替えた。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `photos.constants.ts`/`photos.controller.ts`: 新規`GET /photos/:id/thumbnail`エンドポイント（`getThumbnail`）を追加。
+    - `photos.service.ts`: `findThumbnailByPhotoId`を追加。撮影年月から`monthly_photo_thumbnail_archives`のサムネイルzipを特定して取り出す。既存の`findImageByPhotoId`とzip内エントリ取り出しロジックを共通化（`extractImageFromZip`）し、zipダウンロードのキャッシュも共有するようにした。
+    - `group-photos-by-year-month.util.ts`: `toYearMonth`をexportに変更し、`photos.service.ts`からも使えるようにした。
+    - `photosApi.ts`: `resolvePhotoThumbnailUrl`を追加。
+    - `ActivityDetailSidebar.tsx`: `PhotoGridItem`の画像取得元を`resolvePhotoThumbnailUrl`へ切り替え、`onError`発生時（サムネイルアーカイブが存在しない未処理・失敗年月等）に1度だけ`resolvePhotoImageUrl`（フルサイズ）へフォールバックするようにした。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（グリッド表示・ローディング表示等のユーザーから見た挙動に変化はないため）。
+  * **設計書**: `designs/technical_design.md`に新規節「アクティビティパネルの写真表示をサムネイル経由へ切り替え（Issue #105）」を追加。
+
 ### [2026-07-30] 動画削除・サムネイル生成をflatten直後のローカル処理へ前倒しした（Issue #104）
 * **修正の動機・概要**:
   - 動画削除（Issue #97/#99）・サムネイル生成（Issue #100）はいずれも、写真ローカルバックフィルで全年月をGoogle Driveへアップロードし終えた後に、成り行きで追加された機能だった。そのため新規取り込み年月ごとに「動画込みでアップロード→ダウンロードして動画削除→再アップロード→改めてダウンロードしてサムネイル生成→アップロード」という無駄な通信往復が発生し、動画込みの状態で先にアップロードするため月合計サイズが4GiBを超えやすく、Issue #103のZIP64破損リスクも高まっていた。動画削除・サムネイル生成の判断自体は`flatten-local-photo-directory.ts`実行後の時点で確定できるため、この時点に前倒しし無駄な往復を無くした。
