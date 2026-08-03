@@ -134,7 +134,11 @@ export const MapView = ({
         (ids) => onSelectActivitiesRef.current(ids),
         () => focusedActivityRef.current !== null
       );
-      registerAdminBoundaryClickHandler(map, (municipality) => onFocusMunicipalityRef.current(municipality));
+      registerAdminBoundaryClickHandler(
+        map,
+        (municipality) => onFocusMunicipalityRef.current(municipality),
+        () => focusedActivityRef.current !== null
+      );
       registerFocusedActivityHoverHandler(
         map,
         () => focusedActivityRef.current,

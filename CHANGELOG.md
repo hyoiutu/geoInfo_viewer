@@ -54,6 +54,17 @@
   * **README.md**: 変更なし。
   * **仕様書**: `specs/system_specification.md`の「自転車ログ表示機能」に、本機能導入前から取得済みのアクティビティはフォースリフェッチ実行までズームレベル10以下で表示されない旨を追記。
 
+### [2026-07-30] アクティビティ選択時に行政区画も選択される競合を解消した（Issue #96）
+* **修正の動機・概要**:
+  - 自転車ログの線の真上にある行政区画をクリックすると、`registerBicycleLogClickHandler`（自転車ログのクリック検出）・`registerAdminBoundaryClickHandler`（行政区画hit-testのクリック検出）が互いに独立して同じ`click`イベントに登録されているため両方が発火し、アクティビティが選択されると同時に行政区画へも意図せずフォーカス・パンし、選択したアクティビティが見えなくなる問題があった。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `mapLayerInteraction.ts`: 自転車ログのヒットテストロジックを`queryBicycleLogActivityIds`として切り出し、`registerBicycleLogClickHandler`・新規`willSelectBicycleLogActivity`の両方から使えるようにした。`registerAdminBoundaryClickHandler`に第3引数`isBicycleLogFocused`を追加し、クリック地点で自転車ログのアクティビティが選択される状態（フォーカス中でない・ズームレベルがしきい値より大きい・実際にヒットする）の場合は行政区画側の処理をスキップするようにした。
+    - `MapView.tsx`: `registerAdminBoundaryClickHandler`の呼び出しに、自転車ログクリックハンドラと同じフォーカス中判定コールバックを渡すよう変更。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`「行政区画フォーカス機能」に、アクティビティ選択が発生するクリックでは行政区画の選択が行われない旨を追記。
+  * **設計書**: `designs/technical_design.md`「行政区画フォーカス機能（Issue #76）」に、クリック競合の原因と解消方法（`willSelectBicycleLogActivity`によるガード）を追記。
+
 ### [2026-07-30] 写真ローカルバックフィルのpart分割を撮影日時順に行うようにした（Issue #91）
 * **修正の動機・概要**:
   - `backfill-photos-from-local.ts`のpart分割は、`scanLocalPhotoDirectory`が`readdirSync`で列挙した順（撮影日時とは無関係）のまま先頭から累積サイズで区切っていたため、1つのアクティビティ（自転車ログ）の写真取得が複数zip（part）にまたがりうる不具合があった。part分割前に撮影日時の昇順へ並び替えることで、part番号が撮影日時の連続性を保つようにした。

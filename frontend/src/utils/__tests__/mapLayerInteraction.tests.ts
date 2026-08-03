@@ -384,13 +384,19 @@ describe('applyLayerVisibilityに関するテスト', () => {
 });
 
 describe('registerAdminBoundaryClickHandlerに関するテスト', () => {
-  type AdminBoundaryClickHandler = (event: { features?: { properties?: Record<string, unknown> }[] }) => void;
+  type AdminBoundaryClickHandler = (event: {
+    point: { x: number; y: number };
+    features?: { properties?: Record<string, unknown> }[];
+  }) => void;
 
-  /** map.onのみを呼び出す最小限のMapLibre地図モック */
+  /** map.on/map.queryRenderedFeatures/map.getZoomを呼び出す最小限のMapLibre地図モック */
   const createMapMock = () => ({
-    on: vi.fn<(event: string, layerId: string, handler: AdminBoundaryClickHandler) => void>()
+    on: vi.fn<(event: string, layerId: string, handler: AdminBoundaryClickHandler) => void>(),
+    queryRenderedFeatures: vi.fn<() => { properties?: { id?: unknown } }[]>(() => []),
+    // BICYCLE_LOG_SUMMARY_MAX_ZOOM(10)より大きいズームレベルをデフォルトとする
+    getZoom: vi.fn<() => number>(() => 15)
   });
-  // テスト対象はmap.onのみ呼ぶため、必要最小限のモックへキャストする
+  // テスト対象はmap.on/map.queryRenderedFeatures/map.getZoomのみ呼ぶため、必要最小限のモックへキャストする
   const asMap = (mock: ReturnType<typeof createMapMock>): maplibregl.Map => mock as never;
 
   const getClickHandler = (mock: ReturnType<typeof createMapMock>) => {
@@ -404,9 +410,10 @@ describe('registerAdminBoundaryClickHandlerに関するテスト', () => {
   test('hit-testレイヤーのクリックで検出したfeatureのprefectureName・municipalityNameでonFocusMunicipalityが呼ばれる', () => {
     const mapMock = createMapMock();
     const onFocusMunicipality = vi.fn();
-    registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality);
+    registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality, () => false);
 
     getClickHandler(mapMock)({
+      point: { x: 100, y: 200 },
       features: [{ properties: { prefectureName: '東京都', municipalityName: '渋谷区' } }]
     });
 
@@ -417,9 +424,9 @@ describe('registerAdminBoundaryClickHandlerに関するテスト', () => {
   test('検出したfeatureが無い場合、onFocusMunicipalityは呼ばれない', () => {
     const mapMock = createMapMock();
     const onFocusMunicipality = vi.fn();
-    registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality);
+    registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality, () => false);
 
-    getClickHandler(mapMock)({ features: [] });
+    getClickHandler(mapMock)({ point: { x: 100, y: 200 }, features: [] });
 
     expect(onFocusMunicipality).not.toHaveBeenCalled();
   });
@@ -427,11 +434,59 @@ describe('registerAdminBoundaryClickHandlerに関するテスト', () => {
   test('featureのプロパティが不正な形式の場合、onFocusMunicipalityは呼ばれない', () => {
     const mapMock = createMapMock();
     const onFocusMunicipality = vi.fn();
-    registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality);
+    registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality, () => false);
 
-    getClickHandler(mapMock)({ features: [{ properties: { prefectureName: 123, municipalityName: '渋谷区' } }] });
+    getClickHandler(mapMock)({
+      point: { x: 100, y: 200 },
+      features: [{ properties: { prefectureName: 123, municipalityName: '渋谷区' } }]
+    });
 
     expect(onFocusMunicipality).not.toHaveBeenCalled();
+  });
+
+  describe('自転車ログとのクリック競合に関するテスト（Issue #96）', () => {
+    test('クリック地点が自転車ログにもヒットし、かつ選択可能な状態（未フォーカス・通常ズーム）の場合、onFocusMunicipalityは呼ばれない', () => {
+      const mapMock = createMapMock();
+      mapMock.queryRenderedFeatures.mockReturnValue([{ properties: { id: '1' } }]);
+      const onFocusMunicipality = vi.fn();
+      registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality, () => false);
+
+      getClickHandler(mapMock)({
+        point: { x: 100, y: 200 },
+        features: [{ properties: { prefectureName: '東京都', municipalityName: '渋谷区' } }]
+      });
+
+      expect(onFocusMunicipality).not.toHaveBeenCalled();
+    });
+
+    test('自転車ログにヒットしても、フォーカス中（選択操作が無効）の場合はonFocusMunicipalityが呼ばれる', () => {
+      const mapMock = createMapMock();
+      mapMock.queryRenderedFeatures.mockReturnValue([{ properties: { id: '1' } }]);
+      const onFocusMunicipality = vi.fn();
+      registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality, () => true);
+
+      getClickHandler(mapMock)({
+        point: { x: 100, y: 200 },
+        features: [{ properties: { prefectureName: '東京都', municipalityName: '渋谷区' } }]
+      });
+
+      expect(onFocusMunicipality).toHaveBeenCalledWith({ prefectureName: '東京都', municipalityName: '渋谷区' });
+    });
+
+    test('自転車ログにヒットしても、ズームレベルがしきい値以下（選択操作が無効）の場合はonFocusMunicipalityが呼ばれる', () => {
+      const mapMock = createMapMock();
+      mapMock.getZoom.mockReturnValue(10);
+      mapMock.queryRenderedFeatures.mockReturnValue([{ properties: { id: '1' } }]);
+      const onFocusMunicipality = vi.fn();
+      registerAdminBoundaryClickHandler(asMap(mapMock), onFocusMunicipality, () => false);
+
+      getClickHandler(mapMock)({
+        point: { x: 100, y: 200 },
+        features: [{ properties: { prefectureName: '東京都', municipalityName: '渋谷区' } }]
+      });
+
+      expect(onFocusMunicipality).toHaveBeenCalledWith({ prefectureName: '東京都', municipalityName: '渋谷区' });
+    });
   });
 });
 

@@ -53,7 +53,11 @@ test.describe
       await window.getByRole('button', { name: '自転車ログ初期取り込み' }).click();
 
       await expect(window.getByText('取得が完了しました')).toBeVisible({ timeout: BACKFILL_COMPLETE_TIMEOUT_MS });
-      await window.getByRole('button', { name: '閉じる' }).click();
+      // 設定ダイアログの閉じるボタン（AppDialogが持つ標準の閉じるボタン、aria-label「閉じる」）と
+      // 進捗フッターの閉じるボタンは同じaria-labelのため、設定ダイアログの閉じるアニメーションが
+      // 完了しきっていないタイミングでは両方がDOM上に存在しうる（Issue #86でフッターの表示が
+      // 高速化されたことで、以前より顕在化しやすくなった）。進捗フッター側だけを明示的に指定する
+      await window.getByTestId('map-workspace-root').getByRole('button', { name: '閉じる' }).click();
 
       await enableBicycleLogLayer();
 

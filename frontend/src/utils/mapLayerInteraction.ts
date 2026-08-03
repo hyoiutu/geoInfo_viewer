@@ -27,6 +27,47 @@ const HIDDEN_VALUE = 'none';
 const HIT_TEST_RADIUS_PX = 5;
 
 /**
+ * クリック地点周辺（バウンディングボックス）にある自転車ログのアクティビティIDを検出する。
+ * `registerBicycleLogClickHandler`（実際の選択処理）・`registerAdminBoundaryClickHandler`
+ * （自転車ログとのクリック競合検出、Issue #96）の両方から使う
+ * @param map ヒットテスト対象のMapLibre地図インスタンス
+ * @param point ヒットテストの中心点（クリック地点）
+ * @returns 検出したアクティビティIDの一覧（重複排除済み）。何も検出しなかった場合は空配列
+ */
+const queryBicycleLogActivityIds = (map: maplibregl.Map, point: { x: number; y: number }): string[] => {
+  const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
+    [point.x - HIT_TEST_RADIUS_PX, point.y - HIT_TEST_RADIUS_PX],
+    [point.x + HIT_TEST_RADIUS_PX, point.y + HIT_TEST_RADIUS_PX]
+  ];
+  const features = map.queryRenderedFeatures(bbox, {
+    layers: [BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_FOCUSED_LAYER_ID]
+  });
+  // 同一クリックでも複数の描画フィーチャーが同一アクティビティIDを指しうるため重複排除する
+  return [...new Set(features.map((feature) => String(feature.properties?.id)))];
+};
+
+/**
+ * クリック地点が、自転車ログレイヤーのクリックによって実際にアクティビティが選択される状態
+ * （フォーカス中でない・ズームレベルがしきい値より大きい・アクティビティに実際にヒットする）に
+ * あるかどうかを判定する。`registerAdminBoundaryClickHandler`が、同一クリックでの行政区画選択との
+ * 競合を検出するために使う（Issue #96）
+ * @param map ヒットテスト対象のMapLibre地図インスタンス
+ * @param point ヒットテストの中心点（クリック地点）
+ * @param isFocused 呼び出し時点でフォーカス中かどうかを返す関数
+ * @returns このクリックで自転車ログのアクティビティが選択される場合true
+ */
+const willSelectBicycleLogActivity = (
+  map: maplibregl.Map,
+  point: { x: number; y: number },
+  isFocused: () => boolean
+): boolean => {
+  if (isFocused() || map.getZoom() <= BICYCLE_LOG_SUMMARY_MAX_ZOOM) {
+    return false;
+  }
+  return queryBicycleLogActivityIds(map, point).length > 0;
+};
+
+/**
  * 自転車ログレイヤーのクリックを検出し、選択中アクティビティを置き換える。
  * 線が細く正確なクリックが難しいため、クリック地点を中心としたバウンディングボックスでヒットテストする。
  * フォーカス中はクリックによる選択変更を無効にする。
@@ -46,15 +87,7 @@ export const registerBicycleLogClickHandler = (
       return;
     }
 
-    const bbox: [maplibregl.PointLike, maplibregl.PointLike] = [
-      [event.point.x - HIT_TEST_RADIUS_PX, event.point.y - HIT_TEST_RADIUS_PX],
-      [event.point.x + HIT_TEST_RADIUS_PX, event.point.y + HIT_TEST_RADIUS_PX]
-    ];
-    const features = map.queryRenderedFeatures(bbox, {
-      layers: [BICYCLE_LOG_LAYER_ID, BICYCLE_LOG_SELECTED_LAYER_ID, BICYCLE_LOG_FOCUSED_LAYER_ID]
-    });
-    // 同一クリックでも複数の描画フィーチャーが同一アクティビティIDを指しうるため重複排除する
-    const ids = [...new Set(features.map((feature) => String(feature.properties?.id)))];
+    const ids = queryBicycleLogActivityIds(map, event.point);
     if (ids.length > 0) {
       onSelectActivities(ids);
     }
@@ -208,15 +241,23 @@ export const applyLayerVisibility = (
 };
 
 /**
- * 行政区画hit-testレイヤーのクリックを検出し、クリック地点を含む自治体をコールバックへ渡す（Issue #76）
+ * 行政区画hit-testレイヤーのクリックを検出し、クリック地点を含む自治体をコールバックへ渡す（Issue #76）。
+ * 同一クリックで自転車ログのアクティビティも選択される状態の場合は、行政区画の選択を行わない
+ * （自転車ログの選択時に行政区画へパンし選択したアクティビティが見えなくなる競合を防ぐため。Issue #96）
  * @param map クリックを監視するMapLibre地図インスタンス
  * @param onFocusMunicipality 検出した自治体を渡すコールバック
+ * @param isBicycleLogFocused 呼び出し時点で自転車ログのアクティビティがフォーカス中かどうかを返す関数
  */
 export const registerAdminBoundaryClickHandler = (
   map: maplibregl.Map,
-  onFocusMunicipality: (municipality: PassedMunicipality) => void
+  onFocusMunicipality: (municipality: PassedMunicipality) => void,
+  isBicycleLogFocused: () => boolean
 ) => {
   map.on('click', ADMIN_BOUNDARY_HITTEST_FILL_LAYER_ID, (event) => {
+    if (willSelectBicycleLogActivity(map, event.point, isBicycleLogFocused)) {
+      return;
+    }
+
     const properties = event.features?.[0]?.properties;
     const prefectureName = properties?.prefectureName;
     const municipalityName = properties?.municipalityName;

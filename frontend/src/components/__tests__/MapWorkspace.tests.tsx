@@ -1,4 +1,4 @@
-import { fireEvent, waitFor } from '@testing-library/react';
+import { fireEvent, waitFor, within } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity } from '../../api/activitiesApi';
@@ -186,7 +186,7 @@ describe('MapWorkspaceに関するテスト', () => {
     // レート制限間隔が極小の環境では、開始操作の直後の最初の状態取得時点で既に完了しており、
     // isRunning:trueの状態をフロントエンドが一度も観測できないことがある。
     // getBackfillStatusの既定モック（isRunning:falseを即座に返す）はまさにこのケースを表す
-    const { getByRole, queryByRole, getByText } = renderWithChakra(<MapWorkspace />);
+    const { getByRole, queryByRole, getByText, getByTestId } = renderWithChakra(<MapWorkspace />);
 
     fireEvent.click(getByRole('button', { name: '設定' }));
     const backfillButton = await waitFor(() => getByRole('button', { name: '自転車ログ初期取り込み' }));
@@ -200,7 +200,11 @@ describe('MapWorkspaceに関するテスト', () => {
     await waitFor(() => expect(queryByRole('button', { name: '自転車ログ初期取り込み' })).not.toBeInTheDocument());
 
     await waitFor(() => expect(getByText('取得が完了しました')).toBeInTheDocument());
-    expect(getByRole('button', { name: '閉じる' })).toBeInTheDocument();
+    // 設定ダイアログの閉じるボタン（AppDialogが持つ標準の閉じるボタン、aria-label「閉じる」）と
+    // 進捗フッターの閉じるボタンは同じaria-labelを持つ。設定ダイアログはPortalで
+    // map-workspace-root外（document.body直下）へレンダリングされるため、
+    // map-workspace-root配下に絞ることで進捗フッター側だけを取得できる
+    expect(within(getByTestId('map-workspace-root')).getByRole('button', { name: '閉じる' })).toBeInTheDocument();
   });
 
   test('設定ダイアログの強制再取得ボタンをクリックすると、startForceRefetchが呼ばれる', async () => {
