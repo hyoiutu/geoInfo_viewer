@@ -1,4 +1,4 @@
-import { waitFor } from '@testing-library/react';
+import { fireEvent, waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity, PassedMunicipality, Photo } from '../../api/activitiesApi';
@@ -85,7 +85,8 @@ const DEFAULT_SELECTION_PROPS = {
   adminBoundaryEra: 'current' as const,
   focusedMunicipality: DEFAULT_FOCUSED_MUNICIPALITY,
   onFocusMunicipality: vi.fn(),
-  photos: []
+  photos: [],
+  onPhotoClick: vi.fn()
 };
 
 const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity => ({
@@ -1042,6 +1043,29 @@ describe('MapViewに関するテスト', () => {
       const marker = getMarkerInstances()[0];
       expect(marker.lngLat).toEqual([139.767, 35.681]);
       expect(marker.element.querySelector('img')?.alt).toBe('IMG_42.jpg');
+    });
+
+    test('写真吹き出しをクリックすると、対象の写真IDでonPhotoClickが呼ばれる（Issue #108）', async () => {
+      const photo = createPhoto({ id: 42 });
+      const onPhotoClick = vi.fn();
+
+      renderWithChakra(
+        <MapView
+          layerVisibility={ALL_ON_VISIBILITY}
+          {...DEFAULT_SELECTION_PROPS}
+          photos={[photo]}
+          onPhotoClick={onPhotoClick}
+        />
+      );
+
+      await waitFor(() => expect(getMarkerInstances()).toHaveLength(1));
+      const image = getMarkerInstances()[0].element.querySelector('img');
+      if (!image) {
+        throw new Error('img element should exist');
+      }
+      fireEvent.click(image);
+
+      expect(onPhotoClick).toHaveBeenCalledWith(42);
     });
 
     test('位置情報を持たない写真は無視される', () => {

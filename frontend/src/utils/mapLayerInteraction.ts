@@ -337,11 +337,14 @@ export type PhotoBalloonMarkerEntry = {
  * @param map 反映先のMapLibre地図インスタンス
  * @param markersRef 直前に表示していたマーカー・React rootの組を保持するref
  * @param clusterIndex 直近のphotos一覧から構築済みのクラスタリングインデックス
+ * @param onPhotoClick 単一写真の吹き出しがクリックされたときに、対象の写真IDを渡して呼ばれる
+ * コールバック（拡大プレビュー表示用、Issue #108）。クラスタの吹き出しはクリック対象外のため呼ばれない
  */
 export const applyPhotoBalloons = (
   map: maplibregl.Map,
   markersRef: { current: PhotoBalloonMarkerEntry[] },
-  clusterIndex: PhotoClusterIndex | null
+  clusterIndex: PhotoClusterIndex | null,
+  onPhotoClick: (photoId: number) => void
 ) => {
   for (const { marker, root } of markersRef.current) {
     marker.remove();
@@ -366,7 +369,7 @@ export const applyPhotoBalloons = (
     const { element, root } =
       point.type === 'cluster'
         ? createPhotoBalloonClusterElement(point.photoCount)
-        : createPhotoBalloonThumbnailElement(point.photoId, point.fileName);
+        : createPhotoBalloonThumbnailElement(point.photoId, point.fileName, () => onPhotoClick(point.photoId));
     const marker = new maplibregl.Marker({ element }).setLngLat([point.longitude, point.latitude]).addTo(map);
     return { marker, root };
   });

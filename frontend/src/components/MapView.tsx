@@ -67,6 +67,8 @@ type MapViewProps = {
   onAdminBoundaryDataApplied?: () => void;
   /** フォーカス中のアクティビティの写真一覧（地図上の吹き出し表示用、Issue #107） */
   photos: Photo[];
+  /** 写真吹き出し（単一写真のみ）がクリックされたときに、対象の写真IDを渡して呼ばれるコールバック（拡大プレビュー表示用、Issue #108） */
+  onPhotoClick: (photoId: number) => void;
 };
 
 /**
@@ -86,7 +88,8 @@ export const MapView = ({
   focusedMunicipality,
   onFocusMunicipality,
   onAdminBoundaryDataApplied,
-  photos
+  photos,
+  onPhotoClick
 }: MapViewProps) => {
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
 
@@ -108,6 +111,9 @@ export const MapView = ({
   // 依存配列に含めてeffectを不要に再実行しないよう、最新の値をrefで参照する（onSelectActivitiesRef等と同じ対策）
   const onAdminBoundaryDataAppliedRef = useRef(onAdminBoundaryDataApplied);
   onAdminBoundaryDataAppliedRef.current = onAdminBoundaryDataApplied;
+  // moveendハンドラはマウント時に一度だけ登録するため、最新の値をrefで参照する（onSelectActivitiesRefと同じ対策）
+  const onPhotoClickRef = useRef(onPhotoClick);
+  onPhotoClickRef.current = onPhotoClick;
 
   const addError = useSetAtom(addErrorAtom);
 
@@ -165,7 +171,9 @@ export const MapView = ({
       // たびに現在のクラスタインデックス（photoClusterIndexRef、写真一覧が変わるたびに再構築される）を
       // 使って再計算する（Issue #107）
       map.on('moveend', () => {
-        applyPhotoBalloons(map, photoBalloonMarkersRef, photoClusterIndexRef.current);
+        applyPhotoBalloons(map, photoBalloonMarkersRef, photoClusterIndexRef.current, (photoId) =>
+          onPhotoClickRef.current(photoId)
+        );
       });
       setIsStyleLoaded(true);
     });
@@ -225,7 +233,9 @@ export const MapView = ({
     }
 
     photoClusterIndexRef.current = buildPhotoClusterIndex(photos);
-    applyPhotoBalloons(map, photoBalloonMarkersRef, photoClusterIndexRef.current);
+    applyPhotoBalloons(map, photoBalloonMarkersRef, photoClusterIndexRef.current, (photoId) =>
+      onPhotoClickRef.current(photoId)
+    );
   }, [photos, isStyleLoaded]);
 
   // layerVisibility・選択中の行政区画年代が変化するたびに各レイヤーの表示/非表示を反映する

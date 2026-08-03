@@ -23,6 +23,7 @@ import { BackfillProgressFooter } from './BackfillProgressFooter';
 import { ErrorDialog } from './ErrorDialog';
 import { MapControls } from './MapControls';
 import { MapView } from './MapView';
+import { PhotoPreviewModal } from './PhotoPreviewModal';
 
 /**
  * 地図・Map Controls・各種ダイアログを組み合わせたアプリのメイン画面。
@@ -41,6 +42,8 @@ export const MapWorkspace = () => {
   const [era, setEra] = useState<MunicipalityEra>(MUNICIPALITY_ERA_CURRENT);
   const [filter, setFilter] = useState<ActivityFilter>(DEFAULT_ACTIVITY_FILTER);
   const [focusedMunicipality, setFocusedMunicipality] = useState<PassedMunicipality | null>(null);
+  // 拡大プレビュー中の写真の、photos内でのindex（Issue #108）。nullは非表示を表す
+  const [previewPhotoIndex, setPreviewPhotoIndex] = useState<number | null>(null);
 
   const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus();
   const {
@@ -73,6 +76,15 @@ export const MapWorkspace = () => {
 
   const handleAdminBoundaryDataApplied = () => {
     clearPendingLayerApplyFlag('waitingForAdminBoundary');
+  };
+
+  // アクティビティパネル・地図上の吹き出しいずれのサムネイルクリックも、同じphotos配列内でのindexを
+  // 特定して拡大プレビューを開く（見た目・挙動を共通化する、Issue #108のユーザー回答）
+  const handlePhotoClick = (photoId: number) => {
+    const index = photos.findIndex((photo) => photo.id === photoId);
+    if (index !== -1) {
+      setPreviewPhotoIndex(index);
+    }
   };
 
   const handleApplyLayerSettings = (nextVisibility: LayerVisibility, nextEra: MunicipalityEra) => {
@@ -115,6 +127,7 @@ export const MapWorkspace = () => {
             onFocusMunicipality={setFocusedMunicipality}
             onAdminBoundaryDataApplied={handleAdminBoundaryDataApplied}
             photos={photos}
+            onPhotoClick={handlePhotoClick}
           />
           <MapControls
             appliedVisibility={visibility}
@@ -144,6 +157,13 @@ export const MapWorkspace = () => {
         onMunicipalityFocus={setFocusedMunicipality}
         photos={photos}
         isPhotosLoading={isPhotosLoading}
+        onPhotoClick={handlePhotoClick}
+      />
+      <PhotoPreviewModal
+        photos={photos}
+        selectedIndex={previewPhotoIndex}
+        onClose={() => setPreviewPhotoIndex(null)}
+        onNavigate={setPreviewPhotoIndex}
       />
       <ErrorDialog />
     </Flex>

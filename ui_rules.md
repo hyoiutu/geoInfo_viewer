@@ -52,6 +52,25 @@ const PrimaryActionButton = (props: ButtonProps) => (
 
 同一の見た目が2箇所以上で使われる場合、または1要素に付与するstyle propsが5個を超える場合は、専用コンポーネント（同一ファイル内に閉じたprivateコンポーネントでもよい）かChakraのtheme recipeに切り出す。呼び出し側でstyle propsを毎回書き直すと、見た目を変更する際の修正漏れや、そもそも何のためのpropsか読み取りにくくなる問題が起きる。
 
+**「display="flex" + alignItems="center" + justifyContent="center"」のような決まったCSSパターンは、自作の専用コンポーネントを作る前にChakra UIが同等の機能を持つコンポーネントを既に提供していないか確認する**（車輪の再発明を避ける、design_principles.md参照）。
+
+NG
+```tsx
+<Box position="relative" width="100%" minHeight="60vh" display="flex" alignItems="center" justifyContent="center">
+  <Image src={src} alt={alt} />
+</Box>
+```
+
+OK
+```tsx
+// ChakraのCenterはdisplay="flex" + alignItems="center" + justifyContent="center"を1コンポーネントにまとめたもの
+<Center position="relative" width="100%" minHeight="60vh">
+  <Image src={src} alt={alt} />
+</Center>
+```
+
+中央寄せのためだけにBoxへ`display`/`alignItems`/`justifyContent`の3 propsを個別指定すると、上記の「5個を超える」閾値にもすぐ達してしまう。Chakra UIの`Center`（水平・垂直中央寄せに特化したコンポーネント）に置き換えれば、意味の伝わる1コンポーネントに集約でき、style props数も自然に減る（PR #118レビュー対応。`PhotoPreviewModal.tsx`の`PhotoPreviewImage`で実例）。
+
 ---
 
 # 色は生のカラーコードではなく意味を持たせた名前のトークンとして管理する

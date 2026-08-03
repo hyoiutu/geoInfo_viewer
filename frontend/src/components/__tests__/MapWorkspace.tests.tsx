@@ -313,6 +313,34 @@ describe('MapWorkspaceに関するテスト', () => {
     });
   });
 
+  test('アクティビティパネルのサムネイルをクリックすると、拡大プレビューダイアログにフルサイズ画像が表示される（Issue #108）', async () => {
+    const { fetchCyclingActivities, fetchPhotos } = await import('../../api/activitiesApi');
+    const { resolvePhotoImageUrl } = await import('../../api/photosApi');
+    const startDate = '2026-06-15T01:00:00.000Z';
+    const formattedStartDate = new Date(startDate).toLocaleString('ja-JP');
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([createActivity({ id: 'low', startDate })]);
+    vi.mocked(fetchPhotos).mockResolvedValue([{ id: 1, fileName: 'a.jpg', takenAt: startDate, location: null }]);
+    const { getByRole, queryByRole, getByText, getByAltText } = renderWithChakra(<MapWorkspace />);
+
+    await toggleLayerViaDialog(getByRole, queryByRole, '自転車ログ');
+    const mapInstance = getMapInstance();
+    await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalled());
+
+    mapInstance.queryRenderedFeatures.mockReturnValue([{ properties: { id: 'low' } }]);
+    getClickHandler(mapInstance)({ point: { x: 0, y: 0 } });
+    await waitFor(() => expect(getByText(`1. ${formattedStartDate}`)).toBeInTheDocument());
+    fireEvent.click(getByText(`1. ${formattedStartDate}`));
+    await waitFor(() => expect(getByAltText('a.jpg')).toBeInTheDocument());
+
+    fireEvent.click(getByAltText('a.jpg'));
+
+    await waitFor(() => {
+      expect(getByRole('dialog')).toBeInTheDocument();
+    });
+    const dialogImage = getByRole('dialog').querySelector('img[alt="a.jpg"]');
+    expect(dialogImage).toHaveAttribute('src', resolvePhotoImageUrl(1));
+  });
+
   describe('レイヤー変更に伴う非同期処理中のローディング表示に関するテスト（Issue #65）', () => {
     // mockImplementationはbeforeEachのvi.clearAllMocks()では戻らないため、テスト本文の末尾で
     // 手動で戻すと、途中のアサーションが失敗した場合に復元処理へ到達せず後続テストへ状態が漏れる

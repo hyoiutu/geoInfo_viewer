@@ -332,7 +332,7 @@ describe('applyPhotoBalloonsに関するテスト（Issue #107）', () => {
     };
     const mapMock = createMapMock();
 
-    applyPhotoBalloons(asMap(mapMock), markersRef, null);
+    applyPhotoBalloons(asMap(mapMock), markersRef, null, vi.fn());
 
     expect(remove).toHaveBeenCalledTimes(1);
     expect(unmount).toHaveBeenCalledTimes(1);
@@ -345,7 +345,7 @@ describe('applyPhotoBalloonsに関するテスト（Issue #107）', () => {
     const mapMock = createMapMock();
     const emptyIndex = buildPhotoClusterIndex([]);
 
-    applyPhotoBalloons(asMap(mapMock), markersRef, emptyIndex);
+    applyPhotoBalloons(asMap(mapMock), markersRef, emptyIndex, vi.fn());
 
     expect(mapMock.getBounds).toHaveBeenCalledTimes(1);
     expect(mapMock.getZoom).toHaveBeenCalledTimes(1);

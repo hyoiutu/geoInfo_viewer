@@ -7,6 +7,8 @@ type PhotoBalloonThumbnailProps = {
   photoId: number;
   /** altテキストに使うファイル名 */
   fileName: string;
+  /** クリックされたときに呼ばれるコールバック（拡大プレビュー表示用、Issue #108） */
+  onClick: () => void;
 };
 
 /**
@@ -17,26 +19,41 @@ type PhotoBalloonThumbnailProps = {
  * 地図上へ表示されていく（Issue #107）。
  * `maplibregl.Marker`用に`react-dom/client`の独立したReact root（`photoBalloonElement.ts`）へ
  * マウントされ、アプリ本体の`ChakraProvider`配下には含まれないため、`startGoalMarkerElement.ts`と
- * 同様にChakra UIコンポーネントは使わずプレーンなDOM要素として組み立てる
+ * 同様にChakra UIコンポーネントは使わずプレーンなDOM要素として組み立てる。
+ * クリックすると拡大プレビュー（Issue #108、`PhotoPreviewModal`）を開く。imgはHTMLの仕様上
+ * インタラクティブでないため、クリック領域は`<button>`（ネイティブでキーボード操作にも対応する）とする
  */
-export const PhotoBalloonThumbnail = ({ photoId, fileName }: PhotoBalloonThumbnailProps) => {
+export const PhotoBalloonThumbnail = ({ photoId, fileName, onClick }: PhotoBalloonThumbnailProps) => {
   const { src, isLoaded, handleLoad, handleError } = usePhotoThumbnailFallback(photoId);
 
   return (
-    <img
-      src={src}
-      alt={fileName}
-      onLoad={handleLoad}
-      onError={handleError}
+    <button
+      type="button"
+      onClick={onClick}
       style={{
         width: PHOTO_BALLOON_THUMBNAIL_SIZE_PX,
         height: PHOTO_BALLOON_THUMBNAIL_SIZE_PX,
-        objectFit: 'cover',
-        borderRadius: '50%',
-        border: '2px solid white',
-        boxShadow: '0 0 4px rgba(0, 0, 0, 0.5)',
-        visibility: isLoaded ? 'visible' : 'hidden'
+        padding: 0,
+        border: 'none',
+        background: 'none',
+        cursor: 'pointer'
       }}
-    />
+    >
+      <img
+        src={src}
+        alt={fileName}
+        onLoad={handleLoad}
+        onError={handleError}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          borderRadius: '50%',
+          border: '2px solid white',
+          boxShadow: '0 0 4px rgba(0, 0, 0, 0.5)',
+          visibility: isLoaded ? 'visible' : 'hidden'
+        }}
+      />
+    </button>
   );
 };
