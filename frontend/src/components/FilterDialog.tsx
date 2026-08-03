@@ -1,5 +1,5 @@
 import { Button, Flex, HStack, Input, NativeSelect, Text } from '@chakra-ui/react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { type ActivityFilter, DEFAULT_ACTIVITY_FILTER } from '../types/activityFilter';
 import { isActivityFilterValid } from '../utils/filterActivities';
 import { AppDialog } from './AppDialog';
@@ -128,12 +128,11 @@ export const FilterDialog = ({ isOpen, appliedFilter, onApply, onClose }: Filter
   const [draftFilter, setDraftFilter] = useState(appliedFilter);
   const isValid = isActivityFilterValid(draftFilter);
 
-  // ダイアログを開くたびに、入力中の内容を現在適用中の内容へリセットする
-  useEffect(() => {
-    if (isOpen) {
-      setDraftFilter(appliedFilter);
-    }
-  }, [isOpen, appliedFilter]);
+  // ダイアログを開くたびに、入力中の内容を現在適用中の内容へリセットする。AppDialogのonOpen経由で
+  // isOpenがfalse→trueに変化した瞬間にのみ呼ばれる（useEffectは使わない、Issue #125）
+  const handleOpen = () => {
+    setDraftFilter(appliedFilter);
+  };
 
   const updateDraft = (partial: Partial<ActivityFilter>) => {
     setDraftFilter((current) => ({ ...current, ...partial }));
@@ -150,6 +149,7 @@ export const FilterDialog = ({ isOpen, appliedFilter, onApply, onClose }: Filter
   return (
     <AppDialog
       isOpen={isOpen}
+      onOpen={handleOpen}
       onClose={onClose}
       title="自転車ログのフィルタ"
       footer={

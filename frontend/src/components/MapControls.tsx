@@ -4,6 +4,7 @@ import { ChartColumn, Funnel, Layers, Settings } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
 import { isApplyingLayerSettingsAtom } from '../atoms/isApplyingLayerSettingsAtom';
+import { layerVisibilityAtom, municipalityEraAtom } from '../atoms/layerSettingsAtom';
 import type { ActivityFilter } from '../types/activityFilter';
 import type { LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
@@ -15,10 +16,6 @@ import { StatisticsDialog } from './StatisticsDialog';
 
 /** MapControlsのprops */
 type MapControlsProps = {
-  /** 現在適用中(地図に反映済み)のレイヤー表示/非表示状態 */
-  appliedVisibility: LayerVisibility;
-  /** 現在適用中(地図に反映済み)の行政区画の年代 */
-  appliedEra: MunicipalityEra;
   /** レイヤーダイアログで実行が押されたときに、確定した表示状態・年代を渡して呼ばれるコールバック */
   onApplyLayerSettings: (visibility: LayerVisibility, era: MunicipalityEra) => void;
   /** 現在適用中(地図に反映済み)のフィルタ条件 */
@@ -38,11 +35,11 @@ type MapControlsProps = {
 /**
  * 地図の表示を邪魔しないよう地図右下に配置する、レイヤー・フィルタ・統計・設定の各アイコンボタンと、
  * それぞれが開くダイアログ本体をまとめて保持するコンポーネント。開閉状態は本コンポーネントが自身の
- * useStateで管理し、確定した結果（適用状態）のみを呼び出し元（MapWorkspace）へコールバックで返す（Issue #53）
+ * useStateで管理し、確定した結果（適用状態）のみを呼び出し元（MapWorkspace）へコールバックで返す（Issue #53）。
+ * 現在適用中のレイヤー表示状態・行政区画の年代はlayerSettingsAtom（グローバルステート）から直接参照し、
+ * props経由のバケツリレーは行わない（Issue #125）
  */
 export const MapControls = ({
-  appliedVisibility,
-  appliedEra,
   onApplyLayerSettings,
   appliedFilter,
   onApplyFilter,
@@ -52,6 +49,8 @@ export const MapControls = ({
   onStartForceRefetch
 }: MapControlsProps) => {
   const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
+  const appliedVisibility = useAtomValue(layerVisibilityAtom);
+  const appliedEra = useAtomValue(municipalityEraAtom);
 
   const [isLayerDialogOpen, setIsLayerDialogOpen] = useState(false);
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
@@ -140,8 +139,6 @@ export const MapControls = ({
       </Flex>
       <LayerDialog
         isOpen={isLayerDialogOpen}
-        appliedVisibility={appliedVisibility}
-        appliedEra={appliedEra}
         onApply={handleApplyLayerSettings}
         onClose={() => setIsLayerDialogOpen(false)}
       />

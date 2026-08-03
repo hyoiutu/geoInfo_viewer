@@ -171,4 +171,73 @@ describe('AppDialogに関するテスト', () => {
 
     expect(screen.queryByRole('button', { name: '実行' })).not.toBeInTheDocument();
   });
+
+  describe('onOpenに関するテスト（Issue #125）', () => {
+    test('isOpenがfalse→trueに変化すると、onOpenが呼ばれる', () => {
+      const onOpen = vi.fn();
+      const { rerender } = renderWithChakra(
+        <AppDialog isOpen={false} onClose={vi.fn()} onOpen={onOpen} title="タイトル">
+          本文
+        </AppDialog>
+      );
+
+      rerender(
+        <AppDialog isOpen onClose={vi.fn()} onOpen={onOpen} title="タイトル">
+          本文
+        </AppDialog>
+      );
+
+      expect(onOpen).toHaveBeenCalledTimes(1);
+    });
+
+    test('isOpenがtrue→falseに変化しても、onOpenは呼ばれない', () => {
+      const onOpen = vi.fn();
+      const { rerender } = renderWithChakra(
+        <AppDialog isOpen onClose={vi.fn()} onOpen={onOpen} title="タイトル">
+          本文
+        </AppDialog>
+      );
+
+      rerender(
+        <AppDialog isOpen={false} onClose={vi.fn()} onOpen={onOpen} title="タイトル">
+          本文
+        </AppDialog>
+      );
+
+      expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    test('isOpenが変化しない場合、再レンダーされてもonOpenは呼ばれない', () => {
+      const onOpen = vi.fn();
+      const { rerender } = renderWithChakra(
+        <AppDialog isOpen onClose={vi.fn()} onOpen={onOpen} title="タイトル">
+          本文
+        </AppDialog>
+      );
+
+      rerender(
+        <AppDialog isOpen onClose={vi.fn()} onOpen={onOpen} title="タイトル変更後">
+          本文
+        </AppDialog>
+      );
+
+      expect(onOpen).not.toHaveBeenCalled();
+    });
+
+    test('onOpenを渡さなくてもエラーにならない', () => {
+      const { rerender } = renderWithChakra(
+        <AppDialog isOpen={false} onClose={vi.fn()} title="タイトル">
+          本文
+        </AppDialog>
+      );
+
+      expect(() =>
+        rerender(
+          <AppDialog isOpen onClose={vi.fn()} title="タイトル">
+            本文
+          </AppDialog>
+        )
+      ).not.toThrow();
+    });
+  });
 });

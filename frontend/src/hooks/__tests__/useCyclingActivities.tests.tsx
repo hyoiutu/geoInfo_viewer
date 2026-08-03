@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { Provider as JotaiProvider, useAtomValue } from 'jotai';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { fetchCyclingActivities, getBackfillStatus, syncCyclingActivities } from '../../api/activitiesApi';
@@ -6,8 +6,8 @@ import { errorsAtom } from '../../atoms/errorsAtom';
 import { useCyclingActivities } from '../useCyclingActivities';
 
 /** useCyclingActivitiesとerrorsAtomの現在値を合わせて返す、テスト用の合成フック */
-const useCyclingActivitiesWithErrors = (isBicycleLogVisible: boolean, onSyncComplete?: () => void) => ({
-  cyclingActivities: useCyclingActivities(isBicycleLogVisible, onSyncComplete),
+const useCyclingActivitiesWithErrors = (onSyncComplete?: () => void) => ({
+  cyclingActivities: useCyclingActivities(onSyncComplete),
   errors: useAtomValue(errorsAtom)
 });
 
@@ -38,13 +38,12 @@ const ACTIVITY_1 = {
   summaryPath: null
 };
 
-const renderCyclingActivities = (isBicycleLogVisible: boolean, onSyncComplete?: () => void) =>
-  renderHook(({ isVisible }) => useCyclingActivitiesWithErrors(isVisible, onSyncComplete), {
-    initialProps: { isVisible: isBicycleLogVisible },
+const renderCyclingActivities = (onSyncComplete?: () => void) =>
+  renderHook(() => useCyclingActivitiesWithErrors(onSyncComplete), {
     wrapper: ({ children }) => <JotaiProvider>{children}</JotaiProvider>
   });
 
-describe('useCyclingActivitiesに関するテスト', () => {
+describe('useCyclingActivitiesに関するテスト（Issue #125）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(fetchCyclingActivities).mockResolvedValue([]);
@@ -53,34 +52,32 @@ describe('useCyclingActivitiesに関するテスト', () => {
   });
 
   test('初期状態はactivitiesが空配列である', () => {
-    const { result } = renderCyclingActivities(false);
+    const { result } = renderCyclingActivities();
 
     expect(result.current.cyclingActivities.activities).toEqual([]);
   });
 
-  test('isBicycleLogVisibleがfalse→trueに変化したとき、同期後に取得したアクティビティを返す', async () => {
+  test('syncAndLoadBicycleLogを呼ぶと、同期後に取得したアクティビティを返す', async () => {
     vi.mocked(fetchCyclingActivities).mockResolvedValue([ACTIVITY_1]);
-    const { result, rerender } = renderCyclingActivities(false);
+    const { result } = renderCyclingActivities();
 
-    rerender({ isVisible: true });
+    await act(async () => {
+      await result.current.cyclingActivities.syncAndLoadBicycleLog();
+    });
 
-    await waitFor(() => {
-      expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
-    });
-    await waitFor(() => {
-      expect(result.current.cyclingActivities.activities).toEqual([ACTIVITY_1]);
-    });
+    expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
+    expect(result.current.cyclingActivities.activities).toEqual([ACTIVITY_1]);
   });
 
   test('同期に失敗した場合は参照APIを呼ばない', async () => {
     vi.mocked(syncCyclingActivities).mockResolvedValue({ success: false });
-    const { rerender } = renderCyclingActivities(false);
+    const { result } = renderCyclingActivities();
 
-    rerender({ isVisible: true });
-
-    await waitFor(() => {
-      expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await result.current.cyclingActivities.syncAndLoadBicycleLog();
     });
+
+    expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
     expect(fetchCyclingActivities).not.toHaveBeenCalled();
   });
 
@@ -93,46 +90,36 @@ describe('useCyclingActivitiesに関するテスト', () => {
       estimatedRemainingSeconds: 27,
       lastError: null
     });
-    const { rerender } = renderCyclingActivities(false);
+    const { result } = renderCyclingActivities();
 
-    rerender({ isVisible: true });
-
-    await waitFor(() => {
-      expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await result.current.cyclingActivities.syncAndLoadBicycleLog();
     });
+
+    expect(fetchCyclingActivities).toHaveBeenCalledTimes(1);
     expect(syncCyclingActivities).not.toHaveBeenCalled();
   });
 
-  test('isBicycleLogVisibleがtrue→falseに変化したときは、同期用APIを呼ばない', () => {
-    const { rerender } = renderCyclingActivities(true);
-    vi.mocked(syncCyclingActivities).mockClear();
+  test('syncAndLoadBicycleLogを複数回呼ぶと、呼んだ回数だけ同期用APIが呼ばれる', async () => {
+    const { result } = renderCyclingActivities();
 
-    rerender({ isVisible: false });
-
-    expect(syncCyclingActivities).not.toHaveBeenCalled();
-  });
-
-  test('false→true→false→trueと変化した場合、trueになる度に同期用APIが呼ばれる', async () => {
-    const { rerender } = renderCyclingActivities(false);
-
-    rerender({ isVisible: true });
-    await waitFor(() => {
-      expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await result.current.cyclingActivities.syncAndLoadBicycleLog();
+    });
+    await act(async () => {
+      await result.current.cyclingActivities.syncAndLoadBicycleLog();
     });
 
-    rerender({ isVisible: false });
-    rerender({ isVisible: true });
-
-    await waitFor(() => {
-      expect(syncCyclingActivities).toHaveBeenCalledTimes(2);
-    });
+    expect(syncCyclingActivities).toHaveBeenCalledTimes(2);
   });
 
   test('同期用APIの呼び出しが失敗した場合、グローバルなエラースタックに追加される', async () => {
     vi.mocked(syncCyclingActivities).mockRejectedValue(new Error('sync failed'));
-    const { result, rerender } = renderCyclingActivities(false);
+    const { result } = renderCyclingActivities();
 
-    rerender({ isVisible: true });
+    await act(async () => {
+      await result.current.cyclingActivities.syncAndLoadBicycleLog();
+    });
 
     await waitFor(() => {
       expect(result.current.errors.some((error) => error.message === 'sync failed')).toBe(true);
@@ -142,9 +129,11 @@ describe('useCyclingActivitiesに関するテスト', () => {
 
   test('参照用APIの呼び出しが失敗した場合、グローバルなエラースタックに追加される', async () => {
     vi.mocked(fetchCyclingActivities).mockRejectedValue(new Error('fetch failed'));
-    const { result, rerender } = renderCyclingActivities(false);
+    const { result } = renderCyclingActivities();
 
-    rerender({ isVisible: true });
+    await act(async () => {
+      await result.current.cyclingActivities.syncAndLoadBicycleLog();
+    });
 
     await waitFor(() => {
       expect(result.current.errors.some((error) => error.message === 'fetch failed')).toBe(true);
@@ -152,59 +141,49 @@ describe('useCyclingActivitiesに関するテスト', () => {
   });
 
   describe('onSyncCompleteに関するテスト（Issue #65）', () => {
-    test('isBicycleLogVisibleがfalse→trueに変化し同期・参照が完了すると、onSyncCompleteが呼ばれる', async () => {
+    test('同期・参照が完了すると、onSyncCompleteが呼ばれる', async () => {
       const onSyncComplete = vi.fn();
-      const { rerender } = renderCyclingActivities(false, onSyncComplete);
+      const { result } = renderCyclingActivities(onSyncComplete);
 
-      rerender({ isVisible: true });
-
-      await waitFor(() => {
-        expect(onSyncComplete).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await result.current.cyclingActivities.syncAndLoadBicycleLog();
       });
-    });
 
-    test('isBicycleLogVisibleがtrue→falseに変化したときは、onSyncCompleteは呼ばれない', () => {
-      const onSyncComplete = vi.fn();
-      const { rerender } = renderCyclingActivities(true, onSyncComplete);
-      onSyncComplete.mockClear();
-
-      rerender({ isVisible: false });
-
-      expect(onSyncComplete).not.toHaveBeenCalled();
+      expect(onSyncComplete).toHaveBeenCalledTimes(1);
     });
 
     test('同期用APIの呼び出しが失敗した場合でも、onSyncCompleteは呼ばれる（ダイアログが閉じなくならないようにするため）', async () => {
       vi.mocked(syncCyclingActivities).mockRejectedValue(new Error('sync failed'));
       const onSyncComplete = vi.fn();
-      const { rerender } = renderCyclingActivities(false, onSyncComplete);
+      const { result } = renderCyclingActivities(onSyncComplete);
 
-      rerender({ isVisible: true });
-
-      await waitFor(() => {
-        expect(onSyncComplete).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await result.current.cyclingActivities.syncAndLoadBicycleLog();
       });
+
+      expect(onSyncComplete).toHaveBeenCalledTimes(1);
     });
 
     test('参照用APIの呼び出しが失敗した場合でも、onSyncCompleteは呼ばれる', async () => {
       vi.mocked(fetchCyclingActivities).mockRejectedValue(new Error('fetch failed'));
       const onSyncComplete = vi.fn();
-      const { rerender } = renderCyclingActivities(false, onSyncComplete);
+      const { result } = renderCyclingActivities(onSyncComplete);
 
-      rerender({ isVisible: true });
-
-      await waitFor(() => {
-        expect(onSyncComplete).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await result.current.cyclingActivities.syncAndLoadBicycleLog();
       });
+
+      expect(onSyncComplete).toHaveBeenCalledTimes(1);
     });
 
     test('onSyncCompleteが指定されていなくてもエラーにならない', async () => {
-      const { rerender } = renderCyclingActivities(false);
+      const { result } = renderCyclingActivities();
 
-      rerender({ isVisible: true });
-
-      await waitFor(() => {
-        expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await result.current.cyclingActivities.syncAndLoadBicycleLog();
       });
+
+      expect(syncCyclingActivities).toHaveBeenCalledTimes(1);
     });
   });
 });

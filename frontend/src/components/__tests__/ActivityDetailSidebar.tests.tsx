@@ -1,8 +1,11 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { createStore } from 'jotai';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity, Photo } from '../../api/activitiesApi';
 import { fetchPassedMunicipalities } from '../../api/activitiesApi';
 import { resolvePhotoImageUrl, resolvePhotoThumbnailUrl } from '../../api/photosApi';
+import { applyLayerSettingsAtom } from '../../atoms/layerSettingsAtom';
+import { createDefaultVisibility } from '../../constants/layerDefinitions';
 import { ErrorsProbe } from '../../test-utils/ErrorsProbe';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { ActivityDetailSidebar } from '../ActivityDetailSidebar';
@@ -211,7 +214,9 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     expect(screen.getByText('神奈川県横浜市中区')).toBeInTheDocument();
   });
 
-  test('adminBoundaryEraを指定した場合、その年代で通過自治体を取得する', () => {
+  test('municipalityEraAtomが現行以外の場合、その年代で通過自治体を取得する（Issue #125）', () => {
+    const store = createStore();
+    store.set(applyLayerSettingsAtom, { visibility: createDefaultVisibility(), era: '2000-10-01' });
     const activity = createActivity({ id: '42' });
 
     renderWithChakra(
@@ -222,9 +227,9 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
-        adminBoundaryEra="2000-10-01"
         {...DEFAULT_PHOTOS_PROPS}
-      />
+      />,
+      { store }
     );
 
     expect(fetchPassedMunicipalities).toHaveBeenCalledWith('42', '2000-10-01');

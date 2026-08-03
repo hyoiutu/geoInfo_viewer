@@ -1,7 +1,9 @@
 import { Button, Checkbox, Flex, NativeSelect } from '@chakra-ui/react';
 import { useAtomValue } from 'jotai';
-import { useEffect, useState } from 'react';
+import type { ChangeEvent } from 'react';
+import { useState } from 'react';
 import { isApplyingLayerSettingsAtom } from '../atoms/isApplyingLayerSettingsAtom';
+import { layerVisibilityAtom, municipalityEraAtom } from '../atoms/layerSettingsAtom';
 import { createDefaultVisibility, LAYER_DEFINITIONS } from '../constants/layerDefinitions';
 import { MUNICIPALITY_ERA_OPTIONS } from '../constants/municipalityEraOptions';
 import type { LayerVisibility, ToggleableLayerId } from '../types/layer';
@@ -19,35 +21,31 @@ type AdminBoundaryEraSelectProps = {
 };
 
 /** 行政区画レイヤーの表示年代を選ぶプルダウン */
-const AdminBoundaryEraSelect = ({ era, onChange, disabled }: AdminBoundaryEraSelectProps) => (
-  <NativeSelect.Root size="sm" width="auto" marginLeft="6" disabled={disabled}>
-    <NativeSelect.Field
-      aria-label="行政区画の年代"
-      value={era}
-      onChange={(event) => {
-        if (isMunicipalityEra(event.target.value)) {
-          onChange(event.target.value);
-        }
-      }}
-    >
-      {MUNICIPALITY_ERA_OPTIONS.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </NativeSelect.Field>
-    <NativeSelect.Indicator />
-  </NativeSelect.Root>
-);
+const AdminBoundaryEraSelect = ({ era, onChange, disabled }: AdminBoundaryEraSelectProps) => {
+  const handleChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    if (isMunicipalityEra(event.target.value)) {
+      onChange(event.target.value);
+    }
+  };
+
+  return (
+    <NativeSelect.Root size="sm" width="auto" marginLeft="6" disabled={disabled}>
+      <NativeSelect.Field aria-label="行政区画の年代" value={era} onChange={handleChange}>
+        {MUNICIPALITY_ERA_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </NativeSelect.Field>
+      <NativeSelect.Indicator />
+    </NativeSelect.Root>
+  );
+};
 
 /** LayerDialogのprops */
 type LayerDialogProps = {
   /** ダイアログが開いているかどうか */
   isOpen: boolean;
-  /** 現在適用中(地図に反映済み)のレイヤー表示/非表示状態。ダイアログを開くたびに入力中の内容の初期値として使う */
-  appliedVisibility: LayerVisibility;
-  /** 現在適用中(地図に反映済み)の行政区画の年代。ダイアログを開くたびに入力中の内容の初期値として使う */
-  appliedEra: MunicipalityEra;
   /** 実行ボタンが押されたときに、入力中の表示状態・年代を渡して呼ばれるコールバック */
   onApply: (visibility: LayerVisibility, era: MunicipalityEra) => void;
   /** ダイアログを閉じる（閉じるボタン押下・背景クリック等）ときに呼ばれるコールバック */
@@ -64,20 +62,22 @@ type LayerDialogProps = {
  * 実行ボタンの無効化は、待機中の多重実行によってpendingLayerApplyが上書きされ未完了の非同期処理の追跡が失われる
  * 不具合を防ぐ（Issue #65 PR#110レビュー対応）。他の入力・クローズ手段の無効化は、待機完了時にダイアログが
  * 自動的に閉じ入力中(draft)の内容が破棄される際、待機中に加えた変更・操作がユーザーの意図しないまま失われることを
- * 防ぐ（PR #110再レビュー対応）
+ * 防ぐ（PR #110再レビュー対応）。現在適用中のレイヤー表示状態・行政区画の年代はlayerSettingsAtom
+ * （グローバルステート）から直接参照し、props経由のバケツリレーは行わない（Issue #125）
  */
-export const LayerDialog = ({ isOpen, appliedVisibility, appliedEra, onApply, onClose }: LayerDialogProps) => {
+export const LayerDialog = ({ isOpen, onApply, onClose }: LayerDialogProps) => {
   const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
+  const appliedVisibility = useAtomValue(layerVisibilityAtom);
+  const appliedEra = useAtomValue(municipalityEraAtom);
   const [draftVisibility, setDraftVisibility] = useState(appliedVisibility);
   const [draftEra, setDraftEra] = useState(appliedEra);
 
-  // ダイアログを開くたびに、入力中の内容を現在適用中の内容へリセットする
-  useEffect(() => {
-    if (isOpen) {
-      setDraftVisibility(appliedVisibility);
-      setDraftEra(appliedEra);
-    }
-  }, [isOpen, appliedVisibility, appliedEra]);
+  // ダイアログを開くたびに、入力中の内容を現在適用中の内容へリセットする。AppDialogのonOpen経由で
+  // isOpenがfalse→trueに変化した瞬間にのみ呼ばれる（useEffectは使わない、Issue #125）
+  const handleOpen = () => {
+    setDraftVisibility(appliedVisibility);
+    setDraftEra(appliedEra);
+  };
 
   const toggleDraft = (id: ToggleableLayerId) => {
     setDraftVisibility((current) => ({ ...current, [id]: !current[id] }));
@@ -95,6 +95,7 @@ export const LayerDialog = ({ isOpen, appliedVisibility, appliedEra, onApply, on
   return (
     <AppDialog
       isOpen={isOpen}
+      onOpen={handleOpen}
       onClose={onClose}
       closeDisabled={isApplyingLayerSettings}
       title="レイヤー切り替え"

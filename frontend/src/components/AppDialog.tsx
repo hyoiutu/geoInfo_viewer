@@ -1,5 +1,5 @@
 import { Button, Dialog, Portal } from '@chakra-ui/react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
 const CLOSE_BUTTON_LABEL = '閉じる';
 
@@ -9,6 +9,11 @@ type AppDialogProps = {
   isOpen: boolean;
   /** ダイアログを閉じる際に呼ばれるコールバック（背景クリック・Escapeキー・閉じる(×)ボタン共通） */
   onClose: () => void;
+  /**
+   * ダイアログが開いた瞬間（isOpenがfalse→trueに変化したタイミング）に呼ばれるコールバック（省略可）。
+   * 呼び出し元は主にdraft state（入力中の内容）を現在適用中の内容へリセットする用途に使う（Issue #125）
+   */
+  onOpen?: () => void;
   /** ヘッダーに表示するタイトル */
   title: ReactNode;
   /** ヘッダー右上の閉じる(×)ボタンを表示するか（省略時はtrue。独自の閉じる手段のみ提供する場合はfalseにする） */
@@ -35,6 +40,7 @@ type AppDialogProps = {
 export const AppDialog = ({
   isOpen,
   onClose,
+  onOpen,
   title,
   showCloseButton = true,
   closeDisabled = false,
@@ -42,6 +48,18 @@ export const AppDialog = ({
   footer,
   children
 }: AppDialogProps) => {
+  // isOpenがfalse→trueに変化した瞬間にonOpenを呼ぶ。zag-js（Chakra UIのDialog内部実装）のonOpenChangeは
+  // Dialog.Triggerクリック等の内部イベント駆動でのみ発火し、外部からのisOpen prop変化では発火しないため
+  // 使えない。代わりにReact公式が推奨する「propの変化に応じてレンダー中にstateを調整する」パターンを
+  // 使い、useEffectを使わずに検知する（Issue #125）
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
+    if (isOpen) {
+      onOpen?.();
+    }
+  }
+
   const handleOpenChange = (details: { open: boolean }) => {
     if (!details.open) {
       onClose();

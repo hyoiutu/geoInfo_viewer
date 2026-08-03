@@ -3,10 +3,11 @@ import { createStore } from 'jotai';
 import { describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity } from '../../api/activitiesApi';
 import { clearPendingLayerApplyFlagAtom, startPendingLayerApplyAtom } from '../../atoms/isApplyingLayerSettingsAtom';
+import { applyLayerSettingsAtom } from '../../atoms/layerSettingsAtom';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { DEFAULT_ACTIVITY_FILTER } from '../../types/activityFilter';
 import type { LayerVisibility } from '../../types/layer';
-import { MUNICIPALITY_ERA_CURRENT } from '../../types/municipalityEra';
+import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../../types/municipalityEra';
 import { MapControls } from '../MapControls';
 
 // 「一定時間待っても発生しないこと」を確認するためのwaitForタイムアウト（ミリ秒）。
@@ -38,8 +39,6 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
 
 const buildControls = (overrides: Partial<Parameters<typeof MapControls>[0]> = {}) => (
   <MapControls
-    appliedVisibility={DEFAULT_VISIBILITY}
-    appliedEra={MUNICIPALITY_ERA_CURRENT}
     onApplyLayerSettings={vi.fn()}
     appliedFilter={DEFAULT_ACTIVITY_FILTER}
     onApplyFilter={vi.fn()}
@@ -51,9 +50,20 @@ const buildControls = (overrides: Partial<Parameters<typeof MapControls>[0]> = {
   />
 );
 
-/** テスト専用のストアでレンダリングする。戻り値のstoreを使ってisApplyingLayerSettingsAtomを直接操作できる */
-const renderControls = (overrides: Partial<Parameters<typeof MapControls>[0]> = {}) => {
+/**
+ * テスト専用のストアでレンダリングする。戻り値のstoreを使ってisApplyingLayerSettingsAtom・
+ * layerSettingsAtomを直接操作できる。appliedVisibility/appliedEraは、以前はpropsとして受け取っていたが
+ * Issue #125のAtom化によりlayerSettingsAtom経由でストアへ注入する形に変更した
+ */
+const renderControls = (
+  overrides: Partial<Parameters<typeof MapControls>[0]> = {},
+  options: { appliedVisibility?: LayerVisibility; appliedEra?: MunicipalityEra } = {}
+) => {
   const store = createStore();
+  store.set(applyLayerSettingsAtom, {
+    visibility: options.appliedVisibility ?? DEFAULT_VISIBILITY,
+    era: options.appliedEra ?? MUNICIPALITY_ERA_CURRENT
+  });
   return { ...renderWithChakra(buildControls(overrides), { store }), store };
 };
 
@@ -147,10 +157,7 @@ describe('MapControlsに関するテスト', () => {
 
     test('自転車ログをON→OFFにして実行しても、待たずにすぐ閉じる（非同期処理が発生しないため）', async () => {
       const onApplyLayerSettings = vi.fn();
-      renderControls({
-        onApplyLayerSettings,
-        appliedVisibility: { ...DEFAULT_VISIBILITY, 'bicycle-log': true }
-      });
+      renderControls({ onApplyLayerSettings }, { appliedVisibility: { ...DEFAULT_VISIBILITY, 'bicycle-log': true } });
       fireEvent.click(screen.getByRole('button', { name: 'レイヤー切り替え' }));
       await waitFor(() => expect(screen.getByRole('checkbox', { name: '自転車ログ' })).toBeInTheDocument());
       fireEvent.click(screen.getByRole('checkbox', { name: '自転車ログ' }));
