@@ -113,8 +113,12 @@ root/
 - 対象の2つの非同期処理は元々「状態の変化に反応するuseEffect」として実装されており、実行ボタンのクリックから直接Promiseを返す形にはなっていない。完了検知は以下のコールバックを新設して実現する。
   - `MapView`に`onAdminBoundaryDataApplied?: () => void`を追加し、`applyAdminBoundaryData`が成功・失敗いずれの場合も`.finally()`で呼ぶ（エラー時に呼ばないとダイアログが閉じなくなるため）。コールバックは他のprops同様`useRef`で保持し、effectの依存配列に含めない（`onSelectActivities`等と同じ、不要な再実行を避ける対策）
   - `useCyclingActivities`に第2引数`onSyncComplete?: () => void`を追加し、OFF→ON時の同期処理（`syncAndLoadBicycleLog`）が完了した時点（成功・失敗問わず`finally`）で呼ぶ
-- `MapWorkspace`が`{ waitingForAdminBoundary: boolean; waitingForCyclingLog: boolean } | null`型の`pendingLayerApply`状態を持つ。`handleApplyLayerSettings`（実行ボタン押下時にMapControls経由で呼ばれるコールバック）は、渡された次の表示状態・年代を**現在適用中の値と比較**し、実際に変化するかどうかをこの時点で同期的に判定して`pendingLayerApply`へ記録する。この判定を「非同期処理が開始されたことを検知してから」ではなく「クリックの時点で」行うのは、非同期処理が実際に開始される（`useEffect`が発火する）のは1レンダーサイクル後であり、開始前に完了判定を行ってしまう競合を避けるため
-- `isApplyingLayerSettings`（`pendingLayerApply`のいずれかの待機フラグがtrueかどうか）を`MapView`・`MapControls`へpropsとして渡す。`MapControls`はこれがtrue→falseに変化した時点（`useRef`で前回値を保持し比較）でダイアログを閉じる。「実行」時点で非同期処理が不要と判定した場合（`appliedEra`/`appliedVisibility`との比較で変化なし）は、この仕組みを介さず即座に閉じる（既存の挙動を維持）
+- `{ waitingForAdminBoundary: boolean; waitingForCyclingLog: boolean } | null`型の待機状態（`PendingLayerApply`、`frontend/src/utils/pendingLayerApply.ts`）は、`frontend/src/atoms/isApplyingLayerSettingsAtom.ts`のJotai atomでグローバルステートとして管理する（errorsAtomと同じ「読み取り専用の派生atom + write-only atomで更新操作を限定する」パターン）。生の状態を持つ`pendingLayerApplyStateAtom`は非公開とし、外部には以下のみを公開する。
+  - `isApplyingLayerSettingsAtom`（読み取り専用、派生atom）: `pendingLayerApply`のいずれかの待機フラグがtrueかどうかを返す
+  - `startPendingLayerApplyAtom`（write-only）: 実行ボタン押下時に、完了を待つ対象を記録する
+  - `clearPendingLayerApplyFlagAtom`（write-only）: 指定した非同期処理が完了した時点で、対応するフラグのみをfalseにする
+- `MapWorkspace`の`handleApplyLayerSettings`（実行ボタン押下時にMapControls経由で呼ばれるコールバック）は、渡された次の表示状態・年代を**現在適用中の値と比較**し、実際に変化するかどうかをこの時点で同期的に判定して`startPendingLayerApplyAtom`へ記録する。この判定を「非同期処理が開始されたことを検知してから」ではなく「クリックの時点で」行うのは、非同期処理が実際に開始される（`useEffect`が発火する）のは1レンダーサイクル後であり、開始前に完了判定を行ってしまう競合を避けるため
+- `isApplyingLayerSettingsAtom`は、これを必要とする`MapWorkspace`（カーソル表示）・`MapControls`（ダイアログの自動クローズ判定）・`LayerDialog`（自身の入力・クローズ手段の無効化）がそれぞれ`useAtomValue`で直接参照する。props経由のバケツリレーは行わない（errorsAtom・ErrorDialogと同じ設計判断。当初はMapWorkspaceのローカルuseState+props経由で実装していたが、レビュー対応でグローバルステートへ変更した）。`MapControls`はこれがtrue→falseに変化した時点（`useRef`で前回値を保持し比較）でダイアログを閉じる。「実行」時点で非同期処理が不要と判定した場合（`appliedEra`/`appliedVisibility`との比較で変化なし）は、この仕組みを介さず即座に閉じる（既存の挙動を維持）
 - カーソルのローディング表示は`MapWorkspace`の最外殻`Flex`に`cursor={isApplyingLayerSettings ? 'wait' : undefined}`を設定して実現する。このプロジェクトにローディングカーソルの既存パターンは無かったため、新規に導入した
 
 # 行政区画フォーカス機能（Issue #76）
