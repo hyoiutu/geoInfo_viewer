@@ -1,6 +1,6 @@
 import AdmZip from 'adm-zip';
 import { describe, expect, test } from 'vitest';
-import { mergeMonthlyArchive } from '../monthly-archive.util';
+import { mergeMonthlyArchive, mergeMonthlyThumbnailArchive } from '../monthly-archive.util';
 import type { TakeoutArchiveEntry } from '../takeout-archive.util';
 import type { PhotoMetadata } from '../takeout-metadata.util';
 
@@ -95,6 +95,67 @@ describe('mergeMonthlyArchiveに関するテスト', () => {
 
     expect(result.entries).toEqual([]);
     const zip = new AdmZip(result.zipBuffer);
+    expect(zip.getEntries().map((e) => e.entryName)).toEqual(['existing.jpg']);
+  });
+});
+
+describe('mergeMonthlyThumbnailArchiveに関するテスト（Issue #104）', () => {
+  test('既存アーカイブが無い場合(null)、新規サムネイルのみを含むzipを作成する', () => {
+    const result = mergeMonthlyThumbnailArchive(null, [{ archivePath: 'IMG_1.jpg', buffer: Buffer.from('thumb-1') }]);
+
+    const zip = new AdmZip(result);
+    expect(zip.getEntries().map((e) => e.entryName)).toEqual(['IMG_1.jpg']);
+    expect(zip.getEntry('IMG_1.jpg')?.getData().toString()).toBe('thumb-1');
+  });
+
+  test('既存アーカイブがある場合、既存エントリを保ったまま新規サムネイルを追記する', () => {
+    const existingZip = new AdmZip();
+    existingZip.addFile('existing.jpg', Buffer.from('existing-thumb'));
+
+    const result = mergeMonthlyThumbnailArchive(existingZip.toBuffer(), [
+      { archivePath: 'IMG_2.jpg', buffer: Buffer.from('thumb-2') }
+    ]);
+
+    const zip = new AdmZip(result);
+    expect(
+      zip
+        .getEntries()
+        .map((e) => e.entryName)
+        .sort()
+    ).toEqual(['IMG_2.jpg', 'existing.jpg']);
+    expect(zip.getEntry('existing.jpg')?.getData().toString()).toBe('existing-thumb');
+  });
+
+  test('archivePathは呼び出し元で解決済みのものをそのまま使う（重複排除は行わない）', () => {
+    const result = mergeMonthlyThumbnailArchive(null, [
+      { archivePath: 'IMG_1.jpg', buffer: Buffer.from('thumb-1') },
+      { archivePath: 'IMG_1-2.jpg', buffer: Buffer.from('thumb-2') }
+    ]);
+
+    const zip = new AdmZip(result);
+    expect(
+      zip
+        .getEntries()
+        .map((e) => e.entryName)
+        .sort()
+    ).toEqual(['IMG_1-2.jpg', 'IMG_1.jpg']);
+  });
+
+  test('新規エントリはSTORED（無圧縮）で追加する', () => {
+    const result = mergeMonthlyThumbnailArchive(null, [{ archivePath: 'IMG_1.jpg', buffer: Buffer.from('thumb-1') }]);
+
+    const zip = new AdmZip(result);
+    const zipCompressionMethodStored = 0;
+    expect(zip.getEntry('IMG_1.jpg')?.header.method).toBe(zipCompressionMethodStored);
+  });
+
+  test('新規サムネイルが空の場合、既存アーカイブをそのまま返す', () => {
+    const existingZip = new AdmZip();
+    existingZip.addFile('existing.jpg', Buffer.from('existing-thumb'));
+
+    const result = mergeMonthlyThumbnailArchive(existingZip.toBuffer(), []);
+
+    const zip = new AdmZip(result);
     expect(zip.getEntries().map((e) => e.entryName)).toEqual(['existing.jpg']);
   });
 });
