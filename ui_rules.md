@@ -140,3 +140,30 @@ colors: {
 ```
 
 色・フォントサイズ・余白サイズ等が複数のコンポーネントで共通して使われるようになってきたら、コンポーネントごとに同じ値を書き写すのではなく、`src/theme.ts`（Chakraのtheme tokens、または`gradients`/`shadows`/`layout`等のプレーンな定数export）に一元化し、各コンポーネントはそこから参照する。
+
+---
+
+# Chakra UIの複合コンポーネントでdisabled等の状態propsを渡す先はRoot/Field双方の型定義で確認する
+
+NG
+```tsx
+// NativeSelect.Fieldに直接disabledを渡そうとすると型エラーになる
+// (NativeSelectFieldPropsにdisabledが存在しない)
+<NativeSelect.Root size="sm">
+  <NativeSelect.Field aria-label="行政区画の年代" disabled={isApplyingLayerSettings}>
+    ...
+  </NativeSelect.Field>
+</NativeSelect.Root>
+```
+
+OK
+```tsx
+// Rootへdisabledを渡すと、内部のcontext経由でFieldへ伝播する
+<NativeSelect.Root size="sm" disabled={isApplyingLayerSettings}>
+  <NativeSelect.Field aria-label="行政区画の年代">
+    ...
+  </NativeSelect.Field>
+</NativeSelect.Root>
+```
+
+`NativeSelect`・`Checkbox`等、Chakra UIの`Root`/`Field`/`Control`のようなサブコンポーネントに分かれた複合コンポーネントは、`disabled`のような状態propsを**必ずしも末端のサブコンポーネント（例: `Field`）が受け取るとは限らない**。`NativeSelect`の場合、`disabled`は`Root`が受け取り、内部のcontext（`NativeSelectBasePropsProvider`）経由で`Field`へ伝播する設計になっており、`Field`側の型定義（`NativeSelectFieldProps`）には`disabled`が存在しない。想定通りに動かない・型エラーになる場合は、`node_modules`内の実装（`.d.ts`だけでなく実際のソース）を確認し、状態を実際に受け取っているサブコンポーネントを特定してから渡すこと（`LayerDialog.tsx`の`AdminBoundaryEraSelect`、PR #110レビュー対応）。
