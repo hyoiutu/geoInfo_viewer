@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { assertHeifConvertAvailable, convertHeicBufferToJpegBuffer } from '../heic-conversion.util';
+import { assertHeifConvertAvailable, convertHeicBufferToJpegBuffer, isActualHeicFile } from '../heic-conversion.util';
 
 vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }));
 
@@ -93,5 +93,29 @@ describe('assertHeifConvertAvailableに関するテスト', () => {
     });
 
     expect(() => assertHeifConvertAvailable()).toThrow(/disable-limits/);
+  });
+});
+
+describe('isActualHeicFileに関するテスト（Issue #106）', () => {
+  const createFakeHeicHeader = (): Buffer =>
+    Buffer.concat([Buffer.from([0x00, 0x00, 0x00, 0x18]), Buffer.from('ftypheic', 'ascii')]);
+
+  test('拡張子が.heic/.heifで中身も実際にISOBMFFのftypボックスから始まる場合、trueを返す', () => {
+    const buffer = Buffer.concat([createFakeHeicHeader(), Buffer.from('dummy heic payload')]);
+
+    expect(isActualHeicFile('IMG_1.heic', buffer)).toBe(true);
+    expect(isActualHeicFile('IMG_1.HEIF', buffer)).toBe(true);
+  });
+
+  test('拡張子が.heic/.heifでも、中身が実際にはISOBMFFのftypボックスから始まっていない場合、falseを返す', () => {
+    const buffer = Buffer.from('not a heic file, actually a jpeg after re-save');
+
+    expect(isActualHeicFile('IMG_1.heic', buffer)).toBe(false);
+  });
+
+  test('拡張子が.heic/.heifでない場合、中身に関わらずfalseを返す', () => {
+    const buffer = Buffer.concat([createFakeHeicHeader(), Buffer.from('dummy heic payload')]);
+
+    expect(isActualHeicFile('IMG_1.jpg', buffer)).toBe(false);
   });
 });

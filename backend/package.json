@@ -15,7 +15,8 @@
     "strip-videos:photos-local": "ts-node src/photos/strip-videos-and-generate-thumbnails-locally.ts",
     "backfill:photos-local": "ts-node src/photos/backfill-photos-from-local.ts",
     "strip-videos:photos": "ts-node src/photos/strip-videos-and-consolidate-archives.ts",
-    "generate-thumbnails:photos": "ts-node src/photos/generate-thumbnail-archives.ts"
+    "generate-thumbnails:photos": "ts-node src/photos/generate-thumbnail-archives.ts",
+    "convert-heic:photos": "ts-node src/photos/convert-heic-photos-to-jpeg.ts"
   },
   "dependencies": {
     "@mapbox/polyline": "^1.2.1",

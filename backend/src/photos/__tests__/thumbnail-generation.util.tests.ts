@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { convertHeicBufferToJpegBuffer } from '../heic-conversion.util';
 import { generateThumbnailBuffer, THUMBNAIL_WIDTH_PX } from '../thumbnail-generation.util';
 
-vi.mock('../heic-conversion.util', () => ({ convertHeicBufferToJpegBuffer: vi.fn() }));
+vi.mock('../heic-conversion.util', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../heic-conversion.util')>()),
+  convertHeicBufferToJpegBuffer: vi.fn()
+}));
 
 const createTestImage = (
   widthPx: number,

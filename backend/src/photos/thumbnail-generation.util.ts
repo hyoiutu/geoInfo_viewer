@@ -1,33 +1,5 @@
-import { extname } from 'node:path';
 import sharp from 'sharp';
-import { convertHeicBufferToJpegBuffer } from './heic-conversion.util';
-
-// sharpが内蔵するHEIC/HEIFデコーダ(libheif)はセキュリティ上限に抵触して正当な写真のデコードに
-// 失敗することがあるため、この拡張子は`heic-conversion.util.ts`(heif-convert CLI経由)で変換する
-const HEIC_EXTENSIONS = new Set(['.heic', '.heif']);
-
-// 実際のHEIC/HEIFファイルはISOBMFFコンテナで、先頭4バイトがボックスサイズ、続く4バイトが
-// 'ftyp'という構造を持つ。実データ実行の結果、拡張子が.heic/.heifでも中身が実際には別形式
-// （編集アプリでの再保存等によりJPEGへ変わっている等）のファイルが多数存在し、heif-convertが
-// 「Input file does not appear to start with a valid box length. Possibly could be a JPEG file
-// instead.」というエラーで変換に失敗することが判明した。拡張子だけでなく中身の先頭バイトも
-// 確認し、実際にHEIC/HEIFコンテナである場合のみheif-convertへ回す
-const ISOBMFF_BOX_TYPE_OFFSET = 4;
-const ISOBMFF_FTYP_BOX_TYPE = 'ftyp';
-
-/**
- * バッファの先頭バイトが、実際にISOBMFF（HEIC/HEIFが準拠するコンテナ形式）のftypボックスから
- * 始まっているかどうかを判定する
- * @param buffer 判定対象のバッファ
- * @returns ISOBMFFのftypボックスから始まっている場合true
- */
-const looksLikeHeicContainer = (buffer: Buffer): boolean => {
-  const ftypBoxEnd = ISOBMFF_BOX_TYPE_OFFSET + ISOBMFF_FTYP_BOX_TYPE.length;
-  return (
-    buffer.length >= ftypBoxEnd &&
-    buffer.subarray(ISOBMFF_BOX_TYPE_OFFSET, ftypBoxEnd).toString('ascii') === ISOBMFF_FTYP_BOX_TYPE
-  );
-};
+import { convertHeicBufferToJpegBuffer, isActualHeicFile } from './heic-conversion.util';
 
 /** グリッド・吹き出し表示用サムネイルの横幅（px）。縦横比は維持する（Issue #100） */
 export const THUMBNAIL_WIDTH_PX = 300;
@@ -36,7 +8,7 @@ export const THUMBNAIL_WIDTH_PX = 300;
  * サムネイル生成用にsharpでデコード可能な画像バッファを解決する。
  * 実際にISOBMFFのftypボックスから始まっているHEIC/HEIFはheif-convert経由でJPEGへ変換する
  * (sharp内蔵のlibheifデコーダはセキュリティ上限に抵触することがあるため)。拡張子が.heic/.heif
- * でも中身が実際には別形式の場合（`looksLikeHeicContainer`参照）は変換せず元のバッファをそのまま
+ * でも中身が実際には別形式の場合（`isActualHeicFile`参照）は変換せず元のバッファをそのまま
  * 返し、sharp自身の形式判定に委ねる。それ以外の拡張子もsharpがそのままデコードできるため
  * 元のバッファを返す
  * @param originalBuffer 元の写真1件分のバッファ
@@ -44,8 +16,7 @@ export const THUMBNAIL_WIDTH_PX = 300;
  * @returns sharpでデコード可能な画像バッファ
  */
 const resolveDecodableImageBuffer = (originalBuffer: Buffer, fileName: string): Buffer => {
-  const extension = extname(fileName).toLowerCase();
-  if (HEIC_EXTENSIONS.has(extension) && looksLikeHeicContainer(originalBuffer)) {
+  if (isActualHeicFile(fileName, originalBuffer)) {
     return convertHeicBufferToJpegBuffer(originalBuffer);
   }
   return originalBuffer;
