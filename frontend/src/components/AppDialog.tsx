@@ -57,7 +57,7 @@ export const AppDialog = ({
       closeOnInteractOutside={!closeDisabled}
     >
       <Portal>
-        <Dialog.Backdrop />
+        <Dialog.Backdrop data-testid="app-dialog-backdrop" />
         <Dialog.Positioner>
           <Dialog.Content>
             <Dialog.Header>
@@ -79,7 +79,7 @@ export const AppDialog = ({
             </Dialog.Header>
             <Dialog.Body>{children}</Dialog.Body>
             {footer && <Dialog.Footer>{footer}</Dialog.Footer>}
-            <Dialog.CloseTrigger disabled={closeDisabled} />
+            <Dialog.CloseTrigger disabled={closeDisabled} data-testid="app-dialog-close-trigger" />
           </Dialog.Content>
         </Dialog.Positioner>
       </Portal>

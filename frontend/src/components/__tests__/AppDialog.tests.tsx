@@ -73,11 +73,7 @@ describe('AppDialogに関するテスト', () => {
       </AppDialog>
     );
 
-    const closeTrigger = document.querySelector('[data-scope="dialog"][data-part="close-trigger"]');
-    if (!(closeTrigger instanceof HTMLElement)) {
-      throw new Error('close-trigger element not found');
-    }
-    expect(closeTrigger).toBeDisabled();
+    expect(screen.getByTestId('app-dialog-close-trigger')).toBeDisabled();
   });
 
   test('closeDisabledがfalseの場合、Escapeキーを押すとonCloseが呼ばれる（PR #110レビュー対応）', async () => {
@@ -121,10 +117,7 @@ describe('AppDialogに関するテスト', () => {
         本文
       </AppDialog>
     );
-    const backdrop = document.querySelector('[data-scope="dialog"][data-part="backdrop"]');
-    if (!(backdrop instanceof HTMLElement)) {
-      throw new Error('backdrop element not found');
-    }
+    const backdrop = screen.getByTestId('app-dialog-backdrop');
 
     await waitFor(() => {
       fireEvent.pointerDown(backdrop);
@@ -139,10 +132,7 @@ describe('AppDialogに関するテスト', () => {
         本文
       </AppDialog>
     );
-    const backdrop = document.querySelector('[data-scope="dialog"][data-part="backdrop"]');
-    if (!(backdrop instanceof HTMLElement)) {
-      throw new Error('backdrop element not found');
-    }
+    const backdrop = screen.getByTestId('app-dialog-backdrop');
 
     for (let i = 0; i < DISMISS_RETRY_COUNT; i++) {
       fireEvent.pointerDown(backdrop);

@@ -32,14 +32,14 @@ import { MapView } from './MapView';
  * 非同期処理待機状態（isApplyingLayerSettingsAtom）はいずれもグローバルステートで管理するため、ここでは保持しない
  */
 export const MapWorkspace = () => {
+  const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
+  const startPendingLayerApply = useSetAtom(startPendingLayerApplyAtom);
+  const clearPendingLayerApplyFlag = useSetAtom(clearPendingLayerApplyFlagAtom);
+
   const [visibility, setVisibility] = useState<LayerVisibility>(createDefaultVisibility);
   const [era, setEra] = useState<MunicipalityEra>(MUNICIPALITY_ERA_CURRENT);
   const [filter, setFilter] = useState<ActivityFilter>(DEFAULT_ACTIVITY_FILTER);
   const [focusedMunicipality, setFocusedMunicipality] = useState<PassedMunicipality | null>(null);
-
-  const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
-  const startPendingLayerApply = useSetAtom(startPendingLayerApplyAtom);
-  const clearPendingLayerApplyFlag = useSetAtom(clearPendingLayerApplyFlagAtom);
 
   const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus();
   const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =

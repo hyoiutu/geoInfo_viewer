@@ -67,9 +67,9 @@ type LayerDialogProps = {
  * 防ぐ（PR #110再レビュー対応）
  */
 export const LayerDialog = ({ isOpen, appliedVisibility, appliedEra, onApply, onClose }: LayerDialogProps) => {
+  const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
   const [draftVisibility, setDraftVisibility] = useState(appliedVisibility);
   const [draftEra, setDraftEra] = useState(appliedEra);
-  const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
 
   // ダイアログを開くたびに、入力中の内容を現在適用中の内容へリセットする
   useEffect(() => {

@@ -51,12 +51,13 @@ export const MapControls = ({
   onStartBackfill,
   onStartForceRefetch
 }: MapControlsProps) => {
+  const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
+
   const [isLayerDialogOpen, setIsLayerDialogOpen] = useState(false);
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
   const [isStatisticsDialogOpen, setIsStatisticsDialogOpen] = useState(false);
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
 
-  const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
   // 直前に適用中だった状態を覚えておき、true→falseの変化を検知する（Issue #65）
   const wasApplyingLayerSettingsRef = useRef(isApplyingLayerSettings);
 
