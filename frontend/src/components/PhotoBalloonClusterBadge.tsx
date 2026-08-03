@@ -1,4 +1,8 @@
-import { PHOTO_BALLOON_CLUSTER_BADGE_SIZE_PX } from '../constants/photoBalloon';
+import {
+  PHOTO_BALLOON_CLUSTER_BADGE_COLOR,
+  PHOTO_BALLOON_CLUSTER_BADGE_FONT_SIZE_PX,
+  PHOTO_BALLOON_CLUSTER_BADGE_SIZE_PX
+} from '../constants/photoBalloon';
 
 /** PhotoBalloonClusterBadgeのprops */
 type PhotoBalloonClusterBadgeProps = {
@@ -15,6 +19,8 @@ type PhotoBalloonClusterBadgeProps = {
  */
 export const PhotoBalloonClusterBadge = ({ photoCount }: PhotoBalloonClusterBadgeProps) => (
   <div
+    aria-label={`${photoCount}件の写真`}
+    role="img"
     style={{
       width: PHOTO_BALLOON_CLUSTER_BADGE_SIZE_PX,
       height: PHOTO_BALLOON_CLUSTER_BADGE_SIZE_PX,
@@ -22,12 +28,12 @@ export const PhotoBalloonClusterBadge = ({ photoCount }: PhotoBalloonClusterBadg
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'var(--chakra-colors-blue-500, #3182ce)',
+      background: PHOTO_BALLOON_CLUSTER_BADGE_COLOR,
       color: 'white',
       border: '2px solid white',
       boxShadow: '0 0 4px rgba(0, 0, 0, 0.5)',
       fontWeight: 'bold',
-      fontSize: '14px'
+      fontSize: PHOTO_BALLOON_CLUSTER_BADGE_FONT_SIZE_PX
     }}
   >
     {photoCount}

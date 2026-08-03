@@ -39,6 +39,29 @@
   * **仕様書**: `specs/system_specification.md`「位置情報付きメディア表示機能」に、地図上の吹き出し表示の挙動（クラスタリング・フォーカス解除時の消去・位置情報が無い写真の扱い）を追記。
   * **設計書**: `designs/technical_design.md`に新規節「地図上の写真吹き出し表示（Issue #107）」を追加。「未実装」としていた既存記述も実装済みへ更新。
 
+### [2026-07-31] PR #116のレビュー対応としてDrive更新後のDB更新失敗をCRITICALログで明示するようにした（Issue #106）
+* **修正の動機・概要**:
+  - PR #116のレビューで、`convert-heic-photos-to-jpeg.ts`が`uploadFileFromPath`（Drive側zip上書き）成功後に`photoRepository.save`（DB更新）が失敗すると、Drive側は既に`.jpg`へリネーム済みなのにDBは旧`.heic`パスを保持したままになり、次回実行時に`convertHeicArchiveEntriesStreaming`が対象パスをzip内に見つけられず「対象パスが存在しない」正常系として静かにスキップし続け、恒久的に検出不能な不整合になるとの指摘を受けた。DB更新を先に行う順序へ入れ替えても同種の逆向きの不整合が生じ根本解決にならないため、`save`失敗を専用のtry/catchで検出し、手動修正に使えるパス対応表を添えたCRITICALログを残してから再送出するようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `convert-heic-photos-to-jpeg.ts`: `photoRepository.save`を専用のtry/catchで囲み、失敗時はDrive側は更新済みだがDBが追随できていない旨と変換前後のパス対応表をログへ出力してから再送出するようにした（アーカイブ単位の失敗として`failedArchiveIds`にも引き続き記録される）。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部実装の変更のみで、ユーザーから見た挙動に変化はないため）。
+  * **設計書**: `designs/technical_design.md`の「フルサイズ写真のHEIC事前一括変換」節に、この対策の内容を追記した。
+
+### [2026-07-31] PR #116のレビュー対応としてフルサイズHEIC変換パイプラインをディスク経由のストリーミング方式へ変更した（Issue #106）
+* **修正の動機・概要**:
+  - PR #116のレビューで、`convert-heic-photos-to-jpeg.ts`が`GoogleDriveApiClient.downloadFile`/`updateFileContent`で月別アーカイブzip全体をBufferとしてメモリへ載せていた点について、既存アーカイブは数GB〜十数GBになりうり、`generate-thumbnail-archives.ts`がまさに同種のバッチでOOM事故（Issue #99）を教訓にストリーミング方式へ切り替えた経緯と矛盾するとの指摘を受けた。同種のOOMリスクを解消するため、ダウンロード・変換・アップロードの全経路をディスク経由のストリーミングへ変更した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - 新規`convert-heic-archive-entries-streaming.util.ts`: `convertHeicArchiveEntriesStreaming`を追加。ディスク上の月別アーカイブzipを`zip-streaming.util.ts`（`generate-thumbnail-archive-streaming.util.ts`等と共通）でエントリ単位に逐次読み書きし、1エントリ分（数MB程度）のみをメモリへ保持する。ファイル名衝突を見逃さないよう、変換前に全エントリ名を収集する2パス構成にした。
+    - 削除: `convert-heic-archive-entries.util.ts`（Buffer全体をメモリへ載せるAdmZip版、上記に置き換え不要となったため削除）。
+    - `convert-heic-photos-to-jpeg.ts`: `downloadFile`/`updateFileContent`（Buffer版）から`downloadFileToPath`/`uploadFileFromPath`（ストリーミング版）へ変更。ダウンロード・変換後のzipはアーカイブごとの一時作業ディレクトリ（`mkdtempSync`）に保持し、処理後に必ず削除する（`generate-thumbnail-archives.ts`と同じパターン）。
+    - `heic-conversion.util.ts`: TSDocのファイル参照を新ファイル名へ更新。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部実装の変更のみで、ユーザーから見た挙動に変化はないため）。
+  * **設計書**: `designs/technical_design.md`の「フルサイズ写真のHEIC事前一括変換」節を、ストリーミング方式への変更内容で更新した。
+
 ### [2026-07-30] フルサイズのHEIC写真を事前一括変換しJPEGとして配信するようにした（Issue #106）
 * **修正の動機・概要**:
   - `GET /photos/:id/image`は元サイズの写真を加工せずそのまま返しており、`.heic`写真は多くのブラウザ（Safari以外）がネイティブにデコードできず表示に失敗していた。ユーザーとの相談の結果、リクエストの都度変換するのではなく、事前一括変換（既存のフルサイズアーカイブ内の`.heic`エントリを`.jpg`エントリへ直接置き換え、元のHEICバイト列は保持しない）方式を採用した。
@@ -79,6 +102,46 @@
   * **README.md**: 変更なし。
   * **仕様書**: 変更なし（ユーザーから見た機能・挙動に変化はなく、内部の運用パイプラインのみの変更のため）。
   * **設計書**: `designs/technical_design.md`に新規節「写真ローカル前処理での動画除外・サムネイル生成の前倒し（Issue #104）」を追加。「既存写真の一括取り込み（写真ローカルバックフィル）」節も、第2引数の追加とサムネイル追記処理を反映して更新。
+
+### [2026-08-03] レイヤーダイアログの非同期処理待機状態をグローバルステート（Jotai atom）へ変更した（Issue #65、PR #110レビュー対応）
+* **修正の動機・概要**:
+  - `isApplyingLayerSettings`（レイヤーダイアログの非同期処理待機中かどうか）は`MapWorkspace`のローカルな`useState`として保持し、`MapControls`・`LayerDialog`へprops経由で渡していた。ユーザーから「ローディング中かどうかはグローバルな状態で持たせてほしい」と指摘を受け、`errorsAtom`と同じパターン（読み取り専用の派生atom + write-only atomで更新操作を限定する）でJotai atom化した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/atoms/isApplyingLayerSettingsAtom.ts`を新設。`pendingLayerApplyStateAtom`（非公開）・`isApplyingLayerSettingsAtom`（読み取り専用）・`startPendingLayerApplyAtom`/`clearPendingLayerApplyFlagAtom`（write-only）を公開する。
+    - `MapWorkspace.tsx`のローカルuseState（`pendingLayerApply`）を廃止し、上記atomの読み書きに置き換え。
+    - `MapControls.tsx`・`LayerDialog.tsx`は`isApplyingLayerSettings`propを廃止し、`useAtomValue(isApplyingLayerSettingsAtom)`で直接参照するよう変更（props経由のバケツリレーを解消）。
+  * **README.md**: 変更なし。
+  * **設計書**: `designs/technical_design.md`の「レイヤーダイアログの非同期実行対応（Issue #65）」節を、atom化後の設計に合わせて更新。
+
+### [2026-08-02] レイヤーダイアログ待機中は閉じる操作（×ボタン・背景クリック・Escapeキー）も無効化した（Issue #65、PR #110レビュー対応）
+* **修正の動機・概要**:
+  - レイヤーダイアログの「実行」「リセット」「閉じる(×)」ボタンを個別にdisabled化する対応を繰り返していたが、対応漏れ（閉じるボタン）が発生した。当初は`window`へキャプチャフェーズのイベントリスナーを登録しページ全体の操作を遮断する独自実装（`useGlobalInputBlocker`）で対応したが、レビューによりChakra UI（内部の`@zag-js/dialog`）が標準で提供する`closeOnEscape`/`closeOnInteractOutside`propsで同じ目的（背景クリック・Escapeキーによるクローズの無効化）を達成できることが判明したため、車輪の再発明であった独自実装を廃止し、こちらへ置き換えた。ページ全体を遮断する方式は待機中に`ErrorDialog`が表示された場合にそれも操作不能にしてしまう副作用があったが、この置き換えにより解消される。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `AppDialog.tsx`の`closeDisabled`propがtrueの間、閉じる(×)ボタンの無効化に加え`Dialog.Root`の`closeOnEscape`/`closeOnInteractOutside`をfalseにするよう変更。`LayerDialog.tsx`から待機中はこのpropを渡す。
+    - `frontend/src/hooks/useGlobalInputBlocker.ts`（および対応するテスト）を削除。`MapWorkspace.tsx`からの呼び出しも削除。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「レイヤ一覧表示機能」を、「アプリ画面全体でクリック・キーボード操作を受け付けない」という記述から「閉じる(×)ボタン・背景クリック・Escapeキーによるダイアログクローズが無効化される」という実際の挙動に合わせて修正。
+
+### [2026-08-02] レイヤーダイアログの待機中はチェックボックス・年代選択も無効化し、pendingLayerApplyのフラグクリア処理をutils/へ切り出した（Issue #65、PR #110 pr-review-rally対応）
+* **修正の動機・概要**:
+  - `clearPendingLayerApplyFlag`がHooksを使わない純粋な状態更新ロジックであるにもかかわらずコンポーネントファイル（`MapWorkspace.tsx`）に直接定義されており、design_principles.mdのSRP規約に反していたため、utils/へ切り出した。
+  - レイヤーダイアログの「実行」ボタンは非同期処理の待機中は無効化されていたが、チェックボックス・行政区画の年代選択は無効化されておらず、待機中に加えた変更が、待機完了によるダイアログの自動クローズ（draft内容を破棄する）で気づかれないまま失われる経路が残っていたため、これらも待機中は無効化するようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `clearPendingLayerApplyFlag`・`PendingLayerApply`型を`MapWorkspace.tsx`から`frontend/src/utils/pendingLayerApply.ts`へ切り出し。
+    - `LayerDialog.tsx`の`Checkbox.Root`・`AdminBoundaryEraSelect`（`NativeSelect.Root`）に`disabled={isApplyingLayerSettings}`を追加。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「レイヤ一覧表示機能」に、待機中はチェックボックス・年代選択・実行ボタンが操作不可になる旨を追記。
+
+### [2026-07-31] 低ズームレベル軽量表示導入時の既存アクティビティの挙動を仕様書へ明記した（Issue #61、PR #109レビュー対応）
+* **修正の動機・概要**:
+  - `summaryPath`は本機能導入後に詳細取得（新規同期・フォースリフェッチ）したアクティビティにしか設定されないため、本機能導入前から取得済みだったアクティビティは、ユーザーが「フォースリフェッチ」を実行するまでの間、ズームレベル10以下では地図上に表示されなくなる（`cyclingActivitySummaryToGeoJson`が`summaryPath === null`のアクティビティを除外するため）。この移行期間の挙動が仕様書に記載されておらず、PRレビューで指摘を受けたため追記した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: 変更なし（既存の`toCyclingActivityEntityFromDetail`・`cyclingActivitySummaryToGeoJson`の挙動どおりであることを確認した上での仕様書追記）。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「自転車ログ表示機能」に、本機能導入前から取得済みのアクティビティはフォースリフェッチ実行までズームレベル10以下で表示されない旨を追記。
 
 ### [2026-07-30] アクティビティ選択時に行政区画も選択される競合を解消した（Issue #96）
 * **修正の動機・概要**:

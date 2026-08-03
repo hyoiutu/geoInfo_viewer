@@ -107,6 +107,8 @@ colors: {
 
 **MapLibreのpaintプロパティ等、Chakraのトークン機構を経由できないcanvas描画色は例外**とし、定数ファイルへ直接カラーコードを定義してよい（`frontend/src/constants/bicycleLog.ts`の`BICYCLE_LOG_LINE_COLOR_*`等）。MapLibreの`line-color`等のpaintプロパティはCSSカスタムプロパティを解釈できない（Canvas描画のため）ため。
 
+**`maplibregl.Marker`用に独立したReact rootへマウントされ`ChakraProvider`配下に含まれないコンポーネント（`startGoalMarkerElement.ts`・`photoBalloonElement.ts`が使う`createRoot`パターン）も同様に例外だが、「トークン管理しなくてよい」という意味ではない。** これらのコンポーネントでもコンポーネントファイルへ生のカラーコード・CSSカスタムプロパティ参照を直接書かず、`constants/`配下（例: `constants/startGoalMarkers.ts`の`START_MARKER_ICON_COLOR`）へ`var(--chakra-colors-*)`形式の名前付き定数として切り出し、ui_rules.mdの規約対象外である理由をコメントで明記すること。Chakraのテーマ値をハードコードで複製したフォールバック値（例: `var(--chakra-colors-blue-500, #3182ce)`）も追加しないこと（テーマ変更時にフォールバック値だけ取り残される）。この切り出しを怠ると、同じ非Chakraコンポーネントであっても色だけがコンポーネントファイルへ直書きされ、他の値（サイズ等）は定数化されているのに一貫性が崩れる（PR #117レビュー対応、`PhotoBalloonClusterBadge`で発生）。
+
 ---
 
 # 余白・サイズはChakraのデザイントークンを最優先し、無い場合は4pxルールで定数化する
@@ -159,3 +161,30 @@ colors: {
 ```
 
 色・フォントサイズ・余白サイズ等が複数のコンポーネントで共通して使われるようになってきたら、コンポーネントごとに同じ値を書き写すのではなく、`src/theme.ts`（Chakraのtheme tokens、または`gradients`/`shadows`/`layout`等のプレーンな定数export）に一元化し、各コンポーネントはそこから参照する。
+
+---
+
+# Chakra UIの複合コンポーネントでdisabled等の状態propsを渡す先はRoot/Field双方の型定義で確認する
+
+NG
+```tsx
+// NativeSelect.Fieldに直接disabledを渡そうとすると型エラーになる
+// (NativeSelectFieldPropsにdisabledが存在しない)
+<NativeSelect.Root size="sm">
+  <NativeSelect.Field aria-label="行政区画の年代" disabled={isApplyingLayerSettings}>
+    ...
+  </NativeSelect.Field>
+</NativeSelect.Root>
+```
+
+OK
+```tsx
+// Rootへdisabledを渡すと、内部のcontext経由でFieldへ伝播する
+<NativeSelect.Root size="sm" disabled={isApplyingLayerSettings}>
+  <NativeSelect.Field aria-label="行政区画の年代">
+    ...
+  </NativeSelect.Field>
+</NativeSelect.Root>
+```
+
+`NativeSelect`・`Checkbox`等、Chakra UIの`Root`/`Field`/`Control`のようなサブコンポーネントに分かれた複合コンポーネントは、`disabled`のような状態propsを**必ずしも末端のサブコンポーネント（例: `Field`）が受け取るとは限らない**。`NativeSelect`の場合、`disabled`は`Root`が受け取り、内部のcontext（`NativeSelectBasePropsProvider`）経由で`Field`へ伝播する設計になっており、`Field`側の型定義（`NativeSelectFieldProps`）には`disabled`が存在しない。想定通りに動かない・型エラーになる場合は、`node_modules`内の実装（`.d.ts`だけでなく実際のソース）を確認し、状態を実際に受け取っているサブコンポーネントを特定してから渡すこと（`LayerDialog.tsx`の`AdminBoundaryEraSelect`、PR #110レビュー対応）。
