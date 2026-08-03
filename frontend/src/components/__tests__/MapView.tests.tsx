@@ -378,6 +378,66 @@ describe('MapViewに関するテスト', () => {
     });
   });
 
+  test('過去年代の境界GeoJSONの反映が完了すると、onAdminBoundaryDataAppliedが呼ばれる（Issue #65）', async () => {
+    const featureCollection = { type: 'FeatureCollection' as const, features: [] };
+    vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue(featureCollection);
+    const onAdminBoundaryDataApplied = vi.fn();
+    const { rerender } = renderWithChakra(
+      <MapView
+        layerVisibility={ALL_ON_VISIBILITY}
+        {...DEFAULT_SELECTION_PROPS}
+        onAdminBoundaryDataApplied={onAdminBoundaryDataApplied}
+      />
+    );
+    await waitFor(() => {
+      expect(onAdminBoundaryDataApplied).toHaveBeenCalledTimes(1);
+    });
+    onAdminBoundaryDataApplied.mockClear();
+
+    rerender(
+      <MapView
+        layerVisibility={ALL_ON_VISIBILITY}
+        {...DEFAULT_SELECTION_PROPS}
+        adminBoundaryEra="2000-10-01"
+        onAdminBoundaryDataApplied={onAdminBoundaryDataApplied}
+      />
+    );
+
+    await waitFor(() => {
+      expect(onAdminBoundaryDataApplied).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test('過去年代の境界GeoJSONの取得に失敗した場合でも、onAdminBoundaryDataAppliedが呼ばれる（ダイアログが閉じなくならないようにするため）', async () => {
+    vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue({ type: 'FeatureCollection', features: [] });
+    const onAdminBoundaryDataApplied = vi.fn();
+    const { rerender } = renderWithChakra(
+      <MapView
+        layerVisibility={ALL_ON_VISIBILITY}
+        {...DEFAULT_SELECTION_PROPS}
+        onAdminBoundaryDataApplied={onAdminBoundaryDataApplied}
+      />
+    );
+    await waitFor(() => {
+      expect(onAdminBoundaryDataApplied).toHaveBeenCalledTimes(1);
+    });
+    onAdminBoundaryDataApplied.mockClear();
+    vi.mocked(fetchMunicipalityBoundaries).mockRejectedValue(new Error('fetch failed'));
+
+    rerender(
+      <MapView
+        layerVisibility={ALL_ON_VISIBILITY}
+        {...DEFAULT_SELECTION_PROPS}
+        adminBoundaryEra="2000-10-01"
+        onAdminBoundaryDataApplied={onAdminBoundaryDataApplied}
+      />
+    );
+
+    await waitFor(() => {
+      expect(onAdminBoundaryDataApplied).toHaveBeenCalledTimes(1);
+    });
+  });
+
   test('adminBoundaryEraがcurrentのままのとき、hit-test用には境界データを取得するが過去年代用の表示ソースへは反映しない', async () => {
     const featureCollection = { type: 'FeatureCollection' as const, features: [] };
     vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue(featureCollection);

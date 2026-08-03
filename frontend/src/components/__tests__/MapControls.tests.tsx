@@ -1,11 +1,17 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { createStore } from 'jotai';
 import { describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity } from '../../api/activitiesApi';
+import { clearPendingLayerApplyFlagAtom, startPendingLayerApplyAtom } from '../../atoms/isApplyingLayerSettingsAtom';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { DEFAULT_ACTIVITY_FILTER } from '../../types/activityFilter';
 import type { LayerVisibility } from '../../types/layer';
 import { MUNICIPALITY_ERA_CURRENT } from '../../types/municipalityEra';
 import { MapControls } from '../MapControls';
+
+// 「一定時間待っても発生しないこと」を確認するためのwaitForタイムアウト（ミリ秒）。
+// 短時間で確実に打ち切りたいだけであり、実際の非同期処理の所要時間とは無関係な値のため定数化する
+const ASSERT_NOT_YET_TIMEOUT_MS = 200;
 
 const DEFAULT_VISIBILITY: LayerVisibility = {
   'osm-poi': true,
@@ -30,21 +36,26 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
   ...overrides
 });
 
-const renderControls = (overrides: Partial<Parameters<typeof MapControls>[0]> = {}) =>
-  renderWithChakra(
-    <MapControls
-      appliedVisibility={DEFAULT_VISIBILITY}
-      appliedEra={MUNICIPALITY_ERA_CURRENT}
-      onApplyLayerSettings={vi.fn()}
-      appliedFilter={DEFAULT_ACTIVITY_FILTER}
-      onApplyFilter={vi.fn()}
-      activities={[]}
-      isBackfillRunning={false}
-      onStartBackfill={vi.fn()}
-      onStartForceRefetch={vi.fn()}
-      {...overrides}
-    />
-  );
+const buildControls = (overrides: Partial<Parameters<typeof MapControls>[0]> = {}) => (
+  <MapControls
+    appliedVisibility={DEFAULT_VISIBILITY}
+    appliedEra={MUNICIPALITY_ERA_CURRENT}
+    onApplyLayerSettings={vi.fn()}
+    appliedFilter={DEFAULT_ACTIVITY_FILTER}
+    onApplyFilter={vi.fn()}
+    activities={[]}
+    isBackfillRunning={false}
+    onStartBackfill={vi.fn()}
+    onStartForceRefetch={vi.fn()}
+    {...overrides}
+  />
+);
+
+/** テスト専用のストアでレンダリングする。戻り値のstoreを使ってisApplyingLayerSettingsAtomを直接操作できる */
+const renderControls = (overrides: Partial<Parameters<typeof MapControls>[0]> = {}) => {
+  const store = createStore();
+  return { ...renderWithChakra(buildControls(overrides), { store }), store };
+};
 
 describe('MapControlsに関するテスト', () => {
   test('レイヤー・フィルタ・統計・設定の4つのアイコンボタンが表示される', () => {
@@ -64,7 +75,7 @@ describe('MapControlsに関するテスト', () => {
     await waitFor(() => expect(screen.getByRole('checkbox', { name: '道路' })).toBeInTheDocument());
   });
 
-  test('レイヤーダイアログで実行すると、onApplyLayerSettingsが呼ばれダイアログが閉じる', async () => {
+  test('レイヤーダイアログで何も変更せず実行すると、onApplyLayerSettingsが呼ばれダイアログはすぐに閉じる', async () => {
     const onApplyLayerSettings = vi.fn();
     renderControls({ onApplyLayerSettings });
     fireEvent.click(screen.getByRole('button', { name: 'レイヤー切り替え' }));
@@ -74,6 +85,81 @@ describe('MapControlsに関するテスト', () => {
 
     expect(onApplyLayerSettings).toHaveBeenCalledWith(DEFAULT_VISIBILITY, MUNICIPALITY_ERA_CURRENT);
     await waitFor(() => expect(screen.queryByRole('checkbox', { name: '道路' })).not.toBeInTheDocument());
+  });
+
+  describe('非同期処理を伴うレイヤー変更の実行に関するテスト（Issue #65）', () => {
+    test('行政区画の年代を変更して実行すると、ダイアログはすぐには閉じず、適用が完了してから閉じる', async () => {
+      const onApplyLayerSettings = vi.fn();
+      const { store } = renderControls({ onApplyLayerSettings });
+      fireEvent.click(screen.getByRole('button', { name: 'レイヤー切り替え' }));
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '道路' })).toBeInTheDocument());
+      fireEvent.change(screen.getByLabelText('行政区画の年代'), { target: { value: '2000-10-01' } });
+
+      fireEvent.click(screen.getByRole('button', { name: '実行' }));
+
+      expect(onApplyLayerSettings).toHaveBeenCalledWith(DEFAULT_VISIBILITY, '2000-10-01');
+      // MapWorkspace側がonApplyLayerSettings呼び出しと同じタイミングで行う、isApplyingLayerSettingsAtomの
+      // 更新をここで模擬する。適用中フラグがtrueになっても、一定時間待ってもダイアログは閉じない
+      act(() => {
+        store.set(startPendingLayerApplyAtom, { waitingForAdminBoundary: true, waitingForCyclingLog: false });
+      });
+      await expect(
+        waitFor(() => expect(screen.queryByRole('checkbox', { name: '道路' })).not.toBeInTheDocument(), {
+          timeout: ASSERT_NOT_YET_TIMEOUT_MS
+        })
+      ).rejects.toThrow();
+
+      // 適用中フラグがfalseに戻った時点でダイアログが閉じる
+      act(() => {
+        store.set(clearPendingLayerApplyFlagAtom, 'waitingForAdminBoundary');
+      });
+      await waitFor(() => expect(screen.queryByRole('checkbox', { name: '道路' })).not.toBeInTheDocument());
+    });
+
+    test('自転車ログをOFF→ONにして実行すると、ダイアログはすぐには閉じず、適用が完了してから閉じる', async () => {
+      const onApplyLayerSettings = vi.fn();
+      const { store } = renderControls({ onApplyLayerSettings });
+      fireEvent.click(screen.getByRole('button', { name: 'レイヤー切り替え' }));
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '自転車ログ' })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('checkbox', { name: '自転車ログ' }));
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '自転車ログ' })).toBeChecked());
+
+      fireEvent.click(screen.getByRole('button', { name: '実行' }));
+
+      expect(onApplyLayerSettings).toHaveBeenCalledWith(
+        { ...DEFAULT_VISIBILITY, 'bicycle-log': true },
+        MUNICIPALITY_ERA_CURRENT
+      );
+      act(() => {
+        store.set(startPendingLayerApplyAtom, { waitingForAdminBoundary: false, waitingForCyclingLog: true });
+      });
+      await expect(
+        waitFor(() => expect(screen.queryByRole('checkbox', { name: '自転車ログ' })).not.toBeInTheDocument(), {
+          timeout: ASSERT_NOT_YET_TIMEOUT_MS
+        })
+      ).rejects.toThrow();
+
+      act(() => {
+        store.set(clearPendingLayerApplyFlagAtom, 'waitingForCyclingLog');
+      });
+      await waitFor(() => expect(screen.queryByRole('checkbox', { name: '自転車ログ' })).not.toBeInTheDocument());
+    });
+
+    test('自転車ログをON→OFFにして実行しても、待たずにすぐ閉じる（非同期処理が発生しないため）', async () => {
+      const onApplyLayerSettings = vi.fn();
+      renderControls({
+        onApplyLayerSettings,
+        appliedVisibility: { ...DEFAULT_VISIBILITY, 'bicycle-log': true }
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'レイヤー切り替え' }));
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '自転車ログ' })).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('checkbox', { name: '自転車ログ' }));
+      await waitFor(() => expect(screen.getByRole('checkbox', { name: '自転車ログ' })).not.toBeChecked());
+
+      fireEvent.click(screen.getByRole('button', { name: '実行' }));
+
+      await waitFor(() => expect(screen.queryByRole('checkbox', { name: '自転車ログ' })).not.toBeInTheDocument());
+    });
   });
 
   test('フィルタアイコンを押すと、フィルタダイアログが開く', async () => {

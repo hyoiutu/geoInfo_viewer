@@ -1,6 +1,6 @@
 import { fireEvent, waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity } from '../../api/activitiesApi';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { MapWorkspace } from '../MapWorkspace';
@@ -25,6 +25,10 @@ vi.mock('../../api/activitiesApi', () => ({
 vi.mock('../../api/municipalitiesApi', () => ({
   fetchMunicipalityBoundaries: vi.fn().mockResolvedValue({ type: 'FeatureCollection', features: [] })
 }));
+
+// 「ダイアログがまだ閉じていないこと」を短時間だけ確認するためのwaitForタイムアウト（ミリ秒）。
+// 実際の非同期処理の所要時間とは無関係な値のため定数化する（PR #110レビュー対応）
+const DIALOG_STILL_OPEN_CHECK_TIMEOUT_MS = 200;
 
 const FIXTURE_STYLE_LAYERS = [
   { id: 'background', type: 'background' },
@@ -98,9 +102,15 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
 
 /**
  * レイヤー切り替えダイアログを開き、指定したレイヤーのチェックボックスを切り替えて実行する。
- * Chakra UIのCheckboxのonCheckedChangeは非同期のため、チェック状態の反映をwaitForで待つ
+ * Chakra UIのCheckboxのonCheckedChangeは非同期のため、チェック状態の反映をwaitForで待つ。
+ * 行政区画データ取得・自転車ログ同期を伴う変更の場合、ダイアログはそれらの完了まで閉じない
+ * （Issue #65）ため、モーダル背後の要素が再び操作可能になるよう、ダイアログが実際に閉じるまで待つ
  */
-const toggleLayerViaDialog = async (getByRole: ReturnType<typeof renderWithChakra>['getByRole'], layerName: string) => {
+const toggleLayerViaDialog = async (
+  getByRole: ReturnType<typeof renderWithChakra>['getByRole'],
+  queryByRole: ReturnType<typeof renderWithChakra>['queryByRole'],
+  layerName: string
+) => {
   fireEvent.click(getByRole('button', { name: 'レイヤー切り替え' }));
   const checkbox = await waitFor(() => getByRole('checkbox', { name: layerName }));
   const wasChecked =
@@ -111,6 +121,7 @@ const toggleLayerViaDialog = async (getByRole: ReturnType<typeof renderWithChakr
     expect(updated instanceof HTMLInputElement && updated.checked).toBe(!wasChecked);
   });
   fireEvent.click(getByRole('button', { name: '実行' }));
+  await waitFor(() => expect(queryByRole('checkbox', { name: layerName })).not.toBeInTheDocument());
 };
 
 describe('MapWorkspaceに関するテスト', () => {
@@ -119,11 +130,11 @@ describe('MapWorkspaceに関するテスト', () => {
   });
 
   test('道路レイヤーのトグルをOFFにして実行すると、地図の道路レイヤーが非表示になる', async () => {
-    const { getByRole } = renderWithChakra(<MapWorkspace />);
+    const { getByRole, queryByRole } = renderWithChakra(<MapWorkspace />);
     const mapInstance = getMapInstance();
     mapInstance.setLayoutProperty.mockClear();
 
-    await toggleLayerViaDialog(getByRole, '道路');
+    await toggleLayerViaDialog(getByRole, queryByRole, '道路');
 
     await waitFor(() =>
       expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('road_motorway', 'visibility', 'none')
@@ -131,11 +142,11 @@ describe('MapWorkspaceに関するテスト', () => {
   });
 
   test('航空写真レイヤーのトグルをONにして実行すると、地図の航空写真レイヤーが表示される', async () => {
-    const { getByRole } = renderWithChakra(<MapWorkspace />);
+    const { getByRole, queryByRole } = renderWithChakra(<MapWorkspace />);
     const mapInstance = getMapInstance();
     mapInstance.setLayoutProperty.mockClear();
 
-    await toggleLayerViaDialog(getByRole, '航空写真');
+    await toggleLayerViaDialog(getByRole, queryByRole, '航空写真');
 
     await waitFor(() =>
       expect(mapInstance.setLayoutProperty).toHaveBeenCalledWith('aerial-photo-layer', 'visibility', 'visible')
@@ -148,9 +159,9 @@ describe('MapWorkspaceに関するテスト', () => {
       createActivity({ id: 'a', distanceMeters: 12345 }),
       createActivity({ id: 'b', distanceMeters: 7655 })
     ]);
-    const { getByRole, getByText } = renderWithChakra(<MapWorkspace />);
+    const { getByRole, queryByRole, getByText } = renderWithChakra(<MapWorkspace />);
 
-    await toggleLayerViaDialog(getByRole, '自転車ログ');
+    await toggleLayerViaDialog(getByRole, queryByRole, '自転車ログ');
     await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalled());
 
     fireEvent.click(getByRole('button', { name: '統計データ' }));
@@ -191,9 +202,9 @@ describe('MapWorkspaceに関するテスト', () => {
       createActivity({ id: 'low', elevationGainMeters: 50, startDate }),
       createActivity({ id: 'high', elevationGainMeters: 200, startDate })
     ]);
-    const { getByRole, getByLabelText, queryByText, getByText } = renderWithChakra(<MapWorkspace />);
+    const { getByRole, queryByRole, getByLabelText, queryByText, getByText } = renderWithChakra(<MapWorkspace />);
 
-    await toggleLayerViaDialog(getByRole, '自転車ログ');
+    await toggleLayerViaDialog(getByRole, queryByRole, '自転車ログ');
     const mapInstance = getMapInstance();
     await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalled());
 
@@ -230,9 +241,9 @@ describe('MapWorkspaceに関するテスト', () => {
       type: 'FeatureCollection',
       features: [shibuyaFeature]
     });
-    const { getByRole, getByText } = renderWithChakra(<MapWorkspace />);
+    const { getByRole, queryByRole, getByText } = renderWithChakra(<MapWorkspace />);
 
-    await toggleLayerViaDialog(getByRole, '自転車ログ');
+    await toggleLayerViaDialog(getByRole, queryByRole, '自転車ログ');
     const mapInstance = getMapInstance();
     await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalled());
 
@@ -251,6 +262,134 @@ describe('MapWorkspaceに関するテスト', () => {
     });
   });
 
+  describe('レイヤー変更に伴う非同期処理中のローディング表示に関するテスト（Issue #65）', () => {
+    // mockImplementationはbeforeEachのvi.clearAllMocks()では戻らないため、テスト本文の末尾で
+    // 手動で戻すと、途中のアサーションが失敗した場合に復元処理へ到達せず後続テストへ状態が漏れる
+    // （テストの疎結合性、test_rules.mdルール4）。成否に関わらず必ず実行されるafterEachで戻す
+    afterEach(async () => {
+      const { syncCyclingActivities } = await import('../../api/activitiesApi');
+      const { fetchMunicipalityBoundaries } = await import('../../api/municipalitiesApi');
+      vi.mocked(syncCyclingActivities).mockResolvedValue({ success: true });
+      vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue({ type: 'FeatureCollection', features: [] });
+    });
+
+    test('自転車ログをOFF→ONにして実行すると、同期・参照取得が完了するまでレイヤーダイアログが閉じずマウスカーソルがローディング状態になり、完了すると元に戻る', async () => {
+      const { syncCyclingActivities } = await import('../../api/activitiesApi');
+      let resolveSync: (() => void) | undefined;
+      vi.mocked(syncCyclingActivities).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSync = () => resolve({ success: true });
+          })
+      );
+      const { getByRole, queryByRole, getByTestId } = renderWithChakra(<MapWorkspace />);
+
+      fireEvent.click(getByRole('button', { name: 'レイヤー切り替え' }));
+      const checkbox = await waitFor(() => getByRole('checkbox', { name: '自転車ログ' }));
+      fireEvent.click(checkbox);
+      await waitFor(() => expect(checkbox instanceof HTMLInputElement && checkbox.checked).toBe(true));
+      fireEvent.click(getByRole('button', { name: '実行' }));
+
+      await waitFor(() => expect(syncCyclingActivities).toHaveBeenCalledTimes(1));
+      expect(getByTestId('map-workspace-root')).toHaveStyle({ cursor: 'wait' });
+      // waitFor(() => expect(getByRole(...)))はチェックボックスが存在する間ずっと1回目の同期チェックで
+      // 即座に成功してしまい「閉じていないこと」の検証にならないため、否定条件をwaitForしタイムアウトで
+      // 失敗することを期待する（PR #110レビュー対応。同じ問題が他の単独原因テストにも残存していた）
+      await expect(
+        waitFor(() => expect(queryByRole('checkbox', { name: '自転車ログ' })).not.toBeInTheDocument(), {
+          timeout: DIALOG_STILL_OPEN_CHECK_TIMEOUT_MS
+        })
+      ).rejects.toThrow();
+
+      resolveSync?.();
+
+      await waitFor(() => expect(getByTestId('map-workspace-root')).not.toHaveStyle({ cursor: 'wait' }));
+    });
+
+    test('行政区画の年代を変更して実行すると、境界データの取得が完了するまでレイヤーダイアログが閉じない', async () => {
+      const { fetchMunicipalityBoundaries } = await import('../../api/municipalitiesApi');
+      // MapViewはadminBoundaryEraの変化に反応して、hit-test/表示用(applyAdminBoundaryData)と
+      // 通過自治体フォーカス用(getOrFetchMunicipalityBoundariesの別呼び出し)の2つの独立したeffectから
+      // それぞれgetOrFetchMunicipalityBoundariesを呼ぶため、同じ年代に対してfetchMunicipalityBoundariesが
+      // 複数回呼ばれうる（呼び出し順によってはキャッシュがまだ効かないため）。保留中の呼び出しを
+      // 全て記録し、まとめて解決できるようにする
+      const pendingResolvers: (() => void)[] = [];
+      vi.mocked(fetchMunicipalityBoundaries).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            pendingResolvers.push(() => resolve({ type: 'FeatureCollection', features: [] }));
+          })
+      );
+      const { getByRole, queryByRole, getByLabelText } = renderWithChakra(<MapWorkspace />);
+
+      fireEvent.click(getByRole('button', { name: 'レイヤー切り替え' }));
+      await waitFor(() => getByRole('checkbox', { name: '道路' }));
+      fireEvent.change(getByLabelText('行政区画の年代'), { target: { value: '2000-10-01' } });
+      fireEvent.click(getByRole('button', { name: '実行' }));
+
+      await waitFor(() => expect(fetchMunicipalityBoundaries).toHaveBeenCalledWith('2000-10-01'));
+      await expect(
+        waitFor(() => expect(queryByRole('checkbox', { name: '道路' })).not.toBeInTheDocument(), {
+          timeout: DIALOG_STILL_OPEN_CHECK_TIMEOUT_MS
+        })
+      ).rejects.toThrow();
+
+      for (const resolve of pendingResolvers) {
+        resolve();
+      }
+
+      await waitFor(() => expect(() => getByRole('checkbox', { name: '道路' })).toThrow());
+    });
+
+    test('行政区画の年代変更・自転車ログON→ONが同時に実行された場合、片方の完了だけではダイアログは閉じず、両方完了して初めて閉じる（Issue #65）', async () => {
+      const { syncCyclingActivities } = await import('../../api/activitiesApi');
+      const { fetchMunicipalityBoundaries } = await import('../../api/municipalitiesApi');
+      let resolveSync: (() => void) | undefined;
+      vi.mocked(syncCyclingActivities).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSync = () => resolve({ success: true });
+          })
+      );
+      const pendingBoundaryResolvers: (() => void)[] = [];
+      vi.mocked(fetchMunicipalityBoundaries).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            pendingBoundaryResolvers.push(() => resolve({ type: 'FeatureCollection', features: [] }));
+          })
+      );
+      const { getByRole, getByLabelText, queryByRole } = renderWithChakra(<MapWorkspace />);
+
+      fireEvent.click(getByRole('button', { name: 'レイヤー切り替え' }));
+      await waitFor(() => getByRole('checkbox', { name: '自転車ログ' }));
+      fireEvent.click(getByRole('checkbox', { name: '自転車ログ' }));
+      await waitFor(() => expect(getByRole('checkbox', { name: '自転車ログ' })).toBeChecked());
+      fireEvent.change(getByLabelText('行政区画の年代'), { target: { value: '2000-10-01' } });
+      fireEvent.click(getByRole('button', { name: '実行' }));
+
+      await waitFor(() => expect(syncCyclingActivities).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(fetchMunicipalityBoundaries).toHaveBeenCalledWith('2000-10-01'));
+
+      // 自転車ログ同期のみ完了させても、行政区画データ取得がまだのためダイアログは閉じたままのはず。
+      // 「一定時間待ってもチェックボックスが存在し続けること」を確認する（queryByRoleがnullを返し続ける
+      // ことをwaitForで待ち、タイムアウトで失敗する＝閉じなかったことを表す）。getByRoleをwaitFor内で
+      // 呼ぶ方式は、状態更新がまだ反映されていないタイミングでの1回目の同期的なチェックだけで
+      // 成功してしまい、実際には閉じてしまう不具合を見逃すおそれがあるため使わない
+      resolveSync?.();
+      await expect(
+        waitFor(() => expect(queryByRole('checkbox', { name: '自転車ログ' })).not.toBeInTheDocument(), {
+          timeout: DIALOG_STILL_OPEN_CHECK_TIMEOUT_MS
+        })
+      ).rejects.toThrow();
+
+      // 残る行政区画データ取得も完了すると、ようやくダイアログが閉じる
+      for (const resolve of pendingBoundaryResolvers) {
+        resolve();
+      }
+      await waitFor(() => expect(() => getByRole('checkbox', { name: '自転車ログ' })).toThrow());
+    });
+  });
+
   test('複数のエラーが発生した場合、エラーダイアログにスタックして表示される', async () => {
     // モーダルダイアログが一度開くと背後の要素はaria-hiddenになり操作できなくなるため、
     // マウント時に自動発生する1件目のエラー（getBackfillStatus）を意図的に遅延させ、
@@ -261,9 +400,9 @@ describe('MapWorkspaceに関するテスト', () => {
       () => new Promise((_resolve, reject) => setTimeout(() => reject(new Error('status fetch failed')), 500))
     );
     vi.mocked(fetchCyclingActivities).mockRejectedValue(new Error('fetch failed'));
-    const { getByRole } = renderWithChakra(<MapWorkspace />);
+    const { getByRole, queryByRole } = renderWithChakra(<MapWorkspace />);
 
-    await toggleLayerViaDialog(getByRole, '自転車ログ');
+    await toggleLayerViaDialog(getByRole, queryByRole, '自転車ログ');
 
     await waitFor(() => {
       expect(getByRole('heading', { name: 'エラーが発生しました（1/2）' })).toBeInTheDocument();

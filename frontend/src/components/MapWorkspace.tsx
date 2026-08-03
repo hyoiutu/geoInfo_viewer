@@ -1,6 +1,12 @@
 import { Box, Flex } from '@chakra-ui/react';
+import { useAtomValue, useSetAtom } from 'jotai';
 import { useMemo, useState } from 'react';
 import type { PassedMunicipality } from '../api/activitiesApi';
+import {
+  clearPendingLayerApplyFlagAtom,
+  isApplyingLayerSettingsAtom,
+  startPendingLayerApplyAtom
+} from '../atoms/isApplyingLayerSettingsAtom';
 import { createDefaultVisibility } from '../constants/layerDefinitions';
 import { useActivitySelection } from '../hooks/useActivitySelection';
 import { useBackfillProgressFooter } from '../hooks/useBackfillProgressFooter';
@@ -10,6 +16,7 @@ import { type ActivityFilter, DEFAULT_ACTIVITY_FILTER } from '../types/activityF
 import type { LayerVisibility } from '../types/layer';
 import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 import { filterActivities } from '../utils/filterActivities';
+import { resolveLayerSettingsChange } from '../utils/resolveLayerSettingsChange';
 import { ActivityDetailSidebar } from './ActivityDetailSidebar';
 import { BackfillProgressFooter } from './BackfillProgressFooter';
 import { ErrorDialog } from './ErrorDialog';
@@ -21,10 +28,14 @@ import { MapView } from './MapView';
  * 各種状態のうち「確定済みの結果」（レイヤー表示状態・フィルタ条件・アクティビティの選択状態）のみをここで一元管理し、
  * 各コンポーネントへpropsとして渡す。ダイアログの開閉・入力中(draft)の内容はMapControls・各Dialogコンポーネント自身が
  * 保持する（Issue #53）。自転車ログの新規アクティビティ取得（Strava同期）は`useCyclingActivities`が担い、
- * フィルタ計算もここで1回だけ行った上でMapViewへ渡す（Issue #58）。エラー状態はグローバルステート（errorsAtom）で
- * 管理するため、ここでは保持しない
+ * フィルタ計算もここで1回だけ行った上でMapViewへ渡す（Issue #58）。エラー状態（errorsAtom）・レイヤーダイアログの
+ * 非同期処理待機状態（isApplyingLayerSettingsAtom）はいずれもグローバルステートで管理するため、ここでは保持しない
  */
 export const MapWorkspace = () => {
+  const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
+  const startPendingLayerApply = useSetAtom(startPendingLayerApplyAtom);
+  const clearPendingLayerApplyFlag = useSetAtom(clearPendingLayerApplyFlagAtom);
+
   const [visibility, setVisibility] = useState<LayerVisibility>(createDefaultVisibility);
   const [era, setEra] = useState<MunicipalityEra>(MUNICIPALITY_ERA_CURRENT);
   const [filter, setFilter] = useState<ActivityFilter>(DEFAULT_ACTIVITY_FILTER);
@@ -33,7 +44,9 @@ export const MapWorkspace = () => {
   const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus();
   const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =
     useBackfillProgressFooter(backfillStatus);
-  const { activities } = useCyclingActivities(visibility['bicycle-log']);
+  const { activities } = useCyclingActivities(visibility['bicycle-log'], () =>
+    clearPendingLayerApplyFlag('waitingForCyclingLog')
+  );
   const { selectedActivities, focusedActivity, selectActivities, focusActivity, clearFocus, clearSelection } =
     useActivitySelection(activities, filter);
 
@@ -51,14 +64,26 @@ export const MapWorkspace = () => {
     clearFocus();
   };
 
+  const handleAdminBoundaryDataApplied = () => {
+    clearPendingLayerApplyFlag('waitingForAdminBoundary');
+  };
+
   const handleApplyLayerSettings = (nextVisibility: LayerVisibility, nextEra: MunicipalityEra) => {
+    // 行政区画データ取得(MapViewのuseEffect)・自転車ログ同期(useCyclingActivities)は
+    // いずれも変化を検知して反応するため、ここで「今回変化するかどうか」を先に判定しておく必要がある。
+    // 完了通知(onAdminBoundaryDataApplied/onSyncComplete)を待つ対象を、実行直後の同じレンダーで
+    // 確定させることで、非同期処理の開始前に誤って「待つものが無い」と判定してしまう競合を避ける（Issue #65）
+    const { willChangeEra, willSyncCyclingLog } = resolveLayerSettingsChange(visibility, era, nextVisibility, nextEra);
     setVisibility(nextVisibility);
     setEra(nextEra);
     setFocusedMunicipality(null);
+    if (willChangeEra || willSyncCyclingLog) {
+      startPendingLayerApply({ waitingForAdminBoundary: willChangeEra, waitingForCyclingLog: willSyncCyclingLog });
+    }
   };
 
   return (
-    <Flex height="100vh">
+    <Flex height="100vh" cursor={isApplyingLayerSettings ? 'wait' : undefined} data-testid="map-workspace-root">
       <Flex direction="column" flex="1" minWidth="0">
         <Box position="relative" flex="1" minHeight="0">
           <MapView
@@ -70,6 +95,7 @@ export const MapWorkspace = () => {
             adminBoundaryEra={era}
             focusedMunicipality={focusedMunicipality}
             onFocusMunicipality={setFocusedMunicipality}
+            onAdminBoundaryDataApplied={handleAdminBoundaryDataApplied}
           />
           <MapControls
             appliedVisibility={visibility}

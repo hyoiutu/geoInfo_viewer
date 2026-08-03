@@ -1,10 +1,13 @@
 import { Flex, IconButton } from '@chakra-ui/react';
+import { useAtomValue } from 'jotai';
 import { ChartColumn, Funnel, Layers, Settings } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
+import { isApplyingLayerSettingsAtom } from '../atoms/isApplyingLayerSettingsAtom';
 import type { ActivityFilter } from '../types/activityFilter';
 import type { LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
+import { resolveLayerSettingsChange } from '../utils/resolveLayerSettingsChange';
 import { FilterDialog } from './FilterDialog';
 import { LayerDialog } from './LayerDialog';
 import { SettingsDialog } from './SettingsDialog';
@@ -48,14 +51,36 @@ export const MapControls = ({
   onStartBackfill,
   onStartForceRefetch
 }: MapControlsProps) => {
+  const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
+
   const [isLayerDialogOpen, setIsLayerDialogOpen] = useState(false);
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
   const [isStatisticsDialogOpen, setIsStatisticsDialogOpen] = useState(false);
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
 
+  // 直前に適用中だった状態を覚えておき、true→falseの変化を検知する（Issue #65）
+  const wasApplyingLayerSettingsRef = useRef(isApplyingLayerSettings);
+
+  useEffect(() => {
+    if (wasApplyingLayerSettingsRef.current && !isApplyingLayerSettings) {
+      setIsLayerDialogOpen(false);
+    }
+    wasApplyingLayerSettingsRef.current = isApplyingLayerSettings;
+  }, [isApplyingLayerSettings]);
+
   const handleApplyLayerSettings = (visibility: LayerVisibility, era: MunicipalityEra) => {
+    const { willChangeEra, willSyncCyclingLog } = resolveLayerSettingsChange(
+      appliedVisibility,
+      appliedEra,
+      visibility,
+      era
+    );
     onApplyLayerSettings(visibility, era);
-    setIsLayerDialogOpen(false);
+    // 行政区画データ取得・自転車ログ同期のいずれも発生しない場合は、待たずに即座に閉じる。
+    // いずれか発生する場合は、isApplyingLayerSettingsがfalseに戻るまで閉じない（上記useEffect）
+    if (!willChangeEra && !willSyncCyclingLog) {
+      setIsLayerDialogOpen(false);
+    }
   };
 
   const handleApplyFilter = (filter: ActivityFilter) => {

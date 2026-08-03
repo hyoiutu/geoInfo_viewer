@@ -14,6 +14,38 @@
 
 ## 変更履歴
 
+### [2026-08-03] レイヤーダイアログの非同期処理待機状態をグローバルステート（Jotai atom）へ変更した（Issue #65、PR #110レビュー対応）
+* **修正の動機・概要**:
+  - `isApplyingLayerSettings`（レイヤーダイアログの非同期処理待機中かどうか）は`MapWorkspace`のローカルな`useState`として保持し、`MapControls`・`LayerDialog`へprops経由で渡していた。ユーザーから「ローディング中かどうかはグローバルな状態で持たせてほしい」と指摘を受け、`errorsAtom`と同じパターン（読み取り専用の派生atom + write-only atomで更新操作を限定する）でJotai atom化した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/atoms/isApplyingLayerSettingsAtom.ts`を新設。`pendingLayerApplyStateAtom`（非公開）・`isApplyingLayerSettingsAtom`（読み取り専用）・`startPendingLayerApplyAtom`/`clearPendingLayerApplyFlagAtom`（write-only）を公開する。
+    - `MapWorkspace.tsx`のローカルuseState（`pendingLayerApply`）を廃止し、上記atomの読み書きに置き換え。
+    - `MapControls.tsx`・`LayerDialog.tsx`は`isApplyingLayerSettings`propを廃止し、`useAtomValue(isApplyingLayerSettingsAtom)`で直接参照するよう変更（props経由のバケツリレーを解消）。
+  * **README.md**: 変更なし。
+  * **設計書**: `designs/technical_design.md`の「レイヤーダイアログの非同期実行対応（Issue #65）」節を、atom化後の設計に合わせて更新。
+
+### [2026-08-02] レイヤーダイアログ待機中は閉じる操作（×ボタン・背景クリック・Escapeキー）も無効化した（Issue #65、PR #110レビュー対応）
+* **修正の動機・概要**:
+  - レイヤーダイアログの「実行」「リセット」「閉じる(×)」ボタンを個別にdisabled化する対応を繰り返していたが、対応漏れ（閉じるボタン）が発生した。当初は`window`へキャプチャフェーズのイベントリスナーを登録しページ全体の操作を遮断する独自実装（`useGlobalInputBlocker`）で対応したが、レビューによりChakra UI（内部の`@zag-js/dialog`）が標準で提供する`closeOnEscape`/`closeOnInteractOutside`propsで同じ目的（背景クリック・Escapeキーによるクローズの無効化）を達成できることが判明したため、車輪の再発明であった独自実装を廃止し、こちらへ置き換えた。ページ全体を遮断する方式は待機中に`ErrorDialog`が表示された場合にそれも操作不能にしてしまう副作用があったが、この置き換えにより解消される。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `AppDialog.tsx`の`closeDisabled`propがtrueの間、閉じる(×)ボタンの無効化に加え`Dialog.Root`の`closeOnEscape`/`closeOnInteractOutside`をfalseにするよう変更。`LayerDialog.tsx`から待機中はこのpropを渡す。
+    - `frontend/src/hooks/useGlobalInputBlocker.ts`（および対応するテスト）を削除。`MapWorkspace.tsx`からの呼び出しも削除。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「レイヤ一覧表示機能」を、「アプリ画面全体でクリック・キーボード操作を受け付けない」という記述から「閉じる(×)ボタン・背景クリック・Escapeキーによるダイアログクローズが無効化される」という実際の挙動に合わせて修正。
+
+### [2026-08-02] レイヤーダイアログの待機中はチェックボックス・年代選択も無効化し、pendingLayerApplyのフラグクリア処理をutils/へ切り出した（Issue #65、PR #110 pr-review-rally対応）
+* **修正の動機・概要**:
+  - `clearPendingLayerApplyFlag`がHooksを使わない純粋な状態更新ロジックであるにもかかわらずコンポーネントファイル（`MapWorkspace.tsx`）に直接定義されており、design_principles.mdのSRP規約に反していたため、utils/へ切り出した。
+  - レイヤーダイアログの「実行」ボタンは非同期処理の待機中は無効化されていたが、チェックボックス・行政区画の年代選択は無効化されておらず、待機中に加えた変更が、待機完了によるダイアログの自動クローズ（draft内容を破棄する）で気づかれないまま失われる経路が残っていたため、これらも待機中は無効化するようにした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `clearPendingLayerApplyFlag`・`PendingLayerApply`型を`MapWorkspace.tsx`から`frontend/src/utils/pendingLayerApply.ts`へ切り出し。
+    - `LayerDialog.tsx`の`Checkbox.Root`・`AdminBoundaryEraSelect`（`NativeSelect.Root`）に`disabled={isApplyingLayerSettings}`を追加。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「レイヤ一覧表示機能」に、待機中はチェックボックス・年代選択・実行ボタンが操作不可になる旨を追記。
+
 ### [2026-07-31] 低ズームレベル軽量表示導入時の既存アクティビティの挙動を仕様書へ明記した（Issue #61、PR #109レビュー対応）
 * **修正の動機・概要**:
   - `summaryPath`は本機能導入後に詳細取得（新規同期・フォースリフェッチ）したアクティビティにしか設定されないため、本機能導入前から取得済みだったアクティビティは、ユーザーが「フォースリフェッチ」を実行するまでの間、ズームレベル10以下では地図上に表示されなくなる（`cyclingActivitySummaryToGeoJson`が`summaryPath === null`のアクティビティを除外するため）。この移行期間の挙動が仕様書に記載されておらず、PRレビューで指摘を受けたため追記した。
@@ -21,6 +53,19 @@
   * **実装**: 変更なし（既存の`toCyclingActivityEntityFromDetail`・`cyclingActivitySummaryToGeoJson`の挙動どおりであることを確認した上での仕様書追記）。
   * **README.md**: 変更なし。
   * **仕様書**: `specs/system_specification.md`の「自転車ログ表示機能」に、本機能導入前から取得済みのアクティビティはフォースリフェッチ実行までズームレベル10以下で表示されない旨を追記。
+
+### [2026-07-30] レイヤーダイアログの実行を非同期処理の完了まで待つようにした（Issue #65）
+* **修正の動機・概要**:
+  - レイヤーダイアログで「実行」を押すと即座にダイアログが閉じていたが、行政区画の年代変更・自転車ログレイヤーのOFF→ON時のデータ取得は非同期処理であり、実際に地図へ反映されるまで時間がかかる。反映中であることがユーザーに分かるよう、該当する非同期処理が完了するまでダイアログを閉じずマウスカーソルをローディング状態にするようにした。MapLibreのタイル読み込み自体は対象外とした（issue-reviewでの事前確認・ユーザー回答）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `MapView.tsx`に`onAdminBoundaryDataApplied`コールバックpropsを追加し、`applyAdminBoundaryData`の完了時（成功・失敗問わず）に呼ぶよう変更。
+    - `useCyclingActivities.ts`に`onSyncComplete`コールバック引数を追加し、OFF→ON時の同期処理完了時（成功・失敗問わず）に呼ぶよう変更。
+    - `MapWorkspace.tsx`に`pendingLayerApply`状態を追加し、実行ボタン押下時点で行政区画年代変更・自転車ログ同期のいずれが発生するかを同期的に判定して記録、両コールバックで完了を検知する。`isApplyingLayerSettings`を`MapView`・`MapControls`へ渡し、最外殻要素に`cursor: wait`を適用する。
+    - `MapControls.tsx`に`isApplyingLayerSettings`propsを追加し、true→falseに変化した時点でレイヤーダイアログを閉じるよう変更（非同期処理が不要な場合は従来通り即座に閉じる）。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「レイヤ一覧表示機能」に、実行時のローディング状態・ダイアログを閉じるタイミングの挙動を追記。
+  * **設計書**: `designs/technical_design.md`に「レイヤーダイアログの非同期実行対応（Issue #65）」節を新設し、完了検知の仕組み（コールバック・ref依存回避）とpendingLayerApplyの判定タイミングを記載。
 
 ### [2026-07-30] 自転車ログ表示を低ズームレベルで軽量化した（Issue #61）
 * **修正の動機・概要**:

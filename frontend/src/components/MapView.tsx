@@ -57,6 +57,11 @@ type MapViewProps = {
   focusedMunicipality: PassedMunicipality | null;
   /** 行政区画クリックで自治体が検出されたときに呼ばれるコールバック */
   onFocusMunicipality: (municipality: PassedMunicipality) => void;
+  /**
+   * adminBoundaryEraの変化に伴う境界データの取得・地図への反映が完了した時点（成功・失敗問わず）で呼ばれる
+   * コールバック。レイヤーダイアログのローディング状態解除に使う（Issue #65）
+   */
+  onAdminBoundaryDataApplied?: () => void;
 };
 
 /**
@@ -74,7 +79,8 @@ export const MapView = ({
   filteredActivities,
   adminBoundaryEra,
   focusedMunicipality,
-  onFocusMunicipality
+  onFocusMunicipality,
+  onAdminBoundaryDataApplied
 }: MapViewProps) => {
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
 
@@ -91,6 +97,9 @@ export const MapView = ({
   focusedActivityRef.current = focusedActivity;
   const onFocusMunicipalityRef = useRef(onFocusMunicipality);
   onFocusMunicipalityRef.current = onFocusMunicipality;
+  // 依存配列に含めてeffectを不要に再実行しないよう、最新の値をrefで参照する（onSelectActivitiesRef等と同じ対策）
+  const onAdminBoundaryDataAppliedRef = useRef(onAdminBoundaryDataApplied);
+  onAdminBoundaryDataAppliedRef.current = onAdminBoundaryDataApplied;
 
   const addError = useSetAtom(addErrorAtom);
 
@@ -208,9 +217,13 @@ export const MapView = ({
       return;
     }
 
-    void applyAdminBoundaryData(map, adminBoundaryEra, historicalBoundariesCacheRef.current).catch((error: unknown) => {
-      addError(toAppErrorInfo(error));
-    });
+    void applyAdminBoundaryData(map, adminBoundaryEra, historicalBoundariesCacheRef.current)
+      .catch((error: unknown) => {
+        addError(toAppErrorInfo(error));
+      })
+      .finally(() => {
+        onAdminBoundaryDataAppliedRef.current?.();
+      });
   }, [adminBoundaryEra, isStyleLoaded, addError]);
 
   // フォーカス中の自治体が変化するたびに、フォーカス用オーバーレイのデータを更新し、地図の中心を
