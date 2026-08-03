@@ -13,6 +13,12 @@ type AppDialogProps = {
   title: ReactNode;
   /** ヘッダー右上の閉じる(×)ボタンを表示するか（省略時はtrue。独自の閉じる手段のみ提供する場合はfalseにする） */
   showCloseButton?: boolean;
+  /**
+   * ダイアログを閉じられなくするか（省略時はfalse。非同期処理待機中などダイアログを閉じさせたくない場合にtrueにする）。
+   * trueの間は閉じる(×)ボタンを無効化するのに加え、Escapeキー・背景クリックによるクローズも無効化する
+   * （Chakra UIが内部で使う@zag-js/dialogの`closeOnEscape`/`closeOnInteractOutside`props、いずれもデフォルトtrue）
+   */
+  closeDisabled?: boolean;
   /** Dialog.Rootのrole（省略時は'dialog'） */
   role?: 'dialog' | 'alertdialog';
   /** フッターに表示する内容（省略時はDialog.Footer自体を表示しない） */
@@ -31,6 +37,7 @@ export const AppDialog = ({
   onClose,
   title,
   showCloseButton = true,
+  closeDisabled = false,
   role = 'dialog',
   footer,
   children
@@ -42,9 +49,15 @@ export const AppDialog = ({
   };
 
   return (
-    <Dialog.Root open={isOpen} onOpenChange={handleOpenChange} role={role}>
+    <Dialog.Root
+      open={isOpen}
+      onOpenChange={handleOpenChange}
+      role={role}
+      closeOnEscape={!closeDisabled}
+      closeOnInteractOutside={!closeDisabled}
+    >
       <Portal>
-        <Dialog.Backdrop />
+        <Dialog.Backdrop data-testid="app-dialog-backdrop" />
         <Dialog.Positioner>
           <Dialog.Content>
             <Dialog.Header>
@@ -52,6 +65,7 @@ export const AppDialog = ({
               {showCloseButton && (
                 <Button
                   onClick={onClose}
+                  disabled={closeDisabled}
                   aria-label={CLOSE_BUTTON_LABEL}
                   variant="ghost"
                   size="sm"
@@ -65,7 +79,7 @@ export const AppDialog = ({
             </Dialog.Header>
             <Dialog.Body>{children}</Dialog.Body>
             {footer && <Dialog.Footer>{footer}</Dialog.Footer>}
-            <Dialog.CloseTrigger />
+            <Dialog.CloseTrigger disabled={closeDisabled} data-testid="app-dialog-close-trigger" />
           </Dialog.Content>
         </Dialog.Positioner>
       </Portal>
