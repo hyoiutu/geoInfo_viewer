@@ -71,6 +71,7 @@ root/
 - 実行中フラグ（`ActivitiesBackfillService`の`running`）はインメモリ管理とする（DBには永続化しない）。バックエンドが再起動した場合はフラグがリセットされ、ユーザーが再度ボタンを押すことでDB上の未取得分から再開する
 - 一覧取得は1ページあたりの最大件数でページングし、空のページが返るまで取得を繰り返すことで全件を取得する
 - GPSルートの無い（手動記録等の）アクティビティを「未取得」と誤判定しないよう、詳細取得が完了した時刻（`detailFetchedAt`）を保持する列を設け、この列の有無で取得済みかどうかを判別する（軌跡データ自体の有無では判別しない）
+- 進捗フッター（`BackfillProgressFooter`）の表示トリガーは、`backfillStatus.isRunning`の**観測**ではなく、開始操作そのもの（`useBackfillProgressFooter`が公開する`show()`を、`MapWorkspace`の開始ボタンのクリックハンドラで`startBackfill`/`startForceRefetch`呼び出しと同期的に呼ぶ）とする。対象件数が極端に少ない・レート制限間隔が極小の環境（E2E等）では、開始操作から最初の状態取得（`useBackfillStatus`の`refresh`）までの間に処理が完了してしまい、`isRunning: true`の状態を一度もフロントエンドが観測できないことがある。以前は`isRunning: true`への変化を検知して初めてフッターを表示する設計だったため、このケースでフッター自体が最後まで表示されない不具合があった（E2Eテスト`bicycle-log.spec.ts`で断続的に再現、Issue #86。既知の根本原因は判明済みで対症療法的なタイムアウト延長では解消しないことも確認済み）
 
 # アクティビティ詳細閲覧機能
 - 自転車ログの線は太さ3pxと細く正確なクリックが難しいため、クリック地点を中心とした10px四方（片側5px）のバウンディングボックス内に描画されているアクティビティをヒットテストで検出する（`registerBicycleLogClickHandler`、`frontend/src/utils/mapLayerInteraction.ts`）

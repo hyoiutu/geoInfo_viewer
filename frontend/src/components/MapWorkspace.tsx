@@ -42,8 +42,11 @@ export const MapWorkspace = () => {
   const [focusedMunicipality, setFocusedMunicipality] = useState<PassedMunicipality | null>(null);
 
   const { backfillStatus, start: startBackfill, startForceRefetch } = useBackfillStatus();
-  const { isVisible: isBackfillFooterVisible, dismiss: dismissBackfillFooter } =
-    useBackfillProgressFooter(backfillStatus);
+  const {
+    isVisible: isBackfillFooterVisible,
+    show: showBackfillFooter,
+    dismiss: dismissBackfillFooter
+  } = useBackfillProgressFooter(backfillStatus);
   const { activities } = useCyclingActivities(visibility['bicycle-log'], () =>
     clearPendingLayerApplyFlag('waitingForCyclingLog')
   );
@@ -82,6 +85,17 @@ export const MapWorkspace = () => {
     }
   };
 
+  // 開始操作と同期的にshowBackfillFooterを呼び、isRunning:trueの観測を待たずフッターを表示する（Issue #86）
+  const handleStartBackfill = () => {
+    showBackfillFooter();
+    void startBackfill();
+  };
+
+  const handleStartForceRefetch = () => {
+    showBackfillFooter();
+    void startForceRefetch();
+  };
+
   return (
     <Flex height="100vh" cursor={isApplyingLayerSettings ? 'wait' : undefined} data-testid="map-workspace-root">
       <Flex direction="column" flex="1" minWidth="0">
@@ -105,12 +119,8 @@ export const MapWorkspace = () => {
             onApplyFilter={setFilter}
             activities={activities}
             isBackfillRunning={backfillStatus?.isRunning ?? false}
-            onStartBackfill={() => {
-              void startBackfill();
-            }}
-            onStartForceRefetch={() => {
-              void startForceRefetch();
-            }}
+            onStartBackfill={handleStartBackfill}
+            onStartForceRefetch={handleStartForceRefetch}
           />
         </Box>
         <BackfillProgressFooter
