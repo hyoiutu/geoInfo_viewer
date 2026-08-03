@@ -36,6 +36,11 @@ export class CyclingActivityEntity {
   @Column({ type: 'geometry', spatialFeatureType: 'MultiLineString', srid: 4326, nullable: true })
   path!: MultiLineString | null;
 
+  // 低ズームレベル（ズームレベル10以下）表示用の簡略化された軌跡（Strava summary_polyline由来）。
+  // pathとは独立して保持し、地図の低ズーム表示専用に使う（Issue #61）
+  @Column({ name: 'summary_path', type: 'geometry', spatialFeatureType: 'MultiLineString', srid: 4326, nullable: true })
+  summaryPath!: MultiLineString | null;
+
   // 詳細API(GET /activities/{id})での取得が完了した時刻。nullの間はバックフィル未完了（プレースホルダー）を表す。
   // pathがnullでもこの値が入っていれば「GPSルートの無いアクティビティとして取得済み」と判別できる。
   @Column({ name: 'detail_fetched_at', type: 'timestamptz', nullable: true })

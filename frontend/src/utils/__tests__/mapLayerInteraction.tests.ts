@@ -42,16 +42,20 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
       [139.8, 35.7]
     ]
   ],
+  summaryPath: null,
   ...overrides
 });
 
 describe('registerBicycleLogClickHandlerに関するテスト', () => {
   type ClickHandler = (event: { point: { x: number; y: number } }) => void;
 
-  /** map.on/map.queryRenderedFeaturesのみを呼び出す最小限のMapLibre地図モック */
+  /** map.on/map.queryRenderedFeatures/map.getZoomのみを呼び出す最小限のMapLibre地図モック */
   const createMapMock = () => ({
     on: vi.fn<(event: string, handler: ClickHandler) => void>(),
-    queryRenderedFeatures: vi.fn<() => { properties?: { id?: unknown } }[]>(() => [])
+    queryRenderedFeatures: vi.fn<() => { properties?: { id?: unknown } }[]>(() => []),
+    // BICYCLE_LOG_SUMMARY_MAX_ZOOM(10)より大きいズームレベルをデフォルトとし、
+    // 既存のテストは通常ズーム時の挙動として扱う
+    getZoom: vi.fn<() => number>(() => 15)
   });
   // テスト対象はmap.on/map.queryRenderedFeaturesのみ呼ぶため、必要最小限のモックへキャストする
   const asMap = (mock: ReturnType<typeof createMapMock>): maplibregl.Map => mock as never;
@@ -110,6 +114,31 @@ describe('registerBicycleLogClickHandlerに関するテスト', () => {
 
     expect(mapMock.queryRenderedFeatures).not.toHaveBeenCalled();
     expect(onSelectActivities).not.toHaveBeenCalled();
+  });
+
+  test('ズームレベルがしきい値(10)以下の場合、ヒットテストが行われずonSelectActivitiesも呼ばれない（Issue #61）', () => {
+    const mapMock = createMapMock();
+    mapMock.getZoom.mockReturnValue(10);
+    mapMock.queryRenderedFeatures.mockReturnValue([{ properties: { id: '1' } }]);
+    const onSelectActivities = vi.fn();
+    registerBicycleLogClickHandler(asMap(mapMock), onSelectActivities, () => false);
+
+    getClickHandler(mapMock)({ point: { x: 100, y: 200 } });
+
+    expect(mapMock.queryRenderedFeatures).not.toHaveBeenCalled();
+    expect(onSelectActivities).not.toHaveBeenCalled();
+  });
+
+  test('ズームレベルがしきい値(10)より大きい場合は、通常通りヒットテストが行われる（Issue #61）', () => {
+    const mapMock = createMapMock();
+    mapMock.getZoom.mockReturnValue(10.1);
+    mapMock.queryRenderedFeatures.mockReturnValue([{ properties: { id: '1' } }]);
+    const onSelectActivities = vi.fn();
+    registerBicycleLogClickHandler(asMap(mapMock), onSelectActivities, () => false);
+
+    getClickHandler(mapMock)({ point: { x: 100, y: 200 } });
+
+    expect(onSelectActivities).toHaveBeenCalledWith(['1']);
   });
 });
 

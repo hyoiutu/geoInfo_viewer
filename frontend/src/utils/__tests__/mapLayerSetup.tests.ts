@@ -42,7 +42,12 @@ import {
   BICYCLE_LOG_LINE_WIDTH_SELECTED,
   BICYCLE_LOG_SELECTED_LAYER_ID,
   BICYCLE_LOG_SELECTED_SOURCE_ID,
-  BICYCLE_LOG_SOURCE_ID
+  BICYCLE_LOG_SOURCE_ID,
+  BICYCLE_LOG_SUMMARY_LAYER_ID,
+  BICYCLE_LOG_SUMMARY_LINE_COLOR,
+  BICYCLE_LOG_SUMMARY_LINE_WIDTH,
+  BICYCLE_LOG_SUMMARY_MAX_ZOOM,
+  BICYCLE_LOG_SUMMARY_SOURCE_ID
 } from '../../constants/bicycleLog';
 import type { CategorizedLayerIds } from '../../types/layer';
 import type { MunicipalityEra } from '../../types/municipalityEra';
@@ -135,7 +140,7 @@ describe('addAdminBoundaryLayerに関するテスト', () => {
 });
 
 describe('addBicycleLogLayerに関するテスト', () => {
-  test('通常・選択・フォーカス用の空のGeoJSONソースを追加する', () => {
+  test('通常・選択・フォーカス・summary用の空のGeoJSONソースを追加する', () => {
     const map = createMapMock();
     const emptyData = { type: 'FeatureCollection', features: [] };
 
@@ -144,9 +149,10 @@ describe('addBicycleLogLayerに関するテスト', () => {
     expect(map.addSource).toHaveBeenCalledWith(BICYCLE_LOG_SOURCE_ID, { type: 'geojson', data: emptyData });
     expect(map.addSource).toHaveBeenCalledWith(BICYCLE_LOG_SELECTED_SOURCE_ID, { type: 'geojson', data: emptyData });
     expect(map.addSource).toHaveBeenCalledWith(BICYCLE_LOG_FOCUSED_SOURCE_ID, { type: 'geojson', data: emptyData });
+    expect(map.addSource).toHaveBeenCalledWith(BICYCLE_LOG_SUMMARY_SOURCE_ID, { type: 'geojson', data: emptyData });
   });
 
-  test('通常・選択・フォーカスのハロー・フォーカス本体の順でラインレイヤーを追加する（後から追加した方が手前）', () => {
+  test('通常・選択・フォーカスのハロー・フォーカス本体の順でラインレイヤーを追加する（後から追加した方が手前）。通常・選択・フォーカスの各レイヤーは低ズームでは非表示にする（Issue #61）', () => {
     const map = createMapMock();
 
     addBicycleLogLayer(asMap(map));
@@ -156,6 +162,7 @@ describe('addBicycleLogLayerに関するテスト', () => {
         id: BICYCLE_LOG_LAYER_ID,
         type: 'line',
         source: BICYCLE_LOG_SOURCE_ID,
+        minzoom: BICYCLE_LOG_SUMMARY_MAX_ZOOM,
         paint: { 'line-color': BICYCLE_LOG_LINE_COLOR_DEFAULT, 'line-width': BICYCLE_LOG_LINE_WIDTH_DEFAULT }
       })
     );
@@ -164,6 +171,7 @@ describe('addBicycleLogLayerに関するテスト', () => {
         id: BICYCLE_LOG_SELECTED_LAYER_ID,
         type: 'line',
         source: BICYCLE_LOG_SELECTED_SOURCE_ID,
+        minzoom: BICYCLE_LOG_SUMMARY_MAX_ZOOM,
         paint: { 'line-color': BICYCLE_LOG_LINE_COLOR_SELECTED, 'line-width': BICYCLE_LOG_LINE_WIDTH_SELECTED }
       })
     );
@@ -172,6 +180,7 @@ describe('addBicycleLogLayerに関するテスト', () => {
         id: BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
         type: 'line',
         source: BICYCLE_LOG_FOCUSED_SOURCE_ID,
+        minzoom: BICYCLE_LOG_SUMMARY_MAX_ZOOM,
         paint: { 'line-color': BICYCLE_LOG_FOCUSED_OUTLINE_COLOR, 'line-width': BICYCLE_LOG_FOCUSED_OUTLINE_WIDTH }
       })
     );
@@ -180,17 +189,35 @@ describe('addBicycleLogLayerに関するテスト', () => {
         id: BICYCLE_LOG_FOCUSED_LAYER_ID,
         type: 'line',
         source: BICYCLE_LOG_FOCUSED_SOURCE_ID,
+        minzoom: BICYCLE_LOG_SUMMARY_MAX_ZOOM,
         paint: { 'line-color': BICYCLE_LOG_LINE_COLOR_FOCUSED, 'line-width': BICYCLE_LOG_LINE_WIDTH_FOCUSED }
       })
     );
 
     const layerIdCallOrder = map.addLayer.mock.calls.map(([layer]) => layer.id);
     expect(layerIdCallOrder).toEqual([
+      BICYCLE_LOG_SUMMARY_LAYER_ID,
       BICYCLE_LOG_LAYER_ID,
       BICYCLE_LOG_SELECTED_LAYER_ID,
       BICYCLE_LOG_FOCUSED_OUTLINE_LAYER_ID,
       BICYCLE_LOG_FOCUSED_LAYER_ID
     ]);
+  });
+
+  test('summary用レイヤーは、高解像度レイヤーと同じズームレベルを境に非表示にする（Issue #61）', () => {
+    const map = createMapMock();
+
+    addBicycleLogLayer(asMap(map));
+
+    expect(map.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: BICYCLE_LOG_SUMMARY_LAYER_ID,
+        type: 'line',
+        source: BICYCLE_LOG_SUMMARY_SOURCE_ID,
+        maxzoom: BICYCLE_LOG_SUMMARY_MAX_ZOOM,
+        paint: { 'line-color': BICYCLE_LOG_SUMMARY_LINE_COLOR, 'line-width': BICYCLE_LOG_SUMMARY_LINE_WIDTH }
+      })
+    );
   });
 });
 

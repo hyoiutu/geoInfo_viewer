@@ -51,6 +51,9 @@ vi.mock('maplibre-gl', () => {
   const queryRenderedFeatures = vi.fn(() => []);
   const setFeatureState = vi.fn();
   const addControl = vi.fn();
+  // BICYCLE_LOG_SUMMARY_MAX_ZOOM(10)より大きいズームレベルをデフォルトとし、
+  // 既存のテストは通常ズーム時の挙動として扱う（Issue #61）
+  const getZoom = vi.fn(() => 15);
   const MapMock = vi.fn().mockImplementation(function MockMap() {
     return {
       remove,
@@ -63,7 +66,8 @@ vi.mock('maplibre-gl', () => {
       on,
       queryRenderedFeatures,
       setFeatureState,
-      addControl
+      addControl,
+      getZoom
     };
   });
   const AttributionControlMock = vi.fn();
@@ -88,6 +92,7 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
   elevationGainMeters: 50,
   startDate: '2026-06-15T01:00:00.000Z',
   path: null,
+  summaryPath: null,
   ...overrides
 });
 

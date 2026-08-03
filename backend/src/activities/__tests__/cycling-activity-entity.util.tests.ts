@@ -60,6 +60,14 @@ describe('toPlaceholderCyclingActivityEntityに関するテスト', () => {
     expect(entity.path).toBeNull();
   });
 
+  test('summary_polylineが設定されていても、summaryPathは常にnullになる（詳細取得までは位置情報を保持しない）', () => {
+    const activity = createActivity({ map: { summary_polyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' } });
+
+    const entity = toPlaceholderCyclingActivityEntity(activity);
+
+    expect(entity.summaryPath).toBeNull();
+  });
+
   test('detailFetchedAtは常にnullになる（未取得を表す）', () => {
     const activity = createActivity({});
 
@@ -126,6 +134,32 @@ describe('toCyclingActivityEntityFromDetailに関するテスト', () => {
     const entity = toCyclingActivityEntityFromDetail(detail);
 
     expect(entity.path).toBeNull();
+  });
+
+  test('polylineが設定されていても、summaryPathはsummary_polylineから独立してデコードされる（Issue #61）', () => {
+    const detail = createActivityDetail({
+      map: { summary_polyline: CLOSE_POINTS_POLYLINE, polyline: '_p~iF~ps|U_ulLnnqC_mqNvxq`@' }
+    });
+
+    const entity = toCyclingActivityEntityFromDetail(detail);
+
+    expect(entity.summaryPath).toEqual({
+      type: 'MultiLineString',
+      coordinates: [
+        [
+          [139.767, 35.681],
+          [139.7672, 35.6812]
+        ]
+      ]
+    });
+  });
+
+  test('summary_polylineが空文字の場合、summaryPathはnullになる', () => {
+    const detail = createActivityDetail({ map: { summary_polyline: '', polyline: CLOSE_POINTS_POLYLINE } });
+
+    const entity = toCyclingActivityEntityFromDetail(detail);
+
+    expect(entity.summaryPath).toBeNull();
   });
 
   test('隣接する2点間が10km以上離れている場合、位置飛びとして区間分割される（末尾の孤立した1点は除外される）', () => {

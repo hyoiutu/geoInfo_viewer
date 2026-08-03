@@ -8,7 +8,8 @@ import {
   BICYCLE_LOG_FOCUSED_SOURCE_ID,
   BICYCLE_LOG_LAYER_ID,
   BICYCLE_LOG_SELECTED_LAYER_ID,
-  BICYCLE_LOG_SELECTED_SOURCE_ID
+  BICYCLE_LOG_SELECTED_SOURCE_ID,
+  BICYCLE_LOG_SUMMARY_MAX_ZOOM
 } from '../constants/bicycleLog';
 import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
@@ -28,7 +29,9 @@ const HIT_TEST_RADIUS_PX = 5;
 /**
  * 自転車ログレイヤーのクリックを検出し、選択中アクティビティを置き換える。
  * 線が細く正確なクリックが難しいため、クリック地点を中心としたバウンディングボックスでヒットテストする。
- * フォーカス中はクリックによる選択変更を無効にする
+ * フォーカス中はクリックによる選択変更を無効にする。
+ * また、ズームレベルがBICYCLE_LOG_SUMMARY_MAX_ZOOM以下（低ズームレベル用の簡略化された軌跡を
+ * 表示している状態）の場合も選択・フォーカス操作自体を無効にする（Issue #61）
  * @param map クリックを監視するMapLibre地図インスタンス
  * @param onSelectActivities 検出したアクティビティID一覧を渡すコールバック
  * @param isFocused 呼び出し時点でフォーカス中かどうかを返す関数
@@ -39,7 +42,7 @@ export const registerBicycleLogClickHandler = (
   isFocused: () => boolean
 ) => {
   map.on('click', (event) => {
-    if (isFocused()) {
+    if (isFocused() || map.getZoom() <= BICYCLE_LOG_SUMMARY_MAX_ZOOM) {
       return;
     }
 

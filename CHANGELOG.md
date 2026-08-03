@@ -14,6 +14,25 @@
 
 ## 変更履歴
 
+### [2026-07-31] 低ズームレベル軽量表示導入時の既存アクティビティの挙動を仕様書へ明記した（Issue #61、PR #109レビュー対応）
+* **修正の動機・概要**:
+  - `summaryPath`は本機能導入後に詳細取得（新規同期・フォースリフェッチ）したアクティビティにしか設定されないため、本機能導入前から取得済みだったアクティビティは、ユーザーが「フォースリフェッチ」を実行するまでの間、ズームレベル10以下では地図上に表示されなくなる（`cyclingActivitySummaryToGeoJson`が`summaryPath === null`のアクティビティを除外するため）。この移行期間の挙動が仕様書に記載されておらず、PRレビューで指摘を受けたため追記した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**: 変更なし（既存の`toCyclingActivityEntityFromDetail`・`cyclingActivitySummaryToGeoJson`の挙動どおりであることを確認した上での仕様書追記）。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「自転車ログ表示機能」に、本機能導入前から取得済みのアクティビティはフォースリフェッチ実行までズームレベル10以下で表示されない旨を追記。
+
+### [2026-07-30] 自転車ログ表示を低ズームレベルで軽量化した（Issue #61）
+* **修正の動機・概要**:
+  - 常に高解像度の軌跡（`path`）を表示していたため、ズームアウトして広域を見る際にもデータ量の多い軌跡をダウンロード・描画しており、表示が重かった。ズームレベル10以下では、Strava詳細APIの`summary_polyline`由来の簡略化された軌跡（低解像度）を表示するようにし、あわせてこの状態ではアクティビティの選択・フォーカス操作も無効にした。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - バックエンド: `cycling_activities`テーブルに`summary_path`列を追加するマイグレーション`1785347504217-AddSummaryPathToCyclingActivities`を追加。`CyclingActivityEntity.summaryPath`を追加し、`toCyclingActivityEntityFromDetail`が`summary_polyline`を`path`とは独立してデコード・区間分割し格納するよう変更（`cycling-activity-entity.util.ts`）。`CyclingActivityDto.summaryPath`・`toCyclingActivityDto`も対応。
+    - フロントエンド: `constants/bicycleLog.ts`に`BICYCLE_LOG_SUMMARY_SOURCE_ID`等の定数と、しきい値`BICYCLE_LOG_SUMMARY_MAX_ZOOM`(10)を追加。`cyclingActivityToGeoJson.ts`に`cyclingActivitySummaryToGeoJson`を追加（共通の変換ロジックを`toGeoJson`へ切り出し）。`mapLayerSetup.ts`の`addBicycleLogLayer`がsummary専用のソース・レイヤーを追加し、MapLibreの`minzoom`/`maxzoom`（既存の行政区画レイヤーと同じ方式）で高解像度/summaryの表示を切り替える。`mapLayerInteraction.ts`の`registerBicycleLogClickHandler`は、ズームレベルがしきい値以下の場合ヒットテスト自体を行わないようにした。`MapView.tsx`はfilteredActivities変化時にsummary用ソースのデータも更新する。
+  * **README.md**: 変更なし。
+  * **仕様書**: `specs/system_specification.md`の「自転車ログ表示機能」「アクティビティ詳細閲覧機能」に、低ズームレベルでの簡略化表示・選択操作無効化の挙動を追記。
+  * **設計書**: `designs/technical_design.md`の「自転車ログ表示機能」に「低ズームレベルでの軽量表示（Issue #61）」節を新設し、`summaryPath`のデータソース・地図描画・ズーム境界の扱いを記載。
+
 ### [2026-07-30] 一回限りの復旧スクリプトを`backend/src/one-off/<追加したブランチ名>/`へ分離した
 * **修正の動機・概要**:
   - `recover-legacy-archives.ts`・`finalize-legacy-recovery.ts`は、対象年月・ファイルがハードコードされた繰り返し実行しない一回限りの復旧作業用スクリプトであり、`photos/`配下の恒久的なパイプライン（`generate-thumbnail-archives.ts`・`strip-videos-and-consolidate-archives.ts`等）と性質が異なる。ユーザーからの指摘を受け、`backend/src/one-off/`ディレクトリへ分離した。さらに、複数の一回限りの作業が積み重なった際にどの作業がどのファイル群を追加したのか追跡できるよう、そのスクリプトを追加したブランチ名のサブディレクトリ配下に置く方式へ改めた。

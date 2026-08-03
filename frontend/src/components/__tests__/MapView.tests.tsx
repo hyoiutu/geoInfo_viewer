@@ -37,7 +37,8 @@ import {
   BICYCLE_LOG_LINE_WIDTH_SELECTED,
   BICYCLE_LOG_SELECTED_LAYER_ID,
   BICYCLE_LOG_SELECTED_SOURCE_ID,
-  BICYCLE_LOG_SOURCE_ID
+  BICYCLE_LOG_SOURCE_ID,
+  BICYCLE_LOG_SUMMARY_SOURCE_ID
 } from '../../constants/bicycleLog';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import type { LayerVisibility } from '../../types/layer';
@@ -95,6 +96,7 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
   elevationGainMeters: 50,
   startDate: '2026-07-01T00:00:00Z',
   path: null,
+  summaryPath: null,
   ...overrides
 });
 
@@ -152,6 +154,9 @@ vi.mock('maplibre-gl', () => {
   const queryRenderedFeatures = vi.fn(() => []);
   const addControl = vi.fn();
   const panTo = vi.fn();
+  // BICYCLE_LOG_SUMMARY_MAX_ZOOM(10)より大きいズームレベルをデフォルトとし、
+  // 既存のテストは通常ズーム時の挙動として扱う（Issue #61）
+  const getZoom = vi.fn(() => 15);
   const MapMock = vi.fn().mockImplementation(function MockMap() {
     return {
       remove,
@@ -164,7 +169,8 @@ vi.mock('maplibre-gl', () => {
       on,
       queryRenderedFeatures,
       addControl,
-      panTo
+      panTo,
+      getZoom
     };
   });
   const MarkerMock = vi.fn().mockImplementation(function MockMarker(options: { element: HTMLElement }) {
@@ -516,6 +522,49 @@ describe('MapViewに関するテスト', () => {
     );
   });
 
+  test('filteredActivitiesが変化すると、通常用ソースだけでなくsummary用ソース（summaryPath由来）のデータも更新される（Issue #61）', async () => {
+    const activity: CyclingActivity = {
+      id: '1',
+      name: 'ライド1',
+      distanceMeters: 1000,
+      movingTimeSeconds: 600,
+      elapsedTimeSeconds: 650,
+      elevationGainMeters: 50,
+      startDate: '2026-07-01T00:00:00Z',
+      path: [
+        [
+          [139.7, 35.6],
+          [139.8, 35.7]
+        ]
+      ],
+      summaryPath: [
+        [
+          [139.7, 35.6],
+          [139.75, 35.65]
+        ]
+      ]
+    };
+
+    renderWithChakra(
+      <MapView layerVisibility={ALL_ON_VISIBILITY} {...DEFAULT_SELECTION_PROPS} filteredActivities={[activity]} />
+    );
+
+    await waitFor(() => {
+      expect(getSetDataMock(BICYCLE_LOG_SOURCE_ID)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          features: [expect.objectContaining({ geometry: { type: 'MultiLineString', coordinates: activity.path } })]
+        })
+      );
+      expect(getSetDataMock(BICYCLE_LOG_SUMMARY_SOURCE_ID)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          features: [
+            expect.objectContaining({ geometry: { type: 'MultiLineString', coordinates: activity.summaryPath } })
+          ]
+        })
+      );
+    });
+  });
+
   test('自転車ログレイヤーをクリックすると、クリック地点周辺で検出したアクティビティIDでonSelectActivitiesが呼ばれる', () => {
     const onSelectActivities = vi.fn();
     renderWithChakra(
@@ -612,7 +661,8 @@ describe('MapViewに関するテスト', () => {
           [139.7, 35.6],
           [139.8, 35.7]
         ]
-      ]
+      ],
+      summaryPath: null
     };
     const activity2: CyclingActivity = {
       id: '2',
@@ -627,7 +677,8 @@ describe('MapViewに関するテスト', () => {
           [139.7, 35.6],
           [139.9, 35.8]
         ]
-      ]
+      ],
+      summaryPath: null
     };
     const activity3: CyclingActivity = {
       id: '3',
@@ -642,7 +693,8 @@ describe('MapViewに関するテスト', () => {
           [139.7, 35.6],
           [140.0, 35.9]
         ]
-      ]
+      ],
+      summaryPath: null
     };
     const activities = [activity1, activity2, activity3];
     const { rerender } = renderWithChakra(
@@ -684,7 +736,8 @@ describe('MapViewに関するテスト', () => {
           [139.7, 35.6],
           [139.8, 35.7]
         ]
-      ]
+      ],
+      summaryPath: null
     };
     const activity2: CyclingActivity = {
       id: '2',
@@ -699,7 +752,8 @@ describe('MapViewに関するテスト', () => {
           [139.7, 35.6],
           [139.9, 35.8]
         ]
-      ]
+      ],
+      summaryPath: null
     };
     const activities = [activity1, activity2];
     const { rerender } = renderWithChakra(
@@ -736,6 +790,7 @@ describe('MapViewに関するテスト', () => {
       elapsedTimeSeconds: 650,
       elevationGainMeters: 50,
       startDate: '2026-07-01T00:00:00Z',
+      summaryPath: null,
       path: [
         [
           [139.7, 35.6],
@@ -1037,6 +1092,7 @@ describe('MapViewに関するテスト', () => {
       elapsedTimeSeconds: 650,
       elevationGainMeters: 50,
       startDate: '2026-07-01T00:00:00Z',
+      summaryPath: null,
       path: [
         [
           [139.0, 35.0],

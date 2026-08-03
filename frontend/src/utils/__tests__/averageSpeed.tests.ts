@@ -11,6 +11,7 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
   elevationGainMeters: 200,
   startDate: '2026-06-15T01:00:00.000Z',
   path: null,
+  summaryPath: null,
   ...overrides
 });
 

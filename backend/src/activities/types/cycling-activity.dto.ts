@@ -42,4 +42,17 @@ export class CyclingActivityDto {
     nullable: true
   })
   path!: [number, number][][] | null;
+
+  /**
+   * 低ズームレベル（ズームレベル10以下）表示用の簡略化された軌跡（区間ごとの経度・緯度配列の配列）。
+   * 位置飛び（隣接点間10km以上）で区間分割されている。GPSルートの無いアクティビティの場合はnull（Issue #61）
+   */
+  @ApiProperty({
+    description:
+      '低ズームレベル（ズームレベル10以下）表示用の簡略化された軌跡（区間ごとの経度・緯度配列の配列）。GPSルートの無いアクティビティの場合はnull',
+    type: 'array',
+    items: { type: 'array', items: { type: 'array', items: { type: 'number' } } },
+    nullable: true
+  })
+  summaryPath!: [number, number][][] | null;
 }
