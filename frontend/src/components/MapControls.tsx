@@ -1,7 +1,9 @@
 import { Flex, IconButton } from '@chakra-ui/react';
+import { useAtomValue } from 'jotai';
 import { ChartColumn, Funnel, Layers, Settings } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
+import { isApplyingLayerSettingsAtom } from '../atoms/isApplyingLayerSettingsAtom';
 import type { ActivityFilter } from '../types/activityFilter';
 import type { LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
@@ -19,11 +21,6 @@ type MapControlsProps = {
   appliedEra: MunicipalityEra;
   /** レイヤーダイアログで実行が押されたときに、確定した表示状態・年代を渡して呼ばれるコールバック */
   onApplyLayerSettings: (visibility: LayerVisibility, era: MunicipalityEra) => void;
-  /**
-   * 直前のonApplyLayerSettings呼び出しに伴う非同期処理（行政区画データ取得・自転車ログ同期）が
-   * 実行中かどうか。trueからfalseに変化した時点でレイヤーダイアログを閉じる（Issue #65）
-   */
-  isApplyingLayerSettings: boolean;
   /** 現在適用中(地図に反映済み)のフィルタ条件 */
   appliedFilter: ActivityFilter;
   /** フィルタダイアログで実行が押されたときに、確定したフィルタ条件を渡して呼ばれるコールバック */
@@ -47,7 +44,6 @@ export const MapControls = ({
   appliedVisibility,
   appliedEra,
   onApplyLayerSettings,
-  isApplyingLayerSettings,
   appliedFilter,
   onApplyFilter,
   activities,
@@ -60,6 +56,7 @@ export const MapControls = ({
   const [isStatisticsDialogOpen, setIsStatisticsDialogOpen] = useState(false);
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
 
+  const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
   // 直前に適用中だった状態を覚えておき、true→falseの変化を検知する（Issue #65）
   const wasApplyingLayerSettingsRef = useRef(isApplyingLayerSettings);
 
@@ -146,7 +143,6 @@ export const MapControls = ({
         appliedEra={appliedEra}
         onApply={handleApplyLayerSettings}
         onClose={() => setIsLayerDialogOpen(false)}
-        isApplyingLayerSettings={isApplyingLayerSettings}
       />
       <FilterDialog
         isOpen={isFilterDialogOpen}

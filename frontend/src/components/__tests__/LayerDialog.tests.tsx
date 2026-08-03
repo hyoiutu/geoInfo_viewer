@@ -1,5 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { createStore } from 'jotai';
 import { describe, expect, test, vi } from 'vitest';
+import { startPendingLayerApplyAtom } from '../../atoms/isApplyingLayerSettingsAtom';
 import { LAYER_DEFINITIONS } from '../../constants/layerDefinitions';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import type { LayerVisibility } from '../../types/layer';
@@ -16,18 +18,30 @@ const DEFAULT_VISIBILITY: LayerVisibility = {
   'bicycle-log': false
 };
 
-const renderDialog = (overrides: Partial<Parameters<typeof LayerDialog>[0]> = {}) =>
-  renderWithChakra(
+/**
+ * テスト専用のストアを作り、isApplyingLayerSettingsがtrueの場合はstartPendingLayerApplyAtom経由で
+ * グローバルステート（isApplyingLayerSettingsAtom）へ注入した上でレンダリングする
+ */
+const renderDialog = (
+  overrides: Partial<Parameters<typeof LayerDialog>[0]> = {},
+  options: { isApplyingLayerSettings?: boolean } = {}
+) => {
+  const store = createStore();
+  if (options.isApplyingLayerSettings) {
+    store.set(startPendingLayerApplyAtom, { waitingForAdminBoundary: true, waitingForCyclingLog: false });
+  }
+  return renderWithChakra(
     <LayerDialog
       isOpen
       appliedVisibility={DEFAULT_VISIBILITY}
       appliedEra={MUNICIPALITY_ERA_CURRENT}
-      isApplyingLayerSettings={false}
       onApply={vi.fn()}
       onClose={vi.fn()}
       {...overrides}
-    />
+    />,
+    { store }
   );
+};
 
 describe('LayerDialogに関するテスト', () => {
   test('isOpenがfalseの場合、ダイアログは表示されない', () => {
@@ -80,19 +94,19 @@ describe('LayerDialogに関するテスト', () => {
   });
 
   test('isApplyingLayerSettingsがtrueの場合、実行ボタンが無効化される', () => {
-    renderDialog({ isApplyingLayerSettings: true });
+    renderDialog({}, { isApplyingLayerSettings: true });
 
     expect(screen.getByRole('button', { name: '実行' })).toBeDisabled();
   });
 
   test('isApplyingLayerSettingsがfalseの場合、実行ボタンは無効化されない', () => {
-    renderDialog({ isApplyingLayerSettings: false });
+    renderDialog();
 
     expect(screen.getByRole('button', { name: '実行' })).not.toBeDisabled();
   });
 
   test('isApplyingLayerSettingsがtrueの場合、各レイヤーのチェックボックスも無効化される（待機中の変更が気づかれないまま破棄されるのを防ぐ、PR #110レビュー対応）', () => {
-    renderDialog({ isApplyingLayerSettings: true });
+    renderDialog({}, { isApplyingLayerSettings: true });
 
     for (const layerDefinition of LAYER_DEFINITIONS) {
       expect(screen.getByRole('checkbox', { name: layerDefinition.name })).toBeDisabled();
@@ -100,7 +114,7 @@ describe('LayerDialogに関するテスト', () => {
   });
 
   test('isApplyingLayerSettingsがfalseの場合、各レイヤーのチェックボックスは無効化されない', () => {
-    renderDialog({ isApplyingLayerSettings: false });
+    renderDialog();
 
     for (const layerDefinition of LAYER_DEFINITIONS) {
       expect(screen.getByRole('checkbox', { name: layerDefinition.name })).not.toBeDisabled();
@@ -108,25 +122,25 @@ describe('LayerDialogに関するテスト', () => {
   });
 
   test('isApplyingLayerSettingsがtrueの場合、リセットボタンも無効化される（PR #110レビュー対応）', () => {
-    renderDialog({ isApplyingLayerSettings: true });
+    renderDialog({}, { isApplyingLayerSettings: true });
 
     expect(screen.getByRole('button', { name: 'リセット' })).toBeDisabled();
   });
 
   test('isApplyingLayerSettingsがfalseの場合、リセットボタンは無効化されない', () => {
-    renderDialog({ isApplyingLayerSettings: false });
+    renderDialog();
 
     expect(screen.getByRole('button', { name: 'リセット' })).not.toBeDisabled();
   });
 
   test('isApplyingLayerSettingsがtrueの場合、閉じる(×)ボタンも無効化される（PR #110レビュー対応）', () => {
-    renderDialog({ isApplyingLayerSettings: true });
+    renderDialog({}, { isApplyingLayerSettings: true });
 
     expect(screen.getByRole('button', { name: '閉じる' })).toBeDisabled();
   });
 
   test('isApplyingLayerSettingsがfalseの場合、閉じる(×)ボタンは無効化されない', () => {
-    renderDialog({ isApplyingLayerSettings: false });
+    renderDialog();
 
     expect(screen.getByRole('button', { name: '閉じる' })).not.toBeDisabled();
   });
@@ -150,7 +164,6 @@ describe('LayerDialogに関するテスト', () => {
         isOpen={false}
         appliedVisibility={DEFAULT_VISIBILITY}
         appliedEra={MUNICIPALITY_ERA_CURRENT}
-        isApplyingLayerSettings={false}
         onApply={vi.fn()}
         onClose={vi.fn()}
       />
@@ -160,7 +173,6 @@ describe('LayerDialogに関するテスト', () => {
         isOpen
         appliedVisibility={DEFAULT_VISIBILITY}
         appliedEra={MUNICIPALITY_ERA_CURRENT}
-        isApplyingLayerSettings={false}
         onApply={vi.fn()}
         onClose={vi.fn()}
       />
@@ -177,7 +189,7 @@ describe('LayerDialogに関するテスト', () => {
     });
 
     test('isApplyingLayerSettingsがtrueの場合、年代選択プルダウンも無効化される（PR #110レビュー対応）', () => {
-      renderDialog({ isApplyingLayerSettings: true });
+      renderDialog({}, { isApplyingLayerSettings: true });
 
       expect(screen.getByRole('combobox', { name: '行政区画の年代' })).toBeDisabled();
     });
