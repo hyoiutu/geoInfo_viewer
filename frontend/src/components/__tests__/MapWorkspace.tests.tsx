@@ -58,6 +58,13 @@ vi.mock('maplibre-gl', () => {
   // BICYCLE_LOG_SUMMARY_MAX_ZOOM(10)より大きいズームレベルをデフォルトとし、
   // 既存のテストは通常ズーム時の挙動として扱う（Issue #61）
   const getZoom = vi.fn(() => 15);
+  // 写真吹き出し（Issue #107）のクラスタリングが表示範囲を必要とするため、世界全体を覆う範囲をデフォルトとする
+  const getBounds = vi.fn(() => ({
+    getWest: () => -180,
+    getSouth: () => -85,
+    getEast: () => 180,
+    getNorth: () => 85
+  }));
   const MapMock = vi.fn().mockImplementation(function MockMap() {
     return {
       remove,
@@ -71,7 +78,8 @@ vi.mock('maplibre-gl', () => {
       queryRenderedFeatures,
       setFeatureState,
       addControl,
-      getZoom
+      getZoom,
+      getBounds
     };
   });
   const AttributionControlMock = vi.fn();

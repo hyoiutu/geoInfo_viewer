@@ -20,6 +20,7 @@ import type { CategorizedLayerIds, LayerVisibility } from '../../types/layer';
 import {
   applyFocusedMunicipalityLayer,
   applyLayerVisibility,
+  applyPhotoBalloons,
   applySelectionLayers,
   applyStartGoalMarkers,
   panToMunicipalityCentroid,
@@ -27,6 +28,7 @@ import {
   registerBicycleLogClickHandler,
   registerFocusedActivityHoverHandler
 } from '../mapLayerInteraction';
+import { buildPhotoClusterIndex } from '../photoBalloonCluster.util';
 
 const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity => ({
   id: '1',
@@ -304,6 +306,49 @@ describe('applyStartGoalMarkersに関するテスト', () => {
     // pathが無く早期リターンするため、実際のMapLibre地図インスタンスは不要
     applyStartGoalMarkers({} as maplibregl.Map, markersRef, createActivity({ path: null }));
 
+    expect(markersRef.current).toEqual([]);
+  });
+});
+
+describe('applyPhotoBalloonsに関するテスト（Issue #107）', () => {
+  const createMapMock = () => ({
+    getBounds: vi.fn(() => ({
+      getWest: () => 139.0,
+      getSouth: () => 35.0,
+      getEast: () => 140.0,
+      getNorth: () => 36.0
+    })),
+    getZoom: vi.fn(() => 15)
+  });
+  // テスト対象はmap.getBounds/map.getZoomのみ呼ぶため、必要最小限のモックへキャストする
+  const asMap = (mock: ReturnType<typeof createMapMock>): maplibregl.Map => mock as never;
+
+  test('clusterIndexがnullの場合、既存のマーカーが取り除かれ地図の状態は参照しない', () => {
+    const remove = vi.fn();
+    const unmount = vi.fn();
+    const markersRef = {
+      // テスト対象はmarker.remove/root.unmountのみ呼ぶため、必要最小限のモックへキャストする
+      current: [{ marker: { remove } as never, root: { unmount } as never }]
+    };
+    const mapMock = createMapMock();
+
+    applyPhotoBalloons(asMap(mapMock), markersRef, null);
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(unmount).toHaveBeenCalledTimes(1);
+    expect(markersRef.current).toEqual([]);
+    expect(mapMock.getBounds).not.toHaveBeenCalled();
+  });
+
+  test('位置情報を持つ写真が無い（クラスタリング結果が0件の）場合、表示範囲・ズームレベルを問い合わせた上でマーカーは追加されない', () => {
+    const markersRef = { current: [] };
+    const mapMock = createMapMock();
+    const emptyIndex = buildPhotoClusterIndex([]);
+
+    applyPhotoBalloons(asMap(mapMock), markersRef, emptyIndex);
+
+    expect(mapMock.getBounds).toHaveBeenCalledTimes(1);
+    expect(mapMock.getZoom).toHaveBeenCalledTimes(1);
     expect(markersRef.current).toEqual([]);
   });
 });

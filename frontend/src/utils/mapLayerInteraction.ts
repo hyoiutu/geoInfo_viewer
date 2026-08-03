@@ -16,6 +16,9 @@ import type { MunicipalityEra } from '../types/municipalityEra';
 import { cyclingActivityToGeoJson } from './cyclingActivityToGeoJson';
 import { findDistanceAlongPathAtPoint } from './findDistanceAlongPathAtPoint';
 import { resolveStyleLayerIds, resolveUnusedAdminBoundaryLayerIds } from './mapLayerCategory';
+import type { PhotoClusterIndex } from './photoBalloonCluster.util';
+import { getVisiblePhotoClusters } from './photoBalloonCluster.util';
+import { createPhotoBalloonClusterElement, createPhotoBalloonThumbnailElement } from './photoBalloonElement';
 import { calculatePolygonCentroid } from './polygonCentroid';
 import { createGoalMarkerElement, createStartMarkerElement } from './startGoalMarkerElement';
 import { typedEntries } from './typedObject';
@@ -313,4 +316,58 @@ export const panToMunicipalityCentroid = (map: maplibregl.Map, feature: Feature)
     return;
   }
   map.panTo(centroid);
+};
+
+/** 写真吹き出しマーカー1件分（クラスタ・単一写真いずれか）の、地図上のMarkerとその内容を描画しているReact rootの組 */
+export type PhotoBalloonMarkerEntry = {
+  /** 地図上のMarkerインスタンス */
+  marker: maplibregl.Marker;
+  /** マーカーの内容をレンダリングしているReact root */
+  root: Root;
+};
+
+/**
+ * 現在の地図の表示範囲・ズームレベルに応じて、写真クラスタインデックスから可視のクラスタ・単一写真を求め、
+ * 対応するマーカーとして地図上へ反映する。直前のマーカーは全て取り除いてから再構築する
+ * （`applyStartGoalMarkers`と同じ「差分更新ではなく全消去→再構築」の設計。1アクティビティあたりの
+ * 写真件数は多くても数十件程度のため十分軽量と判断した。Issue #107）。
+ * `clusterIndex`がnull（写真取得中・未フォーカス等でまだ構築されていない）の場合はマーカーを
+ * 全て取り除くのみ行う。写真一覧が空（フォーカス解除・位置情報を持つ写真が無い等）の場合も
+ * 構築済みのインデックスから0件が返るだけで同様にマーカーが全て消える
+ * @param map 反映先のMapLibre地図インスタンス
+ * @param markersRef 直前に表示していたマーカー・React rootの組を保持するref
+ * @param clusterIndex 直近のphotos一覧から構築済みのクラスタリングインデックス
+ */
+export const applyPhotoBalloons = (
+  map: maplibregl.Map,
+  markersRef: { current: PhotoBalloonMarkerEntry[] },
+  clusterIndex: PhotoClusterIndex | null
+) => {
+  for (const { marker, root } of markersRef.current) {
+    marker.remove();
+    root.unmount();
+  }
+  markersRef.current = [];
+
+  if (clusterIndex === null) {
+    return;
+  }
+
+  const bounds = map.getBounds();
+  const bbox: [number, number, number, number] = [
+    bounds.getWest(),
+    bounds.getSouth(),
+    bounds.getEast(),
+    bounds.getNorth()
+  ];
+  const points = getVisiblePhotoClusters(clusterIndex, bbox, map.getZoom());
+
+  markersRef.current = points.map((point) => {
+    const { element, root } =
+      point.type === 'cluster'
+        ? createPhotoBalloonClusterElement(point.photoCount)
+        : createPhotoBalloonThumbnailElement(point.photoId, point.fileName);
+    const marker = new maplibregl.Marker({ element }).setLngLat([point.longitude, point.latitude]).addTo(map);
+    return { marker, root };
+  });
 };

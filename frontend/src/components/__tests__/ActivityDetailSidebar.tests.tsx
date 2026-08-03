@@ -1,15 +1,14 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import type { CyclingActivity } from '../../api/activitiesApi';
-import { fetchPassedMunicipalities, fetchPhotos } from '../../api/activitiesApi';
+import type { CyclingActivity, Photo } from '../../api/activitiesApi';
+import { fetchPassedMunicipalities } from '../../api/activitiesApi';
 import { resolvePhotoImageUrl, resolvePhotoThumbnailUrl } from '../../api/photosApi';
 import { ErrorsProbe } from '../../test-utils/ErrorsProbe';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import { ActivityDetailSidebar } from '../ActivityDetailSidebar';
 
 vi.mock('../../api/activitiesApi', () => ({
-  fetchPassedMunicipalities: vi.fn(),
-  fetchPhotos: vi.fn()
+  fetchPassedMunicipalities: vi.fn()
 }));
 
 const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity => ({
@@ -25,10 +24,12 @@ const createActivity = (overrides: Partial<CyclingActivity>): CyclingActivity =>
   ...overrides
 });
 
+/** 写真関連のprops（photos/isPhotosLoading）はIssue #107でMapWorkspace側へ持ち上げたため、テストでは既定値を明示的に渡す */
+const DEFAULT_PHOTOS_PROPS = { photos: [] as Photo[], isPhotosLoading: false };
+
 describe('ActivityDetailSidebarに関するテスト', () => {
   beforeEach(() => {
     vi.mocked(fetchPassedMunicipalities).mockResolvedValue([]);
-    vi.mocked(fetchPhotos).mockResolvedValue([]);
   });
 
   test('activitiesが空の場合、何も表示しない', () => {
@@ -40,6 +41,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        {...DEFAULT_PHOTOS_PROPS}
       />
     );
 
@@ -60,6 +62,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        {...DEFAULT_PHOTOS_PROPS}
       />
     );
 
@@ -79,6 +82,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        {...DEFAULT_PHOTOS_PROPS}
       />
     );
     fireEvent.click(screen.getByText(`2. ${new Date('2026-07-01T01:00:00.000Z').toLocaleString('ja-JP')}`));
@@ -97,6 +101,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={onBackFromList}
         onMunicipalityFocus={vi.fn()}
+        {...DEFAULT_PHOTOS_PROPS}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: '戻る' }));
@@ -122,6 +127,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        {...DEFAULT_PHOTOS_PROPS}
       />
     );
 
@@ -143,6 +149,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={onBackFromDetail}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        {...DEFAULT_PHOTOS_PROPS}
       />
     );
     fireEvent.click(screen.getByRole('button', { name: '戻る' }));
@@ -166,6 +173,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={onMunicipalityFocus}
+        {...DEFAULT_PHOTOS_PROPS}
       />
     );
     await waitFor(() => {
@@ -192,6 +200,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        {...DEFAULT_PHOTOS_PROPS}
       />
     );
 
@@ -214,6 +223,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
         adminBoundaryEra="2000-10-01"
+        {...DEFAULT_PHOTOS_PROPS}
       />
     );
 
@@ -232,6 +242,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        {...DEFAULT_PHOTOS_PROPS}
       />
     );
 
@@ -253,6 +264,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
           onBackFromDetail={vi.fn()}
           onBackFromList={vi.fn()}
           onMunicipalityFocus={vi.fn()}
+          {...DEFAULT_PHOTOS_PROPS}
         />
         <ErrorsProbe />
       </>
@@ -263,12 +275,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     });
   });
 
-  test('フォーカス中の場合、対象アクティビティのIDで写真を取得しサムネイルURLでグリッド表示する（Issue #105）', async () => {
-    const photos = [
-      { id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null },
-      { id: 2, fileName: 'b.jpg', takenAt: '2026-07-01T00:40:00.000Z', location: null }
-    ];
-    vi.mocked(fetchPhotos).mockResolvedValue(photos);
+  test('isPhotosLoadingがtrueの場合、「写真を取得中...」を表示する', () => {
     const activity = createActivity({ id: '42' });
 
     renderWithChakra(
@@ -279,19 +286,40 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        photos={[]}
+        isPhotosLoading={true}
       />
     );
 
-    expect(fetchPhotos).toHaveBeenCalledWith('42');
-    await waitFor(() => {
-      expect(screen.getByAltText('a.jpg')).toHaveAttribute('src', resolvePhotoThumbnailUrl(1));
-    });
+    expect(screen.getByText('写真を取得中...')).toBeInTheDocument();
+  });
+
+  test('photosが渡された場合、サムネイルURLでグリッド表示する（Issue #105/#107）', () => {
+    const photos: Photo[] = [
+      { id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null },
+      { id: 2, fileName: 'b.jpg', takenAt: '2026-07-01T00:40:00.000Z', location: null }
+    ];
+    const activity = createActivity({ id: '42' });
+
+    renderWithChakra(
+      <ActivityDetailSidebar
+        activities={[activity]}
+        focusedActivity={activity}
+        onFocus={vi.fn()}
+        onBackFromDetail={vi.fn()}
+        onBackFromList={vi.fn()}
+        onMunicipalityFocus={vi.fn()}
+        photos={photos}
+        isPhotosLoading={false}
+      />
+    );
+
+    expect(screen.getByAltText('a.jpg')).toHaveAttribute('src', resolvePhotoThumbnailUrl(1));
     expect(screen.getByAltText('b.jpg')).toHaveAttribute('src', resolvePhotoThumbnailUrl(2));
   });
 
   test('サムネイルの読み込みに失敗した場合、フルサイズ画像のURLへフォールバックする（Issue #105）', async () => {
-    const photos = [{ id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null }];
-    vi.mocked(fetchPhotos).mockResolvedValue(photos);
+    const photos: Photo[] = [{ id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null }];
     const activity = createActivity({ id: '42' });
 
     renderWithChakra(
@@ -302,12 +330,12 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        photos={photos}
+        isPhotosLoading={false}
       />
     );
 
-    await waitFor(() => {
-      expect(screen.getByAltText('a.jpg')).toHaveAttribute('src', resolvePhotoThumbnailUrl(1));
-    });
+    expect(screen.getByAltText('a.jpg')).toHaveAttribute('src', resolvePhotoThumbnailUrl(1));
 
     fireEvent.error(screen.getByAltText('a.jpg'));
 
@@ -317,8 +345,7 @@ describe('ActivityDetailSidebarに関するテスト', () => {
   });
 
   test('サムネイル・フルサイズ画像のいずれの読み込みにも失敗した場合、ローディング表示を消して諦める（Issue #105）', async () => {
-    const photos = [{ id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null }];
-    vi.mocked(fetchPhotos).mockResolvedValue(photos);
+    const photos: Photo[] = [{ id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null }];
     const activity = createActivity({ id: '42' });
 
     renderWithChakra(
@@ -329,12 +356,12 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        photos={photos}
+        isPhotosLoading={false}
       />
     );
 
-    await waitFor(() => {
-      expect(screen.getByText('a.jpg')).toBeInTheDocument();
-    });
+    expect(screen.getByText('a.jpg')).toBeInTheDocument();
 
     fireEvent.error(screen.getByAltText('a.jpg'));
     await waitFor(() => {
@@ -347,9 +374,8 @@ describe('ActivityDetailSidebarに関するテスト', () => {
     });
   });
 
-  test('写真表示直後は各写真にファイル名とローディングアイコンを表示し、画像の読み込み完了後に消える', async () => {
-    const photos = [{ id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null }];
-    vi.mocked(fetchPhotos).mockResolvedValue(photos);
+  test('写真表示直後は各写真にファイル名とローディングアイコンを表示し、画像の読み込み完了後に消える', () => {
+    const photos: Photo[] = [{ id: 1, fileName: 'a.jpg', takenAt: '2026-07-01T00:30:00.000Z', location: null }];
     const activity = createActivity({ id: '42' });
 
     renderWithChakra(
@@ -360,23 +386,20 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        photos={photos}
+        isPhotosLoading={false}
       />
     );
 
-    await waitFor(() => {
-      expect(screen.getByAltText('a.jpg')).toBeInTheDocument();
-    });
+    expect(screen.getByAltText('a.jpg')).toBeInTheDocument();
     expect(screen.getByText('a.jpg')).toBeInTheDocument();
 
     fireEvent.load(screen.getByAltText('a.jpg'));
 
-    await waitFor(() => {
-      expect(screen.queryByText('a.jpg')).not.toBeInTheDocument();
-    });
+    expect(screen.queryByText('a.jpg')).not.toBeInTheDocument();
   });
 
-  test('写真が無い場合、その旨を表示する', async () => {
-    vi.mocked(fetchPhotos).mockResolvedValue([]);
+  test('写真が無い場合、その旨を表示する', () => {
     const activity = createActivity({});
 
     renderWithChakra(
@@ -387,34 +410,10 @@ describe('ActivityDetailSidebarに関するテスト', () => {
         onBackFromDetail={vi.fn()}
         onBackFromList={vi.fn()}
         onMunicipalityFocus={vi.fn()}
+        {...DEFAULT_PHOTOS_PROPS}
       />
     );
 
-    await waitFor(() => {
-      expect(screen.getByText('該当する写真はありません')).toBeInTheDocument();
-    });
-  });
-
-  test('写真の取得に失敗した場合、グローバルなエラースタックに追加される', async () => {
-    vi.mocked(fetchPhotos).mockRejectedValue(new Error('fetch photos failed'));
-    const activity = createActivity({});
-
-    renderWithChakra(
-      <>
-        <ActivityDetailSidebar
-          activities={[activity]}
-          focusedActivity={activity}
-          onFocus={vi.fn()}
-          onBackFromDetail={vi.fn()}
-          onBackFromList={vi.fn()}
-          onMunicipalityFocus={vi.fn()}
-        />
-        <ErrorsProbe />
-      </>
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('errors-probe').textContent).toContain('fetch photos failed');
-    });
+    expect(screen.getByText('該当する写真はありません')).toBeInTheDocument();
   });
 });

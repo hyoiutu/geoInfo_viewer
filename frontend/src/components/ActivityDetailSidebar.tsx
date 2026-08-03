@@ -1,9 +1,7 @@
 import { Box, Button, Flex, Image, SimpleGrid, Spinner, Text } from '@chakra-ui/react';
-import { useState } from 'react';
 import type { CyclingActivity, PassedMunicipality, Photo } from '../api/activitiesApi';
-import { resolvePhotoImageUrl, resolvePhotoThumbnailUrl } from '../api/photosApi';
 import { usePassedMunicipalities } from '../hooks/usePassedMunicipalities';
-import { usePhotos } from '../hooks/usePhotos';
+import { usePhotoThumbnailFallback } from '../hooks/usePhotoThumbnailFallback';
 import { layout } from '../theme';
 import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 import { toActivityDetailView } from '../utils/activityDetailView';
@@ -35,6 +33,10 @@ type ActivityDetailSidebarProps = {
   adminBoundaryEra?: MunicipalityEra;
   /** 通過自治体一覧の項目がクリックされたときに呼ばれるコールバック */
   onMunicipalityFocus: (municipality: PassedMunicipality) => void;
+  /** フォーカス中のアクティビティの写真一覧（地図上の吹き出し表示、Issue #107と共有するため呼び出し元で取得したものを渡す） */
+  photos: Photo[];
+  /** 写真一覧の取得中かどうか */
+  isPhotosLoading: boolean;
 };
 
 /** ActivityListのprops */
@@ -117,37 +119,27 @@ type PhotoGridItemProps = {
  * 写真1件分のグリッドセル。メタデータ（ファイル名）が判明した時点で即座にファイル名・ローディング
  * アイコンを表示し、実バイナリの読み込み（`<Image>`の`onLoad`）が完了し次第、読み込めた写真から
  * 順に表示へ切り替える（全件の読み込み完了を待たない、Issue #23フォローアップ）。
- * まずサムネイル画像（`resolvePhotoThumbnailUrl`）の読み込みを試み、サムネイルアーカイブが
- * 存在しない年月（未処理・失敗年月）等で404になった場合のみ、フルサイズ画像（`resolvePhotoImageUrl`）へ
- * フォールバックする（Issue #105）
+ * サムネイル優先・失敗時のフルサイズへのフォールバックは`usePhotoThumbnailFallback`（Issue #105/#107で
+ * 地図上の写真吹き出しと共通化）が担う
  */
 const PhotoGridItem = ({ photo }: PhotoGridItemProps) => {
-  const [isImageLoaded, setIsImageLoaded] = useState(false);
-  const [hasThumbnailFailed, setHasThumbnailFailed] = useState(false);
-
-  const handleError = () => {
-    if (!hasThumbnailFailed) {
-      setHasThumbnailFailed(true);
-      return;
-    }
-    setIsImageLoaded(true);
-  };
+  const { src, isLoaded, handleLoad, handleError } = usePhotoThumbnailFallback(photo.id);
 
   return (
     <Box position="relative" width="100%" aspectRatio="1">
       <Image
-        src={hasThumbnailFailed ? resolvePhotoImageUrl(photo.id) : resolvePhotoThumbnailUrl(photo.id)}
+        src={src}
         alt={photo.fileName}
         width="100%"
         height="100%"
         aspectRatio="1"
         objectFit="cover"
         borderRadius="md"
-        visibility={isImageLoaded ? 'visible' : 'hidden'}
-        onLoad={() => setIsImageLoaded(true)}
+        visibility={isLoaded ? 'visible' : 'hidden'}
+        onLoad={handleLoad}
         onError={handleError}
       />
-      {!isImageLoaded && (
+      {!isLoaded && (
         <Flex
           position="absolute"
           inset="0"
@@ -198,13 +190,23 @@ type ActivityDetailProps = {
   adminBoundaryEra: MunicipalityEra;
   /** 通過自治体一覧の項目がクリックされたときに呼ばれるコールバック */
   onMunicipalityFocus: (municipality: PassedMunicipality) => void;
+  /** フォーカス中のアクティビティの写真一覧 */
+  photos: Photo[];
+  /** 写真一覧の取得中かどうか */
+  isPhotosLoading: boolean;
 };
 
 /** フォーカス中のアクティビティの詳細（詳細画面）を表示する。フォーカス中のアクティビティ・行政区画の年代が変わるたびに通過自治体を取得する */
-const ActivityDetail = ({ activity, onBackFromDetail, adminBoundaryEra, onMunicipalityFocus }: ActivityDetailProps) => {
+const ActivityDetail = ({
+  activity,
+  onBackFromDetail,
+  adminBoundaryEra,
+  onMunicipalityFocus,
+  photos,
+  isPhotosLoading
+}: ActivityDetailProps) => {
   const view = toActivityDetailView(activity);
   const { municipalities, isLoading: isMunicipalitiesLoading } = usePassedMunicipalities(activity.id, adminBoundaryEra);
-  const { photos, isLoading: isPhotosLoading } = usePhotos(activity.id);
 
   return (
     <Flex direction="column" gap="2">
@@ -241,7 +243,9 @@ export const ActivityDetailSidebar = ({
   onBackFromDetail,
   onBackFromList,
   adminBoundaryEra = MUNICIPALITY_ERA_CURRENT,
-  onMunicipalityFocus
+  onMunicipalityFocus,
+  photos,
+  isPhotosLoading
 }: ActivityDetailSidebarProps) => {
   if (activities.length === NO_ACTIVITIES) {
     return null;
@@ -264,6 +268,8 @@ export const ActivityDetailSidebar = ({
           onBackFromDetail={onBackFromDetail}
           adminBoundaryEra={adminBoundaryEra}
           onMunicipalityFocus={onMunicipalityFocus}
+          photos={photos}
+          isPhotosLoading={isPhotosLoading}
         />
       ) : (
         <ActivityList activities={activities} onFocus={onFocus} onBackFromList={onBackFromList} />
