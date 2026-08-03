@@ -30,16 +30,6 @@ const HIDDEN_VALUE = 'none';
 const HIT_TEST_RADIUS_PX = 5;
 
 /**
- * 自転車ログレイヤーのクリックを検出し、選択中アクティビティを置き換える。
- * 線が細く正確なクリックが難しいため、クリック地点を中心としたバウンディングボックスでヒットテストする。
- * フォーカス中はクリックによる選択変更を無効にする。
- * また、ズームレベルがBICYCLE_LOG_SUMMARY_MAX_ZOOM以下（低ズームレベル用の簡略化された軌跡を
- * 表示している状態）の場合も選択・フォーカス操作自体を無効にする（Issue #61）
- * @param map クリックを監視するMapLibre地図インスタンス
- * @param onSelectActivities 検出したアクティビティID一覧を渡すコールバック
- * @param isFocused 呼び出し時点でフォーカス中かどうかを返す関数
- */
-/**
  * クリック地点周辺（バウンディングボックス）にある自転車ログのアクティビティIDを検出する。
  * `registerBicycleLogClickHandler`（実際の選択処理）・`registerAdminBoundaryClickHandler`
  * （自転車ログとのクリック競合検出、Issue #96）の両方から使う
@@ -80,6 +70,16 @@ const willSelectBicycleLogActivity = (
   return queryBicycleLogActivityIds(map, point).length > 0;
 };
 
+/**
+ * 自転車ログレイヤーのクリックを検出し、選択中アクティビティを置き換える。
+ * 線が細く正確なクリックが難しいため、クリック地点を中心としたバウンディングボックスでヒットテストする。
+ * フォーカス中はクリックによる選択変更を無効にする。
+ * また、ズームレベルがBICYCLE_LOG_SUMMARY_MAX_ZOOM以下（低ズームレベル用の簡略化された軌跡を
+ * 表示している状態）の場合も選択・フォーカス操作自体を無効にする（Issue #61）
+ * @param map クリックを監視するMapLibre地図インスタンス
+ * @param onSelectActivities 検出したアクティビティID一覧を渡すコールバック
+ * @param isFocused 呼び出し時点でフォーカス中かどうかを返す関数
+ */
 export const registerBicycleLogClickHandler = (
   map: maplibregl.Map,
   onSelectActivities: (ids: string[]) => void,

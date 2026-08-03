@@ -1,6 +1,6 @@
 import { waitFor } from '@testing-library/react';
 import maplibregl from 'maplibre-gl';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CyclingActivity, PassedMunicipality, Photo } from '../../api/activitiesApi';
 import { fetchMunicipalityBoundaries } from '../../api/municipalitiesApi';
 import {
@@ -256,6 +256,18 @@ const getSetDataMock = (sourceId: string) => setDataMocksBySourceId[sourceId];
 describe('MapViewに関するテスト', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    // vi.clearAllMocks()は呼び出し履歴のみをクリアし、モックファクトリ内で作成した
+    // queryRenderedFeaturesはテストファイル全体で共有される単一のモック関数のため、
+    // mockReturnValueによる上書きはクリアされず後続テストへ漏れてしまう。
+    // 次のテストのbeforeEach実行前（=このテストの描画済みインスタンスがまだ参照できるうち）に
+    // 既定値へ明示的にリセットし、他のテストへ影響しないようにする
+    const results = vi.mocked(maplibregl.Map).mock.results;
+    if (results.length > 0) {
+      results[0].value.queryRenderedFeatures.mockReturnValue([]);
+    }
   });
 
   test('マウントされたとき、コンテナ要素を指定して地図が生成される', () => {
@@ -1109,9 +1121,6 @@ describe('MapViewに関するテスト', () => {
         />
       );
       const mapInstance = getMapInstance();
-      // 他のテストのqueryRenderedFeatures.mockReturnValueが残っていないことを保証する
-      // （自転車ログとの競合判定、Issue #96）
-      mapInstance.queryRenderedFeatures.mockReturnValue([]);
       const handleClick = getAdminBoundaryClickHandler(mapInstance);
 
       handleClick({

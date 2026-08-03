@@ -9,7 +9,7 @@ import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { APP_ERROR_CODE } from '../../common/errors/app-error-code.constants';
 import { assertIsAppException } from '../../test-utils/assert-is-app-exception';
-import { GoogleDriveApiClient } from '../google-drive-api.client';
+import { GoogleDriveApiClient, UPLOAD_RETRY_MAX_ATTEMPTS } from '../google-drive-api.client';
 import type { GoogleDriveFileMetadata } from '../types/google-drive.type';
 
 const createFileMetadata = (overrides: Partial<GoogleDriveFileMetadata>): GoogleDriveFileMetadata => ({
@@ -275,6 +275,34 @@ describe('GoogleDriveApiClientに関するテスト', () => {
         expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
       }
     });
+
+    test('セッション開始が一時的な接続エラー(EPIPE等、レスポンス無し)で失敗した場合、再試行して成功する', async () => {
+      const httpServicePatch = vi
+        .fn()
+        .mockReturnValueOnce(throwError(() => ({ isAxiosError: true, code: 'EPIPE' })))
+        .mockReturnValueOnce(of({ headers: { location: 'https://upload.example/session-1' } }));
+      const httpServicePut = vi.fn().mockReturnValue(of({ data: createFileMetadata({ id: 'file-1' }) }));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch, httpServicePut);
+
+      await client.updateFileContent('token-xyz', 'file-1', Buffer.from('zip-content'), undefined, 0);
+
+      expect(httpServicePatch).toHaveBeenCalledTimes(2);
+      expect(httpServicePut).toHaveBeenCalledTimes(1);
+    });
+
+    test('接続エラーがUPLOAD_RETRY_MAX_ATTEMPTS回続けて発生した場合、再試行を打ち切りAppExceptionを投げる', async () => {
+      const httpServicePatch = vi.fn().mockReturnValue(throwError(() => ({ isAxiosError: true, code: 'ECONNRESET' })));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch);
+
+      try {
+        await client.updateFileContent('token-xyz', 'file-1', Buffer.from('zip-content'), undefined, 0);
+        expect.unreachable('例外が投げられるはず');
+      } catch (error) {
+        assertIsAppException(error);
+        expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
+      }
+      expect(httpServicePatch).toHaveBeenCalledTimes(UPLOAD_RETRY_MAX_ATTEMPTS);
+    });
   });
 
   describe('downloadFileToPath', () => {
@@ -456,6 +484,38 @@ describe('GoogleDriveApiClientに関するテスト', () => {
         assertIsAppException(error);
         expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
       }
+    });
+
+    test('セッション開始が一時的な接続エラー(EPIPE等、レスポンス無し)で失敗した場合、再試行して成功する（Issue #106フォローアップ）', async () => {
+      const httpServicePatch = vi
+        .fn()
+        .mockReturnValueOnce(throwError(() => ({ isAxiosError: true, code: 'EPIPE' })))
+        .mockReturnValueOnce(of({ headers: { location: 'https://upload.example/session-1' } }));
+      const httpServicePut = vi.fn().mockReturnValue(of({ data: createFileMetadata({ id: 'file-1' }) }));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch, httpServicePut);
+      const sourcePath = join(dir, 'source.zip');
+      writeFileSync(sourcePath, Buffer.from('zip-content'));
+
+      await client.uploadFileFromPath('token-xyz', 'file-1', sourcePath, undefined, 0);
+
+      expect(httpServicePatch).toHaveBeenCalledTimes(2);
+      expect(httpServicePut).toHaveBeenCalledTimes(1);
+    });
+
+    test('接続エラーがUPLOAD_RETRY_MAX_ATTEMPTS回続けて発生した場合、再試行を打ち切りAppExceptionを投げる（Issue #106フォローアップ）', async () => {
+      const httpServicePatch = vi.fn().mockReturnValue(throwError(() => ({ isAxiosError: true, code: 'ECONNRESET' })));
+      const client = await createClient(vi.fn(), vi.fn(), httpServicePatch);
+      const sourcePath = join(dir, 'source.zip');
+      writeFileSync(sourcePath, Buffer.from('zip-content'));
+
+      try {
+        await client.uploadFileFromPath('token-xyz', 'file-1', sourcePath, undefined, 0);
+        expect.unreachable('例外が投げられるはず');
+      } catch (error) {
+        assertIsAppException(error);
+        expect(error.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
+      }
+      expect(httpServicePatch).toHaveBeenCalledTimes(UPLOAD_RETRY_MAX_ATTEMPTS);
     });
   });
 

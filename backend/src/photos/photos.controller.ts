@@ -2,6 +2,7 @@ import { Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Post, St
 import { ApiTags } from '@nestjs/swagger';
 import { PhotoIngestService } from './photo-ingest.service';
 import { PHOTOS_IMAGE_ROUTE, PHOTOS_INGEST_ROUTE, PHOTOS_ROUTE, PHOTOS_THUMBNAIL_ROUTE } from './photos.constants';
+import type { PhotoImage } from './photos.service';
 import { PhotosService } from './photos.service';
 import type { PhotoIngestResultDto } from './types/photo-ingest-result.dto';
 
@@ -23,11 +24,7 @@ export class PhotosController {
   /** GET /photos/:id/image: 指定した写真IDのバイナリ本体を、月別アーカイブzipから遅延取得して返す */
   @Get(PHOTOS_IMAGE_ROUTE)
   async getImage(@Param('id', ParseIntPipe) id: number): Promise<StreamableFile> {
-    const image = await this.photosService.findImageByPhotoId(id);
-    if (image === null) {
-      throw new NotFoundException();
-    }
-    return new StreamableFile(image.data, { type: image.contentType });
+    return this.toStreamableFileOrThrow(await this.photosService.findImageByPhotoId(id));
   }
 
   /**
@@ -37,7 +34,17 @@ export class PhotosController {
    */
   @Get(PHOTOS_THUMBNAIL_ROUTE)
   async getThumbnail(@Param('id', ParseIntPipe) id: number): Promise<StreamableFile> {
-    const image = await this.photosService.findThumbnailByPhotoId(id);
+    return this.toStreamableFileOrThrow(await this.photosService.findThumbnailByPhotoId(id));
+  }
+
+  /**
+   * サービスから返る画像（`null`の場合あり）を、HTTPレスポンス用のStreamableFileへ変換する。
+   * `getImage`・`getThumbnail`のいずれも「`null`ならNotFoundException、そうでなければ
+   * Content-Type付きでラップして返す」という変換ロジックが同一のため共通化した（PR #115レビュー対応）
+   * @param image サービスから返された画像本体とContent-Type。取得できなかった場合はnull
+   * @returns HTTPレスポンス用のStreamableFile
+   */
+  private toStreamableFileOrThrow(image: PhotoImage | null): StreamableFile {
     if (image === null) {
       throw new NotFoundException();
     }

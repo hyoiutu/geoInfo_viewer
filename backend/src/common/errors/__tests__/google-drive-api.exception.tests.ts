@@ -1,7 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 import { describe, expect, test } from 'vitest';
 import { APP_ERROR_CODE } from '../app-error-code.constants';
-import { toGoogleDriveApiException } from '../google-drive-api.exception';
+import { isTransientGoogleDriveApiError, toGoogleDriveApiException } from '../google-drive-api.exception';
 
 const createAxiosError = (status: number) => ({
   isAxiosError: true,
@@ -48,5 +48,21 @@ describe('toGoogleDriveApiExceptionに関するテスト', () => {
 
     expect(exception.getStatus()).toBe(HttpStatus.BAD_GATEWAY);
     expect(exception.getResponse()).toEqual(expect.objectContaining({ errorCode: APP_ERROR_CODE.googleDriveApiError }));
+  });
+});
+
+describe('isTransientGoogleDriveApiErrorに関するテスト（Issue #106フォローアップ）', () => {
+  test('axiosエラーでレスポンスを受け取れなかった場合（EPIPE等の接続断）、trueを返す', () => {
+    const error = { isAxiosError: true, code: 'EPIPE' };
+
+    expect(isTransientGoogleDriveApiError(error)).toBe(true);
+  });
+
+  test('axiosエラーでサーバーから明示的なレスポンス（404等）を受け取った場合、falseを返す', () => {
+    expect(isTransientGoogleDriveApiError(createAxiosError(404))).toBe(false);
+  });
+
+  test('axiosエラーでない場合、falseを返す', () => {
+    expect(isTransientGoogleDriveApiError(new Error('network error'))).toBe(false);
   });
 });

@@ -76,7 +76,7 @@ export class PhotosService {
    * @returns 写真のバイナリ本体とContent-Type。写真自体、またはzip内の対応エントリが存在しない場合はnull
    */
   async findImageByPhotoId(photoId: number): Promise<PhotoImage | null> {
-    const photo = await this.photoRepository.findOneBy({ id: photoId });
+    const photo = await this.findPhotoOrNull(photoId);
     if (photo === null) {
       return null;
     }
@@ -95,7 +95,7 @@ export class PhotosService {
    * @returns サムネイルのバイナリ本体とContent-Type。取得できない場合はnull
    */
   async findThumbnailByPhotoId(photoId: number): Promise<PhotoImage | null> {
-    const photo = await this.photoRepository.findOneBy({ id: photoId });
+    const photo = await this.findPhotoOrNull(photoId);
     if (photo === null) {
       return null;
     }
@@ -109,6 +109,17 @@ export class PhotosService {
 
     const zipBuffer = await this.getOrFetchArchiveZip(thumbnailArchive.driveFileId);
     return this.extractImageFromZip(zipBuffer, photo.archivePath, photo.fileName);
+  }
+
+  /**
+   * 写真IDから`PhotoEntity`を取得する。フルサイズ・サムネイルいずれの取得メソッドも、
+   * 対象写真の存在確認（`id`によるlookup、存在しなければnull）というロジック自体は同一のため、
+   * `findImageByPhotoId`・`findThumbnailByPhotoId`の両方から使う（PR #115レビュー対応）
+   * @param photoId 対象の写真ID
+   * @returns 対応する写真のEntity。存在しない場合はnull
+   */
+  private async findPhotoOrNull(photoId: number): Promise<PhotoEntity | null> {
+    return this.photoRepository.findOneBy({ id: photoId });
   }
 
   /**

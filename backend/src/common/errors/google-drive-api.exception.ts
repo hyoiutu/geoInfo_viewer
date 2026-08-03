@@ -16,6 +16,17 @@ const isAxiosError = (error: unknown): error is AxiosError =>
   typeof error === 'object' && error !== null && 'isAxiosError' in error && error.isAxiosError === true;
 
 /**
+ * Google Drive APIとの通信エラーのうち、サーバーからのレスポンス自体を受け取れなかった
+ * （EPIPE/ECONNRESET/タイムアウト等の接続断）、再試行すれば解決する見込みのある一時的なものかどうかを
+ * 判定する。404/401/429等、サーバーから明示的なレスポンスを受け取った場合は、再試行しても同じ結果に
+ * なる可能性が高いため対象外とする。アップロードの再試行判定（`GoogleDriveApiClient`）から使う
+ * @param error 判定対象の値
+ * @returns 一時的な接続エラーとみなせる場合true
+ */
+export const isTransientGoogleDriveApiError = (error: unknown): boolean =>
+  isAxiosError(error) && error.response === undefined;
+
+/**
  * HTTPステータスから種別を判別できない場合の、汎用的なGoogle Drive API通信エラーを組み立てる。
  * AppExceptionへの変換で元のエラーの詳細（レスポンス本体・ヘッダー等）が失われ、原因調査ができなく
  * なるため、種別を判別できない＝原因不明な失敗の場合に限り、診断用として元のエラー詳細を
