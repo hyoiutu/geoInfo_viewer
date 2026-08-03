@@ -14,6 +14,17 @@
 
 ## 変更履歴
 
+### [2026-08-03] レイヤーダイアログの非同期処理待機状態をグローバルステート（Jotai atom）へ変更した（Issue #65、PR #110レビュー対応）
+* **修正の動機・概要**:
+  - `isApplyingLayerSettings`（レイヤーダイアログの非同期処理待機中かどうか）は`MapWorkspace`のローカルな`useState`として保持し、`MapControls`・`LayerDialog`へprops経由で渡していた。ユーザーから「ローディング中かどうかはグローバルな状態で持たせてほしい」と指摘を受け、`errorsAtom`と同じパターン（読み取り専用の派生atom + write-only atomで更新操作を限定する）でJotai atom化した。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/atoms/isApplyingLayerSettingsAtom.ts`を新設。`pendingLayerApplyStateAtom`（非公開）・`isApplyingLayerSettingsAtom`（読み取り専用）・`startPendingLayerApplyAtom`/`clearPendingLayerApplyFlagAtom`（write-only）を公開する。
+    - `MapWorkspace.tsx`のローカルuseState（`pendingLayerApply`）を廃止し、上記atomの読み書きに置き換え。
+    - `MapControls.tsx`・`LayerDialog.tsx`は`isApplyingLayerSettings`propを廃止し、`useAtomValue(isApplyingLayerSettingsAtom)`で直接参照するよう変更（props経由のバケツリレーを解消）。
+  * **README.md**: 変更なし。
+  * **設計書**: `designs/technical_design.md`の「レイヤーダイアログの非同期実行対応（Issue #65）」節を、atom化後の設計に合わせて更新。
+
 ### [2026-08-02] レイヤーダイアログ待機中は閉じる操作（×ボタン・背景クリック・Escapeキー）も無効化した（Issue #65、PR #110レビュー対応）
 * **修正の動機・概要**:
   - レイヤーダイアログの「実行」「リセット」「閉じる(×)」ボタンを個別にdisabled化する対応を繰り返していたが、対応漏れ（閉じるボタン）が発生した。当初は`window`へキャプチャフェーズのイベントリスナーを登録しページ全体の操作を遮断する独自実装（`useGlobalInputBlocker`）で対応したが、レビューによりChakra UI（内部の`@zag-js/dialog`）が標準で提供する`closeOnEscape`/`closeOnInteractOutside`propsで同じ目的（背景クリック・Escapeキーによるクローズの無効化）を達成できることが判明したため、車輪の再発明であった独自実装を廃止し、こちらへ置き換えた。ページ全体を遮断する方式は待機中に`ErrorDialog`が表示された場合にそれも操作不能にしてしまう副作用があったが、この置き換えにより解消される。
