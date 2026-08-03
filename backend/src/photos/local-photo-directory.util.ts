@@ -11,6 +11,18 @@ const JSON_EXTENSION = '.json';
 // （Issue #23、実際にGoogle Takeoutの動画で発生）
 export const MAX_READABLE_FILE_SIZE_BYTES = 2 ** 31 - 1;
 
+/**
+ * ファイルサイズが`MAX_READABLE_FILE_SIZE_BYTES`（2GiB）を超えており、`fs.readFileSync`での
+ * 読み込み自体を試みるべきでないかどうかを判定する。`backfill-photos-from-local.ts`
+ * （写真本体のメタデータ解決前のサイズチェック）・`strip-videos-and-generate-thumbnails-locally.ts`
+ * （削除ログ用のEXIF撮影日時抽出前のサイズチェック）の両方で同一の判定式が重複していたため、
+ * 共通のutilとして切り出した（Issue #104レビュー対応）
+ * @param absolutePath 判定対象ファイルの絶対パス
+ * @returns 読み込みを試みるべきでない場合true
+ */
+export const isFileTooLargeToRead = (absolutePath: string): boolean =>
+  statSync(absolutePath).size > MAX_READABLE_FILE_SIZE_BYTES;
+
 /** ローカルディレクトリ内の1ファイル分（相対パス・絶対パスの組） */
 export type LocalArchiveEntry = TakeoutArchiveEntry & {
   /** ファイルの絶対パス。写真本体の実バイナリを遅延読み込みする際に使う（readLocalPhotoData参照） */

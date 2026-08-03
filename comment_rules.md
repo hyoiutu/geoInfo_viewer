@@ -127,6 +127,43 @@ useEffect(() => {
 
 ---
 
+# 既存関数の直前へ新しい関数を挿入するときは、既存のJSDocが取り残されていないか確認する
+
+NG
+```typescript
+/**
+ * 自転車ログレイヤーのクリックを検出し、選択中アクティビティを置き換える。
+ * @param map クリックを監視するMapLibre地図インスタンス
+ */
+/**
+ * クリック地点周辺にある自転車ログのアクティビティIDを検出する。
+ * @param map ヒットテスト対象のMapLibre地図インスタンス
+ */
+const queryBicycleLogActivityIds = (map: maplibregl.Map) => {...};
+
+// registerBicycleLogClickHandler自体はJSDocが無い状態になってしまっている
+export const registerBicycleLogClickHandler = (map: maplibregl.Map) => {...};
+```
+
+OK
+```typescript
+/**
+ * クリック地点周辺にある自転車ログのアクティビティIDを検出する。
+ * @param map ヒットテスト対象のMapLibre地図インスタンス
+ */
+const queryBicycleLogActivityIds = (map: maplibregl.Map) => {...};
+
+/**
+ * 自転車ログレイヤーのクリックを検出し、選択中アクティビティを置き換える。
+ * @param map クリックを監視するMapLibre地図インスタンス
+ */
+export const registerBicycleLogClickHandler = (map: maplibregl.Map) => {...};
+```
+
+既存関数（`registerBicycleLogClickHandler`等）が内部で使っていたロジックを新しいヘルパー関数（`queryBicycleLogActivityIds`等）へ切り出す際、切り出した関数を既存関数の直前に挿入すると、既存関数のJSDocが物理的に新しい関数の直前に取り残され、あたかも新しい関数を説明しているかのように見えてしまうことがある（PR #113レビュー対応で発見。既存のJSDocが新関数の上に残り、本来の対象だった関数にはJSDocが無い状態になっていた）。新しい関数を追加する際は、既存関数の直前ではなく直後（または離れた位置）に挿入するか、挿入後に既存関数のJSDocが正しい対象の直上に残っているか必ず目視確認すること。`pnpm run check:tsdoc`はTSDocの「有無」しか検出せず、このように場所がずれて別の関数を偶然説明してしまっているケースは検出できない点に注意。
+
+---
+
 # 外部システムの仕様に起因する非自明な定数値には理由をコメントで残す
 
 NG

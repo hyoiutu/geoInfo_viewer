@@ -1,8 +1,8 @@
 import 'dotenv/config';
-import { appendFileSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFileSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { assertHeifConvertAvailable } from './heic-conversion.util';
-import { MAX_READABLE_FILE_SIZE_BYTES, scanLocalPhotoDirectory } from './local-photo-directory.util';
+import { isFileTooLargeToRead, scanLocalPhotoDirectory } from './local-photo-directory.util';
 import { isLocalFileVideo } from './local-video-detection.util';
 import { extractMetadataFromExif } from './takeout-metadata.util';
 import { generateThumbnailBuffer } from './thumbnail-generation.util';
@@ -16,9 +16,10 @@ const log = (message: string): void => {
 };
 
 /**
- * 動画ファイル1件から、削除ログ記録用の撮影日時をEXIFから抽出する。`MAX_READABLE_FILE_SIZE_BYTES`
- * （2GiB）を超える動画は読み込み自体を試みない（`extractMetadataFromExif`のNode.js Buffer上限対策、
- * `backfill-photos-from-local.ts`と同じ制約）。EXIFが無い・パース失敗の場合も含め、いずれの場合も
+ * 動画ファイル1件から、削除ログ記録用の撮影日時をEXIFから抽出する。`isFileTooLargeToRead`
+ * （2GiB超過判定、`local-photo-directory.util.ts`）に該当する動画は読み込み自体を試みない
+ * （`extractMetadataFromExif`のNode.js Buffer上限対策、`backfill-photos-from-local.ts`と
+ * 同じ制約を共通のutilとして参照）。EXIFが無い・パース失敗の場合も含め、いずれの場合も
  * ベストエフォートでnullを返し、削除処理自体は継続する（Issue #104の検討事項「結論」に基づき、
  * 削除ログの撮影日時はEXIF撮影日時のみを使う。JSONサイドカーは動画に対して用意されないことが多く、
  * また削除自体は動画判定ロジックのみで完結すべきため参照しない）
@@ -26,7 +27,7 @@ const log = (message: string): void => {
  * @returns 抽出できた撮影日時。抽出できない場合はnull
  */
 const resolveVideoTakenAtForLog = async (absolutePath: string): Promise<Date | null> => {
-  if (statSync(absolutePath).size > MAX_READABLE_FILE_SIZE_BYTES) {
+  if (isFileTooLargeToRead(absolutePath)) {
     return null;
   }
   const metadata = await extractMetadataFromExif(readFileSync(absolutePath));
@@ -53,7 +54,7 @@ const resolveVideoTakenAtForLog = async (absolutePath: string): Promise<Date | n
  * （確認に失敗した場合の事故防止の理由は`heic-conversion.util.ts`のTSDoc参照）
  * @param flatDirectoryPath 処理対象のローカルフラットディレクトリパス（動画は削除、写真はそのまま残す）
  * @param thumbnailDirectoryPath 生成したサムネイルの出力先ディレクトリパス（無ければ作成する）
- * @param deletionLogPath 削除した動画の記録先ログファイルパス（追記型、無ければ作成する）
+ * @param deletionLogPath 削除した動画の記録先ログファイルパス（追記型、ファイル自体・親ディレクトリともに無ければ作成する）
  */
 const stripVideosAndGenerateThumbnailsLocally = async (
   flatDirectoryPath: string,
@@ -62,6 +63,10 @@ const stripVideosAndGenerateThumbnailsLocally = async (
 ): Promise<void> => {
   assertHeifConvertAvailable();
   mkdirSync(thumbnailDirectoryPath, { recursive: true });
+  // appendFileSyncはdeletionLogPath自体は無ければ作成するが、親ディレクトリまでは作成しない。
+  // 親ディレクトリが存在しない状態で動画を検出すると、後続のappendFileSyncがENOENTで例外を投げ、
+  // try/catchで囲われていないためスクリプト全体が未捕捉のまま停止してしまう（PR #114レビュー対応）
+  mkdirSync(dirname(deletionLogPath), { recursive: true });
 
   const { photoEntries } = scanLocalPhotoDirectory(flatDirectoryPath);
   log(`${photoEntries.length}件のファイルを検出しました`);

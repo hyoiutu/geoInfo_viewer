@@ -13,8 +13,8 @@ import { PhotoEntity } from './entities/photo.entity';
 import { groupPhotosByYearMonth, type PhotoWithMetadata } from './group-photos-by-year-month.util';
 import {
   createLazyPhotoData,
+  isFileTooLargeToRead,
   type LocalArchiveEntry,
-  MAX_READABLE_FILE_SIZE_BYTES,
   readLocalPhotoData,
   scanLocalPhotoDirectory
 } from './local-photo-directory.util';
@@ -104,7 +104,7 @@ const backfillPhotosFromLocalDirectory = async (
       throw new Error(`写真エントリの読み込みに失敗しました: ${photo.path}`);
     }
 
-    if (statSync(localEntry.absolutePath).size > MAX_READABLE_FILE_SIZE_BYTES) {
+    if (isFileTooLargeToRead(localEntry.absolutePath)) {
       skippedTooLargePaths.push(localEntry.absolutePath);
       continue;
     }
