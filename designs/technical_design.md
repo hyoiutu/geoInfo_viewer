@@ -63,8 +63,8 @@ root/
 # 自転車ログフィルタリング機能
 - 仕様書記載のフィルタ条件（年月・獲得標高・平均時速・走行距離）はフロントエンドの純粋関数`filterActivities`・バリデーション関数`isActivityFilterValid`（`frontend/src/utils/filterActivities.ts`）で実現する
 - ダイアログの入力中（draft）状態は`FilterDialog`コンポーネント自身が内部stateとして保持し、実際に地図へ適用される状態（`MapWorkspace`が保持する`filter`）とは分離する。ダイアログを開くたびに入力中の内容を現在適用中の内容へリセットし、「実行」を押したときのみ`onApply(draftFilter)`で確定値を通知する（Issue #53。以前は`useActivityFilter`フックが`MapWorkspace`側でこのdraft管理を担っていたが、ダイアログ自身の内部関心事として`FilterDialog`へ移した）。開くたびのリセットは、以前は`isOpen`の変化を検知する`useEffect`で行っていたが、`AppDialog`が新設した`onOpen`コールバック（後述、Issue #125）経由で呼ぶ形に変更した
-- フィルタで除外され地図上に表示されなくなったアクティビティの選択・フォーカス解除は、`useActivitySelection(activities, filter)`が内部で完結させる。フックが`filter`を直接受け取り表示対象ID集合を`useMemo`で求め、変化のたびに内部の`useEffect`で選択・フォーカスから取り除く（`MapWorkspace`側からの明示的な呼び出しは不要。PR #69レビュー対応）
-- `filterActivities`の呼び出し（フィルタ計算そのもの）は`MapWorkspace`側で1回だけ行い、結果（`filteredActivities`）を`MapView`へpropsで渡す。以前は`MapView`（`filteredActivities`算出用）と`MapWorkspace`（`visibleIds`算出用）の双方が独立して`filterActivities`を呼んでいたが、Issue #58で一本化し、`MapView`は受け取った`filteredActivities`をそのまま地図描画・選択レイヤー反映・スタートゴールマーカーの算出に使うだけになった
+- フィルタで除外され地図上に表示されなくなったアクティビティの選択・フォーカス解除は、`useActivitySelection(visibleActivities)`が内部で完結させる。フックが表示対象ID集合を`useMemo`で求め、変化のたびに内部の`useEffect`で選択・フォーカスから取り除く（`MapWorkspace`側からの明示的な呼び出しは不要。PR #69レビュー対応）。以前は`activities`（フィルタ適用前の全件）・`filter`の2引数を受け取り、フック内部で`filterActivities(activities, filter)`を独自に計算していたが、呼び出し元の`MapWorkspace`も同じ計算を`filteredActivities`として別途行っており重複していた（design_principles.mdのDRY原則違反）。呼び出し元が計算済みの`filteredActivities`（＝`visibleActivities`）をそのまま渡す1引数の設計に変更し、この重複と`filter`/`ActivityFilter`型への依存自体を解消した（Issue #127）
+- `filterActivities`の呼び出し（フィルタ計算そのもの）は`MapWorkspace`側で1回だけ行い、結果（`filteredActivities`）を`MapView`へpropsで渡す、`useActivitySelection`へ渡す、の2箇所で共有する。以前は`MapView`（`filteredActivities`算出用）と`MapWorkspace`（`visibleIds`算出用）の双方が独立して`filterActivities`を呼んでいたが、Issue #58で一本化し、`MapView`は受け取った`filteredActivities`をそのまま地図描画・選択レイヤー反映・スタートゴールマーカーの算出に使うだけになった
 
 # 自転車ログバックフィル機能
 - Stravaのレート制限は「非アップロード系エンドポイント: 15分あたり100リクエスト」を採用し、リクエスト間隔を9秒（15分 ÷ 100 = 9秒、`StravaRateLimiterService`）に固定してペーシングする
@@ -76,7 +76,7 @@ root/
 # アクティビティ詳細閲覧機能
 - 自転車ログの線は太さ3pxと細く正確なクリックが難しいため、クリック地点を中心とした10px四方（片側5px）のバウンディングボックス内に描画されているアクティビティをヒットテストで検出する（`registerBicycleLogClickHandler`、`frontend/src/utils/mapLayerInteraction.ts`）
 - 選択中・フォーカス中のアクティビティの描画は、通常・選択用・フォーカス用の3つの独立したGeoJSONソース・レイヤーを用意し、追加した順（＝描画順）で「通常 < 選択中 < フォーカス中」の手前関係を実現する（`applySelectionLayers`）
-- `registerBicycleLogClickHandler`・`applySelectionLayers`・`applyStartGoalMarkers`（スタート・ゴールマーカー算出）・`applyLayerVisibility`（レイヤー可視性反映）は、いずれも`maplibregl.Map`インスタンスを直接操作する地図操作の純粋関数（Reactの状態やJSXを持たない）であるため、`MapView.tsx`（コンポーネント本体）から`mapLayerInteraction.ts`（`addAerialPhotoLayer`等のレイヤー追加処理を持つ`mapLayerSetup.ts`と対になる、地図の状態反映を担う受け皿）へ切り出した。`MapView.tsx`にはReactのライフサイクル（`useEffect`での呼び出しタイミング制御）との接続のみを残す（PR #71レビュー対応）
+- `registerBicycleLogClickHandler`・`applySelectionLayers`・`applyStartGoalMarkers`（スタート・ゴールマーカー算出）・`applyLayerVisibility`（レイヤー可視性反映）は、いずれも`maplibregl.Map`インスタンスを直接操作する地図操作の純粋関数（Reactの状態やJSXを持たない）であるため、`MapView.tsx`（コンポーネント本体）から`mapLayerInteraction.ts`（`addAerialPhotoLayer`等のレイヤー追加処理を持つ`mapLayerSetup.ts`と対になる、地図の状態反映を担う受け皿）へ切り出した。当初`MapView.tsx`にはReactのライフサイクル（`useEffect`での呼び出しタイミング制御）との接続のみを残していたが（PR #71レビュー対応）、その後Issue #127でこの接続部分自体もさらに関心事ごとの個別カスタムフックへ切り出している（詳細は後述「MapViewのカスタムフックへの分割（Issue #127）」参照）
 - スタート・ゴールマーカーは`lucide-react`のアイコン（スタート: `Play`、ゴール: `Flag`）を`react-dom/server`の`renderToStaticMarkup`で静的にレンダリングし、`maplibregl.Marker`のDOM要素として表示する（`createStartMarkerElement`/`createGoalMarkerElement`）
   - 開始地点と終了地点が同じ座標の場合に手前へ描画されるよう、ゴールのマーカーを先に、スタートのマーカーを後に地図へ追加する（MapLibreの`Marker`はDOM要素として描画されるため、後から追加した方がDOM上で後に来ることを利用している）
 
@@ -86,7 +86,18 @@ root/
   - 2点間の距離算出（Haversine公式）は、バックエンドの`splitPathAtJumps`（`backend/src/activities/split-path-at-jumps.util.ts`）と同じ計算式だが、フロントエンド・バックエンド間でコードを共有する仕組みがこのプロジェクトに無いため個別に持つ
 - 始点からの累積距離は、区間グループ（位置飛びで分割済み、[自転車ログ表示機能](#自転車ログ表示機能)参照）内の区間を順に積算して求める。区間グループ間（位置飛びの箇所）の距離は実際には走行していない区間のため累積距離に含めない
 - 吹き出し表示は`maplibregl.Popup`（`closeButton: false`、`closeOnClick: false`、`anchor: 'bottom'`でカーソル上部に表示）を1つだけ使い回し、ホバー地点ごとに`setLngLat`/`setText`で内容を更新する。線から外れると`Popup.remove()`で非表示にする
-- スタート・ゴールマーカーとは異なり、この吹き出しはReact管理下の状態（props）と紐付かない純粋にイベント駆動のUIのため、`MapView`内で直接（`useRef`で保持する`maplibregl.Popup`インスタンス1つを介して）管理する。地図操作としての「カーソル位置からの検出」ロジックのみを`registerFocusedActivityHoverHandler`として`mapLayerInteraction.ts`へ切り出している
+- スタート・ゴールマーカーとは異なり、この吹き出しはReact管理下の状態（props）と紐付かない純粋にイベント駆動のUIのため、`useRef`で保持する`maplibregl.Popup`インスタンス1つを介して管理する（`useFocusedActivityHover`フック内、Issue #127でMapView.tsxから切り出し）。地図操作としての「カーソル位置からの検出」ロジックのみを`registerFocusedActivityHoverHandler`として`mapLayerInteraction.ts`へ切り出している
+
+## MapViewのカスタムフックへの分割（Issue #127）
+`MapView.tsx`は、地図操作の純粋関数（`mapLayerInteraction.ts`/`mapLayerSetup.ts`）への切り出し（PR #71レビュー対応）の後も、それらをReactのライフサイクル（`useEffect`）と結びつける接続部分（8個の`useEffect`）が全てコンポーネント本体に残っており、ファイルが肥大化していた。この接続部分自体を、関心事ごとに個別のカスタムフック（`frontend/src/hooks/use*.ts`）へさらに切り出した。各フックの内部実装（`useEffect`によるReactの状態変化の監視、`isStyleLoaded`によるスタイル読み込み完了待ちのガード等）はMapView.tsxに残っていたものをそのまま移設しており、挙動自体に変更は無い。
+
+- `useMapInstance(containerRef)`: マウント時の地図生成・破棄・スタイル読み込み待ち・初期レイヤー（航空写真・行政区画・自転車ログ）の追加を担う「核」となるフック。`{ mapRef, isStyleLoaded, categorizedLayerIdsRef }`を返し、他の全フックはこの戻り値を引数として受け取る
+- `useBicycleLogClickInteraction`/`useAdminBoundaryClickInteraction`/`useFocusedActivityHover`: 自転車ログ・行政区画のクリックハンドラ、線上ホバーハンドラの登録。以前はマウント時の`map.once('load', ...)`内にまとめて登録していたが、他のeffectと同じ「`isStyleLoaded`がtrueになった瞬間に1度だけ登録される」パターン（`useEffect`の依存配列を`[isStyleLoaded]`とする）に揃えることで、`useMapInstance`から独立したフックとして切り出せるようにした
+- `useBicycleLogDataSync`/`useSelectionLayerSync`/`useStartGoalMarkers`/`useLayerVisibilitySync`: それぞれ`filteredActivities`・`selectedActivities`+`focusedActivity`・`focusedActivity`・`layerVisibility`+`adminBoundaryEra`の変化に反応して地図へ反映する、独立した状態を持たない単純なeffect
+- `usePhotoBalloons`: 写真一覧（`photos`）の変化に反応するクラスタリング再構築・吹き出し再描画のeffectと、地図のパン・ズーム操作（`moveend`）に反応する再描画のeffectの2つをまとめたフック。両者が`photoClusterIndexRef`/`photoBalloonMarkersRef`を共有するため分離できない
+- `useAdminBoundaryData`: 行政区画の年代変化に反応する境界データ取得・反映のeffectと、フォーカス中の自治体変化に反応するフォーカス用オーバーレイ更新のeffectの2つをまとめたフック。両者が`historicalBoundariesCacheRef`（年代ごとのGeoJSONキャッシュ）を共有するため分離できない
+
+`MapView.tsx`自体は`containerRef`の生成・DOM要素の描画と、上記フックの呼び出し・結線のみを行う薄いコンポーネントになった。各フックは`test_rules.md`のルール（1カスタムフックにつき1テストファイル）に従い個別のテストファイル（`frontend/src/hooks/__tests__/use*.tests.ts`）を持ち、既存の`MapView.tests.tsx`（コンポーネント全体の統合的な振る舞いを検証する既存テスト）はそのまま変更せず全て通ることを確認した上で移行した。
 
 # 通過自治体表示機能
 - 全国の市区町村境界データ（[政府統計の総合窓口(e-Stat)地図で見る統計(統計GIS)提供の市区町村界データ、GeoShapeリポジトリ、高解像度版、政令指定都市統合版ではない方](https://geoshape.ex.nii.ac.jp/city/choropleth/)）をバックエンドのDB（`municipalities`テーブル、PostGIS）へ投入しておく（`pnpm --filter backend run seed:municipalities`、詳細はREADME.md参照）
@@ -102,7 +113,7 @@ root/
 - 現行（`era === 'current'`）の行政区画は、既存のOSMベクトルタイル（`boundary_3`＝都道府県境界＋新規追加の市町村境界レイヤー、`place`ソースレイヤーの都道府県名・市町村名ラベル）をそのまま可視性トグルの対象とする（Issue #34フェーズ1）
 - 過去の行政区画（`era !== 'current'`）はベクトルタイルに存在しないため、`GET /municipalities/boundaries?era=...`（`MunicipalitiesController.getBoundaries`、新規）がDBの`municipalities`テーブルから該当年代のポリゴンをGeoJSON `FeatureCollection`として返す。フロントエンドはこれをMapLibreのGeoJSONソース（`admin-boundary-historical-source`）へ`setData`し、塗り（`fill`、視認性を優先し不透明度0.05の薄い塗り）・線（`line`、現行の市町村境界と同じ配色・破線パターン）・ラベル（`symbol`、`municipalityName`プロパティをテキストフィールドとし既存OSM地名ラベルと同じ配色）の3レイヤーとして描画する（`addAdminBoundaryHistoricalLayer`/`applyAdminBoundaryData`、`frontend/src/utils/mapLayerSetup.ts`。`applyAdminBoundaryData`は元々`applyAdminBoundaryHistoricalData`という名前だったが、Issue #76対応でcurrentも含めた全年代のhit-test用データ取得を担うようになったため改名した）
   - 塗り・線・ラベルの3レイヤーいずれにも、現行の市町村境界（`admin-boundary-municipality`）と同じ`ADMIN_BOUNDARY_MUNICIPALITY_MIN_ZOOM`（`minzoom`）を設定し、低ズームでの過密表示・不要な計算を避ける（PR #62レビュー対応。実機確認でズームアウトしても行政区画の計算が継続する点が指摘された）
-- 取得したGeoJSONは年代ごとに`MapView`内の`Map<MunicipalityEra, FeatureCollection>`（`historicalBoundariesCacheRef`）へキャッシュし、同じ年代へ再度切り替えた際の再取得を避ける
+- 取得したGeoJSONは年代ごとに`Map<MunicipalityEra, FeatureCollection>`（`historicalBoundariesCacheRef`、`useAdminBoundaryData`フック内、Issue #127でMapView.tsxから切り出し）へキャッシュし、同じ年代へ再度切り替えた際の再取得を避ける
 - `resolveStyleLayerIds`（`frontend/src/utils/mapLayerCategory.ts`）はadmin-boundaryレイヤーがONのとき選択中の年代（現行/過去）に対応するレイヤー群のみを返す設計だが、これだけでは「選択されていない方の年代のレイヤー群」を非表示にする処理が無く、年代を切り替えると直前に表示していた方のレイヤーが残ってしまう不具合があった（Issue #67）。`resolveUnusedAdminBoundaryLayerIds`（同ファイル、選択中の年代の逆側のレイヤーID一覧を返す）を追加し、`applyLayerVisibility`（`frontend/src/utils/mapLayerInteraction.ts`）が行政区画レイヤーのON/OFFに関わらず常にこれらを非表示にすることで解消した
 - レイヤーダイアログの年代選択（プルダウン）は、レイヤーの表示/非表示と同じ`LayerDialog`内部のdraft state（`draftEra`）が管理し、同じ「実行」ボタンのタイミングで確定する（年代選択のためだけの別ダイアログ・別コンポーネントを設けていない）
 - 選択中の年代は`layerSettingsAtom.ts`の`municipalityEraAtom`（グローバルステート）で管理する。`MapView`（描画用）へは`MapWorkspace`から`adminBoundaryEra`propとして渡す（単純な親子関係のため、この経路のみpropsのままとした）が、`ActivityDetailSidebar`配下の`ActivityDetail`（通過自治体の判定用、`usePassedMunicipalities`経由）は`useAtomValue(municipalityEraAtom)`で直接参照する。以前は`MapWorkspace`→`ActivityDetailSidebar`→`ActivityDetail`という2階層のprops経由のバケツリレーだったが、`ActivityDetailSidebar`自身はこの値を使わずただ中継するだけだったため、Atom化に合わせて`ActivityDetail`が直接参照する形に解消した（Issue #125）
@@ -118,7 +129,7 @@ root/
   - `startPendingLayerApplyAtom`（write-only）: 実行ボタン押下時に、完了を待つ対象を記録する
   - `clearPendingLayerApplyFlagAtom`（write-only）: 指定した非同期処理が完了した時点で、対応するフラグのみをfalseにする
 - `MapWorkspace`の`handleApplyLayerSettings`（実行ボタン押下時にMapControls経由で呼ばれるコールバック）は、渡された次の表示状態・年代を**現在適用中の値と比較**し、実際に変化するかどうかをこの時点で同期的に判定して`startPendingLayerApplyAtom`へ記録する。この判定を「非同期処理が開始されたことを検知してから」ではなく「クリックの時点で」行うのは、非同期処理が実際に開始される（`useEffect`が発火する）のは1レンダーサイクル後であり、開始前に完了判定を行ってしまう競合を避けるため
-- `isApplyingLayerSettingsAtom`は、これを必要とする`MapWorkspace`（カーソル表示）・`MapControls`（ダイアログの自動クローズ判定）・`LayerDialog`（自身の入力・クローズ手段の無効化）がそれぞれ`useAtomValue`で直接参照する。props経由のバケツリレーは行わない（errorsAtom・ErrorDialogと同じ設計判断。当初はMapWorkspaceのローカルuseState+props経由で実装していたが、レビュー対応でグローバルステートへ変更した）。`MapControls`はこれがtrue→falseに変化した時点（`useRef`で前回値を保持し比較）でダイアログを閉じる。「実行」時点で非同期処理が不要と判定した場合（現在適用中の表示状態・年代との比較で変化なし）は、この仕組みを介さず即座に閉じる（既存の挙動を維持）
+- `isApplyingLayerSettingsAtom`は、これを必要とする`MapWorkspace`（カーソル表示）・`LayerDialog`（自身の入力・クローズ手段の無効化、および後述の`onApplyCompleted`検知）がそれぞれ`useAtomValue`で直接参照する。props経由のバケツリレーは行わない（errorsAtom・ErrorDialogと同じ設計判断。当初はMapWorkspaceのローカルuseState+props経由で実装していたが、レビュー対応でグローバルステートへ変更した）。ダイアログの自動クローズは、以前は`MapControls`がこの atom を直接監視する`useEffect`（`useRef`で前回値を保持し比較）で行っていたが、`LayerDialog`が`onApplyCompleted`（後述）でtrue→false遷移を検知し呼び出し元（`MapControls`）へ通知する設計に変更したため、`MapControls`はこの atom を参照しなくなった（Issue #127）。「実行」時点で非同期処理が不要と判定した場合（現在適用中の表示状態・年代との比較で変化なし）は、この仕組みを介さず即座に閉じる（既存の挙動を維持）
 - カーソルのローディング表示は`MapWorkspace`の最外殻`Flex`に`cursor={isApplyingLayerSettings ? 'wait' : undefined}`を設定して実現する。このプロジェクトにローディングカーソルの既存パターンは無かったため、新規に導入した
 
 ## レイヤー表示状態・行政区画の年代のAtom化（Issue #125）
@@ -133,6 +144,11 @@ root/
 - zag-js（Chakra UIのDialog内部実装）の`Dialog.Root`が提供する`onOpenChange`は、`Dialog.Trigger`のクリック等**内部イベント駆動でのみ**発火し、親から渡される`open`（`isOpen`）prop自体の外部変化では発火しない（`dialog.machine.js`の`watch`が`open` propの変化を検知した際に送信する`CONTROLLED.OPEN`/`CONTROLLED.CLOSE`イベントには、`onOpenChange`を呼ぶ`invokeOnOpen`/`invokeOnClose`アクションが紐づいていないため）。このアプリの開閉トリガー（各ダイアログを開くアイコンボタン）は`MapControls`側の`useState`が保持し`Dialog.Trigger`を使っていないため、`onOpenChange`では`isOpen`のfalse→true変化を検知できない
 - 代わりに、React公式が推奨する「propの変化に応じてレンダー中にstateを調整する」パターンを`AppDialog`内部に実装した。前回の`isOpen`を`useState`で保持し、レンダー中に現在の`isOpen`と比較して不一致であれば直ちに`setState`で更新し、true化した場合のみ`onOpen`を呼ぶ。`useEffect`は使わない（コミット後・ペイント後に走るuseEffectと異なり、この方式はコミット前に完結するため、リセット前の一瞬だけ古いdraft内容が見える、といった描画のちらつきが起きない）
 
+## LayerDialogのonApplyCompletedコールバック（Issue #127）
+- `LayerDialog`の「実行」後の非同期処理（行政区画データ取得・自転車ログ同期）が完了した瞬間（`isApplyingLayerSettingsAtom`のtrue→false遷移）を検知して呼び出し元（`MapControls`）へ通知する`onApplyCompleted?: () => void`propを新設した。`MapControls`はこれを`onApplyCompleted={() => setIsLayerDialogOpen(false)}`として使い、以前自前で持っていた`isApplyingLayerSettingsAtom`監視用の`useEffect`・`useRef`（`wasApplyingLayerSettingsRef`）を削除した
+- 検知方法は`AppDialog`の`onOpen`と全く同じ「レンダー中に前回値と比較してsetStateする」パターン（`useEffect`を使わない）を採用している。`LayerDialog`は元々`isApplyingLayerSettingsAtom`を`useAtomValue`で参照済みのため、追加の購読は不要
+- この設計は「子コンポーネント（`LayerDialog`）のレンダー中に親コンポーネント（`MapControls`）のsetStateを呼ぶ」形になるが、`AppDialog`の`onOpen`が全く同じ構図（子のレンダー中に親のsetStateを呼ぶ）で実装済みかつ実機検証（`console.error`スパイによる`Cannot update a component while rendering a different component`警告の有無確認）で問題ないことを確認済みのため、同じパターンの踏襲として採用した
+
 # 行政区画フォーカス機能（Issue #76）
 - 「地図上の行政区画クリック」「通過自治体一覧の項目クリック」いずれからも同じ行政区画をフォーカス表示できるようにするため、クリックした地点から自治体を特定する経路として、OSMベクトルタイルの`place`ラベル（現行の行政区画表示に使っている）ではなく、`municipalities`テーブル由来のGeoJSON（`GET /municipalities/boundaries?era=...`、通過自治体表示機能・過去年代表示機能が既に使っているものと同一のAPI）を採用した
   - 理由: OSMベクトルタイルの`boundary`ソースレイヤー（境界ポリゴン）自体は名前プロパティを持たず、名前は別レイヤー（`place`、地点ラベル）にしか無いため、クリック地点から直接「どの自治体か」を機械的に特定できない。また`place`ラベルの表記（例: 政令指定都市の区の扱い）が`municipalities`テーブル（`PassedMunicipality`が使うものと同一）の`prefectureName`/`municipalityName`と一致する保証が無く、通過自治体一覧の項目とのマッチングに使うには不整合が起きうる。`municipalities`テーブルのGeoJSONを両方の入口で共通の検索対象にすることで、この不整合を避けている
@@ -141,6 +157,7 @@ root/
 - フォーカス表示は、フォーカス中の自治体1件分のfeatureのみを保持する専用のGeoJSONソース・ラインレイヤー（`admin-boundary-focused-source`/`admin-boundary-focused-line`、オレンジ`#dd6b20`・太さ4px・粗い破線）として追加した。自転車ログのフォーカス色（赤`#e53e3e`）・ゴールマーカー（赤系）と意味が異なるため、別の色相（オレンジ）を割り当てている
 - フォーカス対象（都道府県名+市区町村名）から実際のfeature（ジオメトリ）を求める処理は`applyFocusedMunicipalityLayer`（`frontend/src/utils/mapLayerInteraction.ts`）が担い、hit-test用にキャッシュ済みのFeatureCollectionを`prefectureName`/`municipalityName`で線形探索する
 - 状態管理は既存の選択・フォーカス機構（`useActivitySelection`）とは独立させ、`MapWorkspace`が`focusedMunicipality: PassedMunicipality | null`を単純な`useState`で保持する。フォーカス中のアクティビティが変わる・行政区画の年代が切り替わるタイミングでの解除は、`useEffect`ではなく該当する操作（`focusActivity`/`clearFocus`/`handleApplyLayerSettings`）を呼ぶハンドラ内で直接`setFocusedMunicipality(null)`する方式にした（`useEffect`だと依存配列に含めた`focusedActivity`/`era`をエフェクト本体で参照しないためBiomeの`useExhaustiveDependencies`に抵触するため）
+  - **`handleApplyLayerSettings`内での解除条件（Issue #127で修正）**: 当初は「実行」ボタン押下のたびに無条件で`setFocusedMunicipality(null)`を呼んでいたが、これは行政区画の年代を変えず航空写真等の無関係なレイヤーだけを切り替えて実行した場合にも、フォーカス中の自治体を意図せず解除してしまう過剰な挙動だった（仕様上、解除が必要なのは年代変更で通過自治体一覧の内容自体が変わる場合のみ）。`resolveLayerSettingsChange`が返す`willChangeEra`が`true`の場合にのみ`setFocusedMunicipality(null)`を呼ぶよう修正した
 - hit-test・フォーカス表示の2レイヤーは、`resolveStyleLayerIds`の`admin-boundary`カテゴリ（現行・過去いずれの分岐にも）に含め、行政区画レイヤーのON/OFFトグルに連動して表示/非表示が切り替わるようにした
 - **パフォーマンス対策（動作確認時の指摘を受けて修正）**: 当初、「境界データ(hit-test用含む)の取得・反映」と「フォーカス対象の反映」を1つの`useEffect`（依存配列に`focusedMunicipality`を含む）にまとめていたため、フォーカス対象が変わる（＝クリックする）たびに`applyAdminBoundaryData`が呼ばれ、変化していないはずの全国分の境界データを毎回hit-test用・表示用ソースへ`setData`し直しており、クリックのたびに顕著な遅延・カクつきが発生していた。`MapView.tsx`のeffectを「境界データの取得・反映（`adminBoundaryEra`のみに依存）」と「フォーカス対象の反映（`focusedMunicipality`に依存）」の2つへ分割し、後者はキャッシュ済みデータの取得のみを行い表示・hit-test用ソースへは`setData`しない専用の経路（`getOrFetchMunicipalityBoundaries`、`frontend/src/utils/mapLayerSetup.ts`。`applyAdminBoundaryData`もこれを内部で使うよう変更）を新設することで解消した
 - **地図の中心合わせ**: フォーカス対象のfeatureが見つかった場合、そのジオメトリ（Polygon/MultiPolygon）の重心へ`map.panTo`（ズームレベルは変更しない）で地図の中心を合わせる（`panToMunicipalityCentroid`、`frontend/src/utils/mapLayerInteraction.ts`）。重心の算出はシューレース公式による面積重み付き重心（`calculatePolygonCentroid`、`frontend/src/utils/polygonCentroid.ts`）で、穴（内側のリング）は無視し外側のリングのみで計算する簡略版。既存のIssue #77（線上の距離算出）と同様、緯度経度をそのまま平面座標とみなす近似計算とし、新規ジオメトリライブラリ（turf等）への依存は追加していない
@@ -325,7 +342,7 @@ Google Takeoutで一括ダウンロードした写真をローカルへ展開す
   - `PhotoBalloonThumbnail`は単一写真のサムネイルを円形のバッジとして表示する。サムネイル優先・失敗時にフルサイズへフォールバックするロジックは`usePhotoThumbnailFallback`（新規フック）へ切り出し、`PhotoGridItem`（アクティビティパネルのグリッド表示、Issue #105）と共通化した（DRY）。読み込み完了まで`visibility: hidden`にする点も`PhotoGridItem`と同じで、これにより「読み込みが完了した写真から順に表示」という要求を、進捗管理を別途実装せず`<img>`の`onLoad`だけで自然に満たしている
   - `PhotoBalloonClusterBadge`はクラスタにまとまっている写真の件数のみを円形バッジで表示する（個別のサムネイルは表示しない）
 - **`applyPhotoBalloons`**（`mapLayerInteraction.ts`）が、`markersRef`が保持する直前のマーカー・React rootを全て`remove()`/`unmount()`した後、`clusterIndex`（null時は何も追加せず終了）から`map.getBounds()`・`map.getZoom()`で現在の表示範囲・ズームレベルにおけるクラスタ・個別写真を求め、新しいマーカーとして追加する。`applyStartGoalMarkers`と同じ「差分更新ではなく毎回全消去→再構築」の設計を踏襲する（1アクティビティあたりの写真件数は多くても数十件程度のため軽量）
-- **`MapView.tsx`側の結線**: 新規`photos: Photo[]` propを追加。`photoClusterIndexRef`（`photos`が変わるたびに`buildPhotoClusterIndex`で再構築）・`photoBalloonMarkersRef`の2つの`useRef`を持つ。`photos`を依存配列に含む`useEffect`が、インデックス再構築後ただちに現在の表示範囲で`applyPhotoBalloons`を呼ぶ（フォーカス変化・フォーカス解除の反映はこの経路）。加えて、地図のパン・ズーム操作でクラスタリング結果自体が変わりうるため、マウント時に一度だけ`map.on('moveend', ...)`を登録し、`photoClusterIndexRef.current`（refのため常に最新のインデックスを参照する、クロージャの陳腐化対策は既存の他ハンドラと同じパターン）を使って`applyPhotoBalloons`を再実行する
+- **`MapView.tsx`側の結線**: 新規`photos: Photo[]` propを追加。`photoClusterIndexRef`（`photos`が変わるたびに`buildPhotoClusterIndex`で再構築）・`photoBalloonMarkersRef`の2つの`useRef`を持つ（`usePhotoBalloons`フック内、Issue #127でMapView.tsxから切り出し）。`photos`を依存配列に含む`useEffect`が、インデックス再構築後ただちに現在の表示範囲で`applyPhotoBalloons`を呼ぶ（フォーカス変化・フォーカス解除の反映はこの経路）。加えて、地図のパン・ズーム操作でクラスタリング結果自体が変わりうるため、マウント時に一度だけ`map.on('moveend', ...)`を登録し、`photoClusterIndexRef.current`（refのため常に最新のインデックスを参照する、クロージャの陳腐化対策は既存の他ハンドラと同じパターン）を使って`applyPhotoBalloons`を再実行する
 
 ## 写真の拡大プレビュー表示（Issue #108）
 アクティビティパネル（`PhotoGridItem`、Issue #105）・地図上の吹き出し（`PhotoBalloonThumbnail`、Issue #107）いずれのサムネイルをクリックした場合も、共通の拡大プレビューダイアログでフルサイズ画像（`/photos/:id/image`。Issue #106のHEIC事前変換が完了していればJPEG化済み）を表示する。ユーザー確定済みの仕様として、(1) 矢印キー（→/←）で前後の写真へ移動できる、(2) 吹き出し由来・パネル由来のクリックで見た目・挙動を共通化する、の2点がある。

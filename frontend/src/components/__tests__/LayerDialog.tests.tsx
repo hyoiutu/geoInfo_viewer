@@ -1,7 +1,7 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { createStore } from 'jotai';
 import { describe, expect, test, vi } from 'vitest';
-import { startPendingLayerApplyAtom } from '../../atoms/isApplyingLayerSettingsAtom';
+import { clearPendingLayerApplyFlagAtom, startPendingLayerApplyAtom } from '../../atoms/isApplyingLayerSettingsAtom';
 import { applyLayerSettingsAtom } from '../../atoms/layerSettingsAtom';
 import { LAYER_DEFINITIONS } from '../../constants/layerDefinitions';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
@@ -190,6 +190,36 @@ describe('LayerDialogに関するテスト', () => {
       fireEvent.click(screen.getByRole('button', { name: '実行' }));
 
       expect(onApply).toHaveBeenCalledWith(DEFAULT_VISIBILITY, '2000-10-01');
+    });
+  });
+
+  describe('onApplyCompletedに関するテスト（Issue #127）', () => {
+    test('isApplyingLayerSettingsがtrue→falseに変化すると、onApplyCompletedが呼ばれる', () => {
+      const onApplyCompleted = vi.fn();
+      const { store } = renderDialog({ onApplyCompleted }, { isApplyingLayerSettings: true });
+
+      act(() => {
+        store.set(clearPendingLayerApplyFlagAtom, 'waitingForAdminBoundary');
+      });
+
+      expect(onApplyCompleted).toHaveBeenCalledTimes(1);
+    });
+
+    test('isApplyingLayerSettingsが最初からfalseの場合、onApplyCompletedは呼ばれない', () => {
+      const onApplyCompleted = vi.fn();
+      renderDialog({ onApplyCompleted });
+
+      expect(onApplyCompleted).not.toHaveBeenCalled();
+    });
+
+    test('onApplyCompletedを渡さなくてもエラーにならない', () => {
+      const { store } = renderDialog({}, { isApplyingLayerSettings: true });
+
+      expect(() => {
+        act(() => {
+          store.set(clearPendingLayerApplyFlagAtom, 'waitingForAdminBoundary');
+        });
+      }).not.toThrow();
     });
   });
 });

@@ -1,9 +1,8 @@
 import { Flex, IconButton } from '@chakra-ui/react';
 import { useAtomValue } from 'jotai';
 import { ChartColumn, Funnel, Layers, Settings } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
-import { isApplyingLayerSettingsAtom } from '../atoms/isApplyingLayerSettingsAtom';
 import { layerVisibilityAtom, municipalityEraAtom } from '../atoms/layerSettingsAtom';
 import type { ActivityFilter } from '../types/activityFilter';
 import type { LayerVisibility } from '../types/layer';
@@ -37,7 +36,9 @@ type MapControlsProps = {
  * それぞれが開くダイアログ本体をまとめて保持するコンポーネント。開閉状態は本コンポーネントが自身の
  * useStateで管理し、確定した結果（適用状態）のみを呼び出し元（MapWorkspace）へコールバックで返す（Issue #53）。
  * 現在適用中のレイヤー表示状態・行政区画の年代はlayerSettingsAtom（グローバルステート）から直接参照し、
- * props経由のバケツリレーは行わない（Issue #125）
+ * props経由のバケツリレーは行わない（Issue #125）。レイヤーダイアログの非同期処理完了に伴う自動クローズは
+ * LayerDialogのonApplyCompletedコールバックで行い、isApplyingLayerSettingsAtomをこのコンポーネントが
+ * 直接監視する必要は無い（Issue #127）
  */
 export const MapControls = ({
   onApplyLayerSettings,
@@ -48,7 +49,6 @@ export const MapControls = ({
   onStartBackfill,
   onStartForceRefetch
 }: MapControlsProps) => {
-  const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
   const appliedVisibility = useAtomValue(layerVisibilityAtom);
   const appliedEra = useAtomValue(municipalityEraAtom);
 
@@ -56,16 +56,6 @@ export const MapControls = ({
   const [isFilterDialogOpen, setIsFilterDialogOpen] = useState(false);
   const [isStatisticsDialogOpen, setIsStatisticsDialogOpen] = useState(false);
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
-
-  // 直前に適用中だった状態を覚えておき、true→falseの変化を検知する（Issue #65）
-  const wasApplyingLayerSettingsRef = useRef(isApplyingLayerSettings);
-
-  useEffect(() => {
-    if (wasApplyingLayerSettingsRef.current && !isApplyingLayerSettings) {
-      setIsLayerDialogOpen(false);
-    }
-    wasApplyingLayerSettingsRef.current = isApplyingLayerSettings;
-  }, [isApplyingLayerSettings]);
 
   const handleApplyLayerSettings = (visibility: LayerVisibility, era: MunicipalityEra) => {
     const { willChangeEra, willSyncCyclingLog } = resolveLayerSettingsChange(
@@ -76,7 +66,8 @@ export const MapControls = ({
     );
     onApplyLayerSettings(visibility, era);
     // 行政区画データ取得・自転車ログ同期のいずれも発生しない場合は、待たずに即座に閉じる。
-    // いずれか発生する場合は、isApplyingLayerSettingsがfalseに戻るまで閉じない（上記useEffect）
+    // いずれか発生する場合は、isApplyingLayerSettingsがfalseに戻るまで閉じない
+    // （LayerDialogのonApplyCompleted経由、Issue #127）
     if (!willChangeEra && !willSyncCyclingLog) {
       setIsLayerDialogOpen(false);
     }
@@ -140,6 +131,7 @@ export const MapControls = ({
       <LayerDialog
         isOpen={isLayerDialogOpen}
         onApply={handleApplyLayerSettings}
+        onApplyCompleted={() => setIsLayerDialogOpen(false)}
         onClose={() => setIsLayerDialogOpen(false)}
       />
       <FilterDialog

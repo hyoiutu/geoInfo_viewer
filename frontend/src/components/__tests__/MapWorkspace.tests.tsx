@@ -313,6 +313,50 @@ describe('MapWorkspaceに関するテスト', () => {
     });
   });
 
+  test('行政区画の年代を変えずに他のレイヤーを切り替えて実行しても、フォーカス中の自治体は解除されない（Issue #127）', async () => {
+    const { fetchCyclingActivities, fetchPassedMunicipalities } = await import('../../api/activitiesApi');
+    const { fetchMunicipalityBoundaries } = await import('../../api/municipalitiesApi');
+    const startDate = '2026-06-15T01:00:00.000Z';
+    const formattedStartDate = new Date(startDate).toLocaleString('ja-JP');
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([createActivity({ id: 'low', startDate })]);
+    vi.mocked(fetchPassedMunicipalities).mockResolvedValue([{ prefectureName: '東京都', municipalityName: '渋谷区' }]);
+    const shibuyaFeature = {
+      type: 'Feature' as const,
+      geometry: { type: 'Point' as const, coordinates: [139.7, 35.6] },
+      properties: { prefectureName: '東京都', municipalityName: '渋谷区' }
+    };
+    vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue({
+      type: 'FeatureCollection',
+      features: [shibuyaFeature]
+    });
+    const { getByRole, queryByRole, getByText } = renderWithChakra(<MapWorkspace />);
+
+    await toggleLayerViaDialog(getByRole, queryByRole, '自転車ログ');
+    const mapInstance = getMapInstance();
+    await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalled());
+
+    mapInstance.queryRenderedFeatures.mockReturnValue([{ properties: { id: 'low' } }]);
+    const clickHandler = getClickHandler(mapInstance);
+    clickHandler({ point: { x: 0, y: 0 } });
+    await waitFor(() => expect(getByText(`1. ${formattedStartDate}`)).toBeInTheDocument());
+    fireEvent.click(getByText(`1. ${formattedStartDate}`));
+    await waitFor(() => expect(getByText('東京都渋谷区')).toBeInTheDocument());
+    fireEvent.click(getByText('東京都渋谷区'));
+    await waitFor(() => {
+      const setDataMock = mapInstance.getSource('any-source-id').setData;
+      expect(setDataMock).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [shibuyaFeature] });
+    });
+    const setDataMock = mapInstance.getSource('any-source-id').setData;
+    setDataMock.mockClear();
+
+    // 行政区画の年代は変えず、自転車ログとは無関係な航空写真レイヤーのみを切り替えて実行する
+    await toggleLayerViaDialog(getByRole, queryByRole, '航空写真');
+
+    // フォーカスが解除されていれば空のFeatureCollectionでsetDataが呼ばれるはずだが、
+    // 年代を変えていないため行政区画データ取得のeffect自体が再実行されず、setDataは呼ばれない
+    expect(setDataMock).not.toHaveBeenCalledWith({ type: 'FeatureCollection', features: [] });
+  });
+
   test('アクティビティパネルのサムネイルをクリックすると、拡大プレビューダイアログにフルサイズ画像が表示される（Issue #108）', async () => {
     const { fetchCyclingActivities, fetchPhotos } = await import('../../api/activitiesApi');
     const { resolvePhotoImageUrl } = await import('../../api/photosApi');

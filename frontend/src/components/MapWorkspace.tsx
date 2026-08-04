@@ -56,13 +56,12 @@ export const MapWorkspace = () => {
   const { activities, syncAndLoadBicycleLog } = useCyclingActivities(() =>
     clearPendingLayerApplyFlag('waitingForCyclingLog')
   );
+  const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
   const { selectedActivities, focusedActivity, selectActivities, focusActivity, clearFocus, clearSelection } =
-    useActivitySelection(activities, filter);
+    useActivitySelection(filteredActivities);
   // アクティビティパネルの写真表示（Issue #105）・地図上の写真吹き出し表示（Issue #107）の両方が
   // 同じ写真一覧を必要とするため、ここで1回だけ取得して両方へpropsとして渡す
   const { photos, isLoading: isPhotosLoading } = usePhotos(focusedActivity?.id ?? null);
-
-  const filteredActivities = useMemo(() => filterActivities(activities, filter), [activities, filter]);
 
   // フォーカス中のアクティビティ・行政区画の年代が変わると、通過自治体一覧の内容自体が変わり
   // 直前にフォーカスしていた自治体が無関係になるため、行政区画のフォーカスも解除する（Issue #76）
@@ -96,7 +95,12 @@ export const MapWorkspace = () => {
     // 確定させることで、非同期処理の開始前に誤って「待つものが無い」と判定してしまう競合を避ける（Issue #65）
     const { willChangeEra, willSyncCyclingLog } = resolveLayerSettingsChange(visibility, era, nextVisibility, nextEra);
     applyLayerSettings({ visibility: nextVisibility, era: nextEra });
-    setFocusedMunicipality(null);
+    // 年代が変わる場合のみ、通過自治体一覧の内容自体が変わりフォーカス中の自治体が無関係になるため
+    // フォーカスを解除する。年代を変えず他のレイヤーだけを切り替えた場合にまで解除すると過剰実行になる
+    // （Issue #127）
+    if (willChangeEra) {
+      setFocusedMunicipality(null);
+    }
     if (willChangeEra || willSyncCyclingLog) {
       startPendingLayerApply({ waitingForAdminBoundary: willChangeEra, waitingForCyclingLog: willSyncCyclingLog });
     }

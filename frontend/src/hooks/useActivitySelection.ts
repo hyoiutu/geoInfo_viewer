@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
-import type { ActivityFilter } from '../types/activityFilter';
-import { filterActivities } from '../utils/filterActivities';
 
 /** useActivitySelectionの戻り値 */
 type UseActivitySelectionResult = {
@@ -22,17 +20,15 @@ type UseActivitySelectionResult = {
 /**
  * 地図上でクリックされたアクティビティの選択状態・フォーカス状態を管理するフック。
  * 選択中に別の箇所をクリックすると、既存の選択は置き換わる（累積しない）。
- * フィルタ条件（`filter`）で表示対象外になったアクティビティは、選択・フォーカスから自動的に取り除かれる。
+ * `visibleActivities`から外れた（表示対象外になった）アクティビティは、選択・フォーカスから自動的に取り除かれる。
  * ID→アクティビティの変換をこのフック内で完結させることで、呼び出し元（MapWorkspace）・受け取り側
- * （MapView・ActivityDetailSidebar）がそれぞれ個別にID解決を行う重複を無くしている（Issue #53、PR #69レビュー対応）
- * @param activities 選択対象となりうる全アクティビティ一覧
- * @param filter 現在適用中のフィルタ条件
+ * （MapView・ActivityDetailSidebar）がそれぞれ個別にID解決を行う重複を無くしている（Issue #53、PR #69レビュー対応）。
+ * `activities`＋`filter`ではなく、呼び出し元で既にフィルタ適用済みの`visibleActivities`を受け取ることで、
+ * このフック内で`filterActivities`を再計算する重複（呼び出し元も同じ計算を行っていた）を無くしている（Issue #127）
+ * @param visibleActivities 選択対象となりうる、現在表示中(フィルタ適用済み)のアクティビティ一覧
  * @returns 選択・フォーカス状態と操作関数
  */
-export const useActivitySelection = (
-  activities: CyclingActivity[],
-  filter: ActivityFilter
-): UseActivitySelectionResult => {
+export const useActivitySelection = (visibleActivities: CyclingActivity[]): UseActivitySelectionResult => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
 
@@ -53,12 +49,9 @@ export const useActivitySelection = (
     setFocusedIndex(null);
   }, []);
 
-  const visibleIds = useMemo(
-    () => new Set(filterActivities(activities, filter).map((activity) => activity.id)),
-    [activities, filter]
-  );
+  const visibleIds = useMemo(() => new Set(visibleActivities.map((activity) => activity.id)), [visibleActivities]);
 
-  // フィルタで除外され地図上に表示されなくなったアクティビティは、選択・フォーカス状態からも取り除く
+  // visibleActivitiesから外れ地図上に表示されなくなったアクティビティは、選択・フォーカス状態からも取り除く
   useEffect(() => {
     const focusedId = focusedIndex === null ? null : (selectedIds[focusedIndex] ?? null);
     const nextSelectedIds = selectedIds.filter((id) => visibleIds.has(id));
@@ -72,9 +65,9 @@ export const useActivitySelection = (
   const selectedActivities = useMemo(
     () =>
       selectedIds
-        .map((id) => activities.find((activity) => activity.id === id))
+        .map((id) => visibleActivities.find((activity) => activity.id === id))
         .filter((activity): activity is CyclingActivity => activity !== undefined),
-    [selectedIds, activities]
+    [selectedIds, visibleActivities]
   );
   const focusedActivity = focusedIndex === null ? null : (selectedActivities[focusedIndex] ?? null);
 
