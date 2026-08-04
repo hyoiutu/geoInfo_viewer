@@ -32,11 +32,11 @@ export const useAdminBoundaryData = (
   isStyleLoaded: boolean,
   onAdminBoundaryDataApplied?: () => void
 ): void => {
+  const addError = useSetAtom(addErrorAtom);
   const historicalBoundariesCacheRef = useRef<Map<MunicipalityEra, FeatureCollection>>(new Map());
   // 依存配列に含めてeffectを不要に再実行しないよう、最新の値をrefで参照する
   const onAdminBoundaryDataAppliedRef = useRef(onAdminBoundaryDataApplied);
   onAdminBoundaryDataAppliedRef.current = onAdminBoundaryDataApplied;
-  const addError = useSetAtom(addErrorAtom);
 
   useEffect(() => {
     const map = getReadyMap(mapRef, isStyleLoaded);
