@@ -126,6 +126,24 @@ describe('useAdminBoundaryDataに関するテスト（Issue #127）', () => {
     vi.restoreAllMocks();
   });
 
+  test('境界データの取得に成功してもfeatureが見つからない場合、panToMunicipalityCentroidは呼ばれない（PR #128レビュー対応）', async () => {
+    vi.spyOn(mapLayerSetup, 'applyAdminBoundaryData').mockResolvedValue();
+    vi.spyOn(mapLayerSetup, 'getOrFetchMunicipalityBoundaries').mockResolvedValue(EMPTY_FEATURE_COLLECTION);
+    const applyFocusedMunicipalityLayerSpy = vi
+      .spyOn(mapLayerInteraction, 'applyFocusedMunicipalityLayer')
+      .mockReturnValue(undefined);
+    const panToMunicipalityCentroidSpy = vi
+      .spyOn(mapLayerInteraction, 'panToMunicipalityCentroid')
+      .mockImplementation(() => {});
+    const mapRef = { current: asMap({}) };
+
+    renderWithProvider(mapRef, 'current', { prefectureName: '東京都', municipalityName: '渋谷区' }, true);
+
+    await waitFor(() => expect(applyFocusedMunicipalityLayerSpy).toHaveBeenCalled());
+    expect(panToMunicipalityCentroidSpy).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
   test('通過自治体の取得に失敗した場合、グローバルエラースタックに追加される', async () => {
     vi.spyOn(mapLayerSetup, 'applyAdminBoundaryData').mockResolvedValue();
     vi.spyOn(mapLayerSetup, 'getOrFetchMunicipalityBoundaries').mockRejectedValue(new Error('boundary fetch failed'));
