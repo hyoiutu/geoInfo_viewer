@@ -2,6 +2,7 @@ import maplibregl from 'maplibre-gl';
 import { type RefObject, useEffect, useRef } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
 import { registerFocusedActivityHoverHandler } from '../utils/mapLayerInteraction';
+import { getReadyMap } from '../utils/mapReady';
 
 const METERS_PER_KILOMETER = 1000;
 const HOVER_DISTANCE_DECIMAL_PLACES = 1;
@@ -24,8 +25,8 @@ export const useFocusedActivityHover = (
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
+    const map = getReadyMap(mapRef, isStyleLoaded);
+    if (!map) {
       return;
     }
 

@@ -2,6 +2,7 @@ import type maplibregl from 'maplibre-gl';
 import { type RefObject, useEffect, useRef } from 'react';
 import type { Photo } from '../api/activitiesApi';
 import { applyPhotoBalloons, type PhotoBalloonMarkerEntry } from '../utils/mapLayerInteraction';
+import { getReadyMap } from '../utils/mapReady';
 import { buildPhotoClusterIndex, type PhotoClusterIndex } from '../utils/photoBalloonCluster.util';
 
 /**
@@ -31,8 +32,8 @@ export const usePhotoBalloons = (
   // たびに現在のクラスタインデックス（photoClusterIndexRef、写真一覧が変わるたびに再構築される）を
   // 使って再計算する
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
+    const map = getReadyMap(mapRef, isStyleLoaded);
+    if (!map) {
       return;
     }
 
@@ -47,8 +48,8 @@ export const usePhotoBalloons = (
   // 現在の表示範囲・ズームレベルで写真吹き出しを再描画する。未フォーカス（photosが空配列）になった
   // 場合はクラスタリング結果も0件になり、吹き出しが全て消える
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
+    const map = getReadyMap(mapRef, isStyleLoaded);
+    if (!map) {
       return;
     }
 

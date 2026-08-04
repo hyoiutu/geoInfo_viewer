@@ -2,6 +2,7 @@ import type maplibregl from 'maplibre-gl';
 import { type RefObject, useEffect } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
 import { applySelectionLayers } from '../utils/mapLayerInteraction';
+import { getReadyMap } from '../utils/mapReady';
 
 /**
  * 選択中・フォーカス中のアクティビティが変化するたびに、選択用・フォーカス用レイヤーのデータを更新するフック
@@ -18,8 +19,8 @@ export const useSelectionLayerSync = (
   isStyleLoaded: boolean
 ): void => {
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
+    const map = getReadyMap(mapRef, isStyleLoaded);
+    if (!map) {
       return;
     }
 

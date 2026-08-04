@@ -3,6 +3,7 @@ import { type RefObject, useEffect } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
 import { BICYCLE_LOG_SOURCE_ID, BICYCLE_LOG_SUMMARY_SOURCE_ID } from '../constants/bicycleLog';
 import { cyclingActivitySummaryToGeoJson, cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
+import { getReadyMap } from '../utils/mapReady';
 
 /**
  * フィルタ適用後のアクティビティ一覧が変化するたびに、通常状態・summary状態（低ズームレベル用、Issue #61）
@@ -17,8 +18,8 @@ export const useBicycleLogDataSync = (
   isStyleLoaded: boolean
 ): void => {
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
+    const map = getReadyMap(mapRef, isStyleLoaded);
+    if (!map) {
       return;
     }
 

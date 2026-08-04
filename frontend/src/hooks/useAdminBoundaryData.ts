@@ -8,6 +8,7 @@ import type { MunicipalityEra } from '../types/municipalityEra';
 import { toAppErrorInfo } from '../utils/apiError';
 import { applyFocusedMunicipalityLayer, panToMunicipalityCentroid } from '../utils/mapLayerInteraction';
 import { applyAdminBoundaryData, getOrFetchMunicipalityBoundaries } from '../utils/mapLayerSetup';
+import { getReadyMap } from '../utils/mapReady';
 
 /**
  * 選択中の行政区画年代・フォーカス中の自治体に応じた境界データの取得・地図への反映を担うフック
@@ -38,8 +39,8 @@ export const useAdminBoundaryData = (
   const addError = useSetAtom(addErrorAtom);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
+    const map = getReadyMap(mapRef, isStyleLoaded);
+    if (!map) {
       return;
     }
 
@@ -53,8 +54,8 @@ export const useAdminBoundaryData = (
   }, [mapRef, adminBoundaryEra, isStyleLoaded, addError]);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
+    const map = getReadyMap(mapRef, isStyleLoaded);
+    if (!map) {
       return;
     }
 

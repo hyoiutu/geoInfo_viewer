@@ -2,6 +2,7 @@ import type maplibregl from 'maplibre-gl';
 import { type RefObject, useEffect, useRef } from 'react';
 import type { CyclingActivity, PassedMunicipality } from '../api/activitiesApi';
 import { registerAdminBoundaryClickHandler } from '../utils/mapLayerInteraction';
+import { getReadyMap } from '../utils/mapReady';
 
 /**
  * 地図上の行政区画をクリックしたときの自治体検出を登録するフック。
@@ -25,8 +26,8 @@ export const useAdminBoundaryClickInteraction = (
   focusedActivityRef.current = focusedActivity;
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
+    const map = getReadyMap(mapRef, isStyleLoaded);
+    if (!map) {
       return;
     }
 

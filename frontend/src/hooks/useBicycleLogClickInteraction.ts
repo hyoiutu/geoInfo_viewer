@@ -2,6 +2,7 @@ import type maplibregl from 'maplibre-gl';
 import { type RefObject, useEffect, useRef } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
 import { registerBicycleLogClickHandler } from '../utils/mapLayerInteraction';
+import { getReadyMap } from '../utils/mapReady';
 
 /**
  * 地図上の自転車ログをクリックしたときのアクティビティ選択検出を登録するフック。
@@ -25,8 +26,8 @@ export const useBicycleLogClickInteraction = (
   focusedActivityRef.current = focusedActivity;
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
+    const map = getReadyMap(mapRef, isStyleLoaded);
+    if (!map) {
       return;
     }
 

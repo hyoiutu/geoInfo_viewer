@@ -3,6 +3,7 @@ import { type RefObject, useEffect } from 'react';
 import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
 import { applyLayerVisibility } from '../utils/mapLayerInteraction';
+import { getReadyMap } from '../utils/mapReady';
 
 /**
  * layerVisibility・選択中の行政区画年代が変化するたびに各レイヤーの表示/非表示を反映するフック
@@ -21,9 +22,9 @@ export const useLayerVisibilitySync = (
   isStyleLoaded: boolean
 ): void => {
   useEffect(() => {
-    const map = mapRef.current;
+    const map = getReadyMap(mapRef, isStyleLoaded);
     const categorizedLayerIds = categorizedLayerIdsRef.current;
-    if (!map || !isStyleLoaded || !categorizedLayerIds) {
+    if (!map || !categorizedLayerIds) {
       return;
     }
 

@@ -2,6 +2,7 @@ import type maplibregl from 'maplibre-gl';
 import { type RefObject, useEffect, useRef } from 'react';
 import type { CyclingActivity } from '../api/activitiesApi';
 import { applyStartGoalMarkers, type StartGoalMarkerEntry } from '../utils/mapLayerInteraction';
+import { getReadyMap } from '../utils/mapReady';
 
 /**
  * フォーカス中のアクティビティが変化するたびに、スタート・ゴールマーカーの表示を更新するフック
@@ -18,8 +19,8 @@ export const useStartGoalMarkers = (
   const startGoalMarkersRef = useRef<StartGoalMarkerEntry[]>([]);
 
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
+    const map = getReadyMap(mapRef, isStyleLoaded);
+    if (!map) {
       return;
     }
 
