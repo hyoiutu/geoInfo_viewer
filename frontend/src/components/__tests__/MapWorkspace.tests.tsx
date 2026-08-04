@@ -357,6 +357,53 @@ describe('MapWorkspaceに関するテスト', () => {
     expect(setDataMock).not.toHaveBeenCalledWith({ type: 'FeatureCollection', features: [] });
   });
 
+  test('行政区画の年代を変更して実行すると、フォーカス中の自治体が解除される（PR #128レビュー対応）', async () => {
+    const { fetchCyclingActivities, fetchPassedMunicipalities } = await import('../../api/activitiesApi');
+    const { fetchMunicipalityBoundaries } = await import('../../api/municipalitiesApi');
+    const startDate = '2026-06-15T01:00:00.000Z';
+    const formattedStartDate = new Date(startDate).toLocaleString('ja-JP');
+    vi.mocked(fetchCyclingActivities).mockResolvedValue([createActivity({ id: 'low', startDate })]);
+    vi.mocked(fetchPassedMunicipalities).mockResolvedValue([{ prefectureName: '東京都', municipalityName: '渋谷区' }]);
+    const shibuyaFeature = {
+      type: 'Feature' as const,
+      geometry: { type: 'Point' as const, coordinates: [139.7, 35.6] },
+      properties: { prefectureName: '東京都', municipalityName: '渋谷区' }
+    };
+    vi.mocked(fetchMunicipalityBoundaries).mockResolvedValue({
+      type: 'FeatureCollection',
+      features: [shibuyaFeature]
+    });
+    const { getByRole, queryByRole, getByText, getByLabelText } = renderWithChakra(<MapWorkspace />);
+
+    await toggleLayerViaDialog(getByRole, queryByRole, '自転車ログ');
+    const mapInstance = getMapInstance();
+    await waitFor(() => expect(fetchCyclingActivities).toHaveBeenCalled());
+
+    mapInstance.queryRenderedFeatures.mockReturnValue([{ properties: { id: 'low' } }]);
+    const clickHandler = getClickHandler(mapInstance);
+    clickHandler({ point: { x: 0, y: 0 } });
+    await waitFor(() => expect(getByText(`1. ${formattedStartDate}`)).toBeInTheDocument());
+    fireEvent.click(getByText(`1. ${formattedStartDate}`));
+    await waitFor(() => expect(getByText('東京都渋谷区')).toBeInTheDocument());
+    fireEvent.click(getByText('東京都渋谷区'));
+    await waitFor(() => {
+      const setDataMock = mapInstance.getSource('any-source-id').setData;
+      expect(setDataMock).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [shibuyaFeature] });
+    });
+    const setDataMock = mapInstance.getSource('any-source-id').setData;
+    setDataMock.mockClear();
+
+    // 行政区画の年代を変更して実行する
+    fireEvent.click(getByRole('button', { name: 'レイヤー切り替え' }));
+    await waitFor(() => getByRole('checkbox', { name: '道路' }));
+    fireEvent.change(getByLabelText('行政区画の年代'), { target: { value: '2000-10-01' } });
+    fireEvent.click(getByRole('button', { name: '実行' }));
+
+    // 年代変更により通過自治体一覧の内容自体が変わり、フォーカス中の自治体が無関係になるため、
+    // 空のFeatureCollectionでsetDataが呼ばれフォーカス用オーバーレイが消える
+    await waitFor(() => expect(setDataMock).toHaveBeenCalledWith({ type: 'FeatureCollection', features: [] }));
+  });
+
   test('アクティビティパネルのサムネイルをクリックすると、拡大プレビューダイアログにフルサイズ画像が表示される（Issue #108）', async () => {
     const { fetchCyclingActivities, fetchPhotos } = await import('../../api/activitiesApi');
     const { resolvePhotoImageUrl } = await import('../../api/photosApi');
