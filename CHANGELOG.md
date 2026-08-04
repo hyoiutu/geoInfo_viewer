@@ -14,6 +14,21 @@
 
 ## 変更履歴
 
+### [2026-08-05] LayerDialogのonApplyCompleted化、MapWorkspaceの過剰なフォーカス解除の修正、useActivitySelectionの引数簡素化、MapViewのカスタムフックへの分割を行った（Issue #127）
+* **修正の動機・概要**:
+  - Issue #125の続きとして、コードリーディングの中で見つかった複数のリファクタリング項目を検討・実装した。各項目はユーザーとの対話の中で設計を詰め、一部は見送り・前提修正を行った（詳細はIssue #127のコメント参照）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/components/LayerDialog.tsx`: `onApplyCompleted?: () => void`propを新設。実行後の非同期処理完了（`isApplyingLayerSettingsAtom`のtrue→false遷移）を、`AppDialog`の`onOpen`と同じ「レンダー中に前回値と比較してsetStateする」パターンで検知し呼び出し元へ通知する。
+    - `frontend/src/components/MapControls.tsx`: 上記`onApplyCompleted`を`LayerDialog`から受け取り`onApplyCompleted={() => setIsLayerDialogOpen(false)}`として使うよう変更し、`isApplyingLayerSettingsAtom`を独自に監視していた`useEffect`・`useRef`（`wasApplyingLayerSettingsRef`）を削除した。
+    - `frontend/src/components/MapWorkspace.tsx`: `handleApplyLayerSettings`内の`setFocusedMunicipality(null)`が、行政区画の年代を変えず他のレイヤーだけを切り替えて実行した場合にも無条件で呼ばれ、フォーカス中の自治体を意図せず解除してしまう過剰実行になっていたため、`willChangeEra`が`true`の場合のみ呼ぶよう修正した。
+    - `frontend/src/hooks/useActivitySelection.ts`: `activities`・`filter`の2引数（フック内部で`filterActivities`を再計算）ではなく、呼び出し元が計算済みの`visibleActivities`（1引数）を受け取るよう変更。`MapWorkspace.tsx`側でも同じ`filterActivities`計算を別途行っており重複していた（design_principles.mdのDRY原則違反）ため、この重複と`filter`/`ActivityFilter`型への依存を解消した。
+    - `frontend/src/components/MapView.tsx`: 地図操作の純粋関数（`mapLayerInteraction.ts`/`mapLayerSetup.ts`）への切り出し後も残っていた、Reactのライフサイクル（`useEffect`）との結線部分（8個の`useEffect`）を、関心事ごとの個別カスタムフック（`useMapInstance`/`useBicycleLogClickInteraction`/`useAdminBoundaryClickInteraction`/`useFocusedActivityHover`/`useBicycleLogDataSync`/`useSelectionLayerSync`/`useStartGoalMarkers`/`usePhotoBalloons`/`useLayerVisibilitySync`/`useAdminBoundaryData`、新規10ファイル）へ切り出した。`MapView.tsx`自体はフックの呼び出し・結線のみを行う薄いコンポーネントになった。挙動自体に変更は無く、既存の`MapView.tests.tsx`は無変更のまま全件成功することを確認した。
+    - `frontend/src/hooks/usePassedMunicipalities.ts`・`frontend/src/hooks/usePhotos.ts`: useEffect除去を検討したが、依存する`activityId`が複数の独立した経路（地図クリック・一覧クリック・戻るボタン・`useActivitySelection`内部のプルーニング処理）から変化しうるため、除去しても呼び出し元に同じ形のuseEffectが移動するだけで実質的に無くならないと判断し、現状維持とした。
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし。「行政区画フォーカス機能」に既に記載されていた「行政区画の年代を切り替えたときのみフォーカスが解除される」という仕様に、実装（過剰実行だった`setFocusedMunicipality`）を合わせる修正のため、仕様書自体の記述に変化は無い。
+  * **設計書**: `designs/technical_design.md`に新規節「MapViewのカスタムフックへの分割（Issue #127）」「LayerDialogのonApplyCompletedコールバック（Issue #127）」を追加。「アクティビティ詳細閲覧機能」「走行距離表示機能」「行政区画レイヤー（年代選択）」「レイヤーダイアログの非同期実行対応（Issue #65）」「自転車ログフィルタリング機能」「行政区画フォーカス機能」「位置情報付きメディア表示機能（地図上の写真吹き出し表示）」の各節も、フック分割・onApplyCompleted化・useActivitySelectionの引数変更・フォーカス解除条件の修正を反映して更新。
+
 ### [2026-08-04] レイヤー表示状態・行政区画の年代のAtom化、および複数箇所のuseEffectをより単純な手段へ置き換えるリファクタリングを行った（Issue #125）
 * **修正の動機・概要**:
   - 現在適用中のレイヤー表示状態（`LayerVisibility`）・行政区画の年代（`MunicipalityEra`）が`MapWorkspace`のローカルstateとしてあらゆるコンポーネントへprops経由で引き回されていたため、既存の`isApplyingLayerSettingsAtom`と同じパターンでJotai atom化した。あわせて、issue-reviewでの事前検証を経て、useEffectに依存していた複数箇所をより単純な手段へ置き換えた。issue-reviewの結果、Issue本文の提案のうち一部は見送り・前提修正を行った（詳細はIssue #125のコメント参照）。

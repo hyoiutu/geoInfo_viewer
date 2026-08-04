@@ -48,6 +48,12 @@ type LayerDialogProps = {
   isOpen: boolean;
   /** 実行ボタンが押されたときに、入力中の表示状態・年代を渡して呼ばれるコールバック */
   onApply: (visibility: LayerVisibility, era: MunicipalityEra) => void;
+  /**
+   * 実行後の非同期処理（行政区画データ取得・自転車ログ同期）が完了した瞬間
+   * （isApplyingLayerSettingsAtomがtrue→falseに変化したタイミング）に呼ばれるコールバック（省略可）。
+   * 呼び出し元はこれを使ってダイアログを閉じる（Issue #127）
+   */
+  onApplyCompleted?: () => void;
   /** ダイアログを閉じる（閉じるボタン押下・背景クリック等）ときに呼ばれるコールバック */
   onClose: () => void;
 };
@@ -63,14 +69,28 @@ type LayerDialogProps = {
  * 不具合を防ぐ（Issue #65 PR#110レビュー対応）。他の入力・クローズ手段の無効化は、待機完了時にダイアログが
  * 自動的に閉じ入力中(draft)の内容が破棄される際、待機中に加えた変更・操作がユーザーの意図しないまま失われることを
  * 防ぐ（PR #110再レビュー対応）。現在適用中のレイヤー表示状態・行政区画の年代はlayerSettingsAtom
- * （グローバルステート）から直接参照し、props経由のバケツリレーは行わない（Issue #125）
+ * （グローバルステート）から直接参照し、props経由のバケツリレーは行わない（Issue #125）。実行後の
+ * 非同期処理完了（isApplyingLayerSettingsAtomのtrue→false遷移）はonApplyCompletedで呼び出し元へ
+ * 通知する。検知はuseEffectを使わず、AppDialogのonOpenと同じ「レンダー中に前回値と比較してsetStateする」
+ * パターンで行う（Issue #127）
  */
-export const LayerDialog = ({ isOpen, onApply, onClose }: LayerDialogProps) => {
+export const LayerDialog = ({ isOpen, onApply, onApplyCompleted, onClose }: LayerDialogProps) => {
   const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
   const appliedVisibility = useAtomValue(layerVisibilityAtom);
   const appliedEra = useAtomValue(municipalityEraAtom);
   const [draftVisibility, setDraftVisibility] = useState(appliedVisibility);
   const [draftEra, setDraftEra] = useState(appliedEra);
+
+  // isApplyingLayerSettingsがtrue→falseに変化した瞬間にonApplyCompletedを呼ぶ。AppDialogのonOpenと
+  // 同じ「propの変化に応じてレンダー中にstateを調整する」パターンを使い、useEffectを使わずに検知する
+  // （Issue #127）
+  const [prevIsApplyingLayerSettings, setPrevIsApplyingLayerSettings] = useState(isApplyingLayerSettings);
+  if (isApplyingLayerSettings !== prevIsApplyingLayerSettings) {
+    setPrevIsApplyingLayerSettings(isApplyingLayerSettings);
+    if (!isApplyingLayerSettings) {
+      onApplyCompleted?.();
+    }
+  }
 
   // ダイアログを開くたびに、入力中の内容を現在適用中の内容へリセットする。AppDialogのonOpen経由で
   // isOpenがfalse→trueに変化した瞬間にのみ呼ばれる（useEffectは使わない、Issue #125）

@@ -1,46 +1,18 @@
 import { Box } from '@chakra-ui/react';
-import type { FeatureCollection } from 'geojson';
-import { useSetAtom } from 'jotai';
-import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import type { CyclingActivity, PassedMunicipality, Photo } from '../api/activitiesApi';
-import { addErrorAtom } from '../atoms/errorsAtom';
-import { BICYCLE_LOG_SOURCE_ID, BICYCLE_LOG_SUMMARY_SOURCE_ID } from '../constants/bicycleLog';
-import type { CategorizedLayerIds, LayerVisibility } from '../types/layer';
+import { useAdminBoundaryClickInteraction } from '../hooks/useAdminBoundaryClickInteraction';
+import { useAdminBoundaryData } from '../hooks/useAdminBoundaryData';
+import { useBicycleLogClickInteraction } from '../hooks/useBicycleLogClickInteraction';
+import { useBicycleLogDataSync } from '../hooks/useBicycleLogDataSync';
+import { useFocusedActivityHover } from '../hooks/useFocusedActivityHover';
+import { useLayerVisibilitySync } from '../hooks/useLayerVisibilitySync';
+import { useMapInstance } from '../hooks/useMapInstance';
+import { usePhotoBalloons } from '../hooks/usePhotoBalloons';
+import { useSelectionLayerSync } from '../hooks/useSelectionLayerSync';
+import { useStartGoalMarkers } from '../hooks/useStartGoalMarkers';
+import type { LayerVisibility } from '../types/layer';
 import type { MunicipalityEra } from '../types/municipalityEra';
-import { toAppErrorInfo } from '../utils/apiError';
-import { cyclingActivitySummaryToGeoJson, cyclingActivityToGeoJson } from '../utils/cyclingActivityToGeoJson';
-import { groupLayerIdsByCategory } from '../utils/mapLayerCategory';
-import {
-  applyFocusedMunicipalityLayer,
-  applyLayerVisibility,
-  applyPhotoBalloons,
-  applySelectionLayers,
-  applyStartGoalMarkers,
-  type PhotoBalloonMarkerEntry,
-  panToMunicipalityCentroid,
-  registerAdminBoundaryClickHandler,
-  registerBicycleLogClickHandler,
-  registerFocusedActivityHoverHandler,
-  type StartGoalMarkerEntry
-} from '../utils/mapLayerInteraction';
-import {
-  addAdminBoundaryFocusLayer,
-  addAdminBoundaryHistoricalLayer,
-  addAdminBoundaryLayer,
-  addAerialPhotoLayer,
-  addBicycleLogLayer,
-  applyAdminBoundaryData,
-  getOrFetchMunicipalityBoundaries
-} from '../utils/mapLayerSetup';
-import { buildPhotoClusterIndex, type PhotoClusterIndex } from '../utils/photoBalloonCluster.util';
-
-const OSM_VECTOR_STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
-const DEFAULT_ZOOM = 12;
-const DEFAULT_CENTER: [number, number] = [139.1798829, 35.2756364];
-const METERS_PER_KILOMETER = 1000;
-const HOVER_DISTANCE_DECIMAL_PLACES = 1;
 
 /** MapViewのprops */
 type MapViewProps = {
@@ -76,7 +48,9 @@ type MapViewProps = {
  * （レイヤー可視性・フィルタ済みアクティビティ・選択/フォーカス）を地図に反映する」「クリックによる選択検出」に
  * 責務を絞る。自転車ログの新規アクティビティ取得（Strava同期）は`useCyclingActivities`（呼び出し元が使用）が担う（Issue #58）。
  * クリック検出・選択レイヤー反映・スタートゴールマーカー・レイヤー可視性反映といった地図操作の純粋関数自体は
- * `mapLayerInteraction.ts`へ切り出しており、このファイルにはReactのライフサイクルとの接続のみを置く（PR #71レビュー対応）
+ * `mapLayerInteraction.ts`へ切り出しており（PR #71レビュー対応）、Reactのライフサイクルとの結線（useEffect）も
+ * 関心事ごとに個別のカスタムフック（`frontend/src/hooks/use*`）へ切り出している。このコンポーネント自体は
+ * `containerRef`とフックの呼び出し・結線のみを行う薄い構成にしている（Issue #127）
  */
 export const MapView = ({
   layerVisibility,
@@ -91,202 +65,18 @@ export const MapView = ({
   photos,
   onPhotoClick
 }: MapViewProps) => {
-  const [isStyleLoaded, setIsStyleLoaded] = useState(false);
-
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const categorizedLayerIdsRef = useRef<CategorizedLayerIds | null>(null);
-  const startGoalMarkersRef = useRef<StartGoalMarkerEntry[]>([]);
-  const photoBalloonMarkersRef = useRef<PhotoBalloonMarkerEntry[]>([]);
-  const photoClusterIndexRef = useRef<PhotoClusterIndex | null>(null);
-  const historicalBoundariesCacheRef = useRef<Map<MunicipalityEra, FeatureCollection>>(new Map());
-  const hoverPopupRef = useRef<maplibregl.Popup | null>(null);
-  // クリックハンドラはマウント時に一度だけ登録するため、最新の値をrefで参照する（クロージャの陳腐化対策）
-  const onSelectActivitiesRef = useRef(onSelectActivities);
-  onSelectActivitiesRef.current = onSelectActivities;
-  const focusedActivityRef = useRef(focusedActivity);
-  focusedActivityRef.current = focusedActivity;
-  const onFocusMunicipalityRef = useRef(onFocusMunicipality);
-  onFocusMunicipalityRef.current = onFocusMunicipality;
-  // 依存配列に含めてeffectを不要に再実行しないよう、最新の値をrefで参照する（onSelectActivitiesRef等と同じ対策）
-  const onAdminBoundaryDataAppliedRef = useRef(onAdminBoundaryDataApplied);
-  onAdminBoundaryDataAppliedRef.current = onAdminBoundaryDataApplied;
-  // moveendハンドラはマウント時に一度だけ登録するため、最新の値をrefで参照する（onSelectActivitiesRefと同じ対策）
-  const onPhotoClickRef = useRef(onPhotoClick);
-  onPhotoClickRef.current = onPhotoClick;
+  const { mapRef, isStyleLoaded, categorizedLayerIdsRef } = useMapInstance(containerRef);
 
-  const addError = useSetAtom(addErrorAtom);
-
-  // マウント時に一度だけMapLibreの地図を生成し、スタイル読み込み完了後に航空写真・自転車ログレイヤーを追加する
-  useEffect(() => {
-    if (!containerRef.current) {
-      return;
-    }
-
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: OSM_VECTOR_STYLE_URL,
-      center: DEFAULT_CENTER,
-      zoom: DEFAULT_ZOOM,
-      // マップコントロール（地図右下、Issue #32）とライセンス表記が重ならないよう、
-      // デフォルトの右下配置ではなく左下へ変更する
-      attributionControl: false
-    });
-    map.addControl(new maplibregl.AttributionControl(), 'bottom-left');
-    mapRef.current = map;
-
-    map.once('load', () => {
-      const categorizedLayerIds = groupLayerIdsByCategory(map.getStyle().layers ?? []);
-      categorizedLayerIdsRef.current = categorizedLayerIds;
-      addAerialPhotoLayer(map, categorizedLayerIds);
-      addAdminBoundaryLayer(map);
-      addAdminBoundaryHistoricalLayer(map);
-      addAdminBoundaryFocusLayer(map);
-      addBicycleLogLayer(map);
-      registerBicycleLogClickHandler(
-        map,
-        (ids) => onSelectActivitiesRef.current(ids),
-        () => focusedActivityRef.current !== null
-      );
-      registerAdminBoundaryClickHandler(
-        map,
-        (municipality) => onFocusMunicipalityRef.current(municipality),
-        () => focusedActivityRef.current !== null
-      );
-      registerFocusedActivityHoverHandler(
-        map,
-        () => focusedActivityRef.current,
-        (point, distanceMeters) => {
-          const distanceKm = (distanceMeters / METERS_PER_KILOMETER).toFixed(HOVER_DISTANCE_DECIMAL_PLACES);
-          if (!hoverPopupRef.current) {
-            hoverPopupRef.current = new maplibregl.Popup({ closeButton: false, closeOnClick: false, anchor: 'bottom' });
-          }
-          hoverPopupRef.current.setLngLat(point).setText(`${distanceKm} km地点`).addTo(map);
-        },
-        () => {
-          hoverPopupRef.current?.remove();
-        }
-      );
-      // 写真吹き出しはクラスタリング結果が表示範囲・ズームレベルに依存するため、パン・ズーム操作の
-      // たびに現在のクラスタインデックス（photoClusterIndexRef、写真一覧が変わるたびに再構築される）を
-      // 使って再計算する（Issue #107）
-      map.on('moveend', () => {
-        applyPhotoBalloons(map, photoBalloonMarkersRef, photoClusterIndexRef.current, (photoId) =>
-          onPhotoClickRef.current(photoId)
-        );
-      });
-      setIsStyleLoaded(true);
-    });
-
-    return () => {
-      mapRef.current = null;
-      map.remove();
-    };
-  }, []);
-
-  // フィルタ適用後のアクティビティ一覧が変化するたびに、通常状態・summary状態（低ズームレベル用、Issue #61）
-  // 両方の自転車ログレイヤーのデータを更新する
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
-      return;
-    }
-
-    const source = map.getSource<maplibregl.GeoJSONSource>(BICYCLE_LOG_SOURCE_ID);
-    if (source) {
-      source.setData(cyclingActivityToGeoJson(filteredActivities));
-    }
-
-    const summarySource = map.getSource<maplibregl.GeoJSONSource>(BICYCLE_LOG_SUMMARY_SOURCE_ID);
-    if (summarySource) {
-      summarySource.setData(cyclingActivitySummaryToGeoJson(filteredActivities));
-    }
-  }, [filteredActivities, isStyleLoaded]);
-
-  // 選択中・フォーカス中のアクティビティが変化するたびに、選択用・フォーカス用レイヤーのデータを更新する
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
-      return;
-    }
-
-    applySelectionLayers(map, selectedActivities, focusedActivity);
-  }, [selectedActivities, focusedActivity, isStyleLoaded]);
-
-  // フォーカス中のアクティビティが変化するたびに、スタート・ゴールマーカーの表示を更新する
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
-      return;
-    }
-
-    applyStartGoalMarkers(map, startGoalMarkersRef, focusedActivity);
-  }, [focusedActivity, isStyleLoaded]);
-
-  // フォーカス中のアクティビティの写真一覧が変化するたびに、クラスタリングインデックスを再構築し、
-  // 現在の表示範囲・ズームレベルで写真吹き出しを再描画する。未フォーカス（photosが空配列）になった
-  // 場合はクラスタリング結果も0件になり、吹き出しが全て消える
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
-      return;
-    }
-
-    photoClusterIndexRef.current = buildPhotoClusterIndex(photos);
-    applyPhotoBalloons(map, photoBalloonMarkersRef, photoClusterIndexRef.current, (photoId) =>
-      onPhotoClickRef.current(photoId)
-    );
-  }, [photos, isStyleLoaded]);
-
-  // layerVisibility・選択中の行政区画年代が変化するたびに各レイヤーの表示/非表示を反映する
-  useEffect(() => {
-    const map = mapRef.current;
-    const categorizedLayerIds = categorizedLayerIdsRef.current;
-    if (!map || !isStyleLoaded || !categorizedLayerIds) {
-      return;
-    }
-
-    applyLayerVisibility(map, categorizedLayerIds, layerVisibility, adminBoundaryEra);
-  }, [layerVisibility, adminBoundaryEra, isStyleLoaded]);
-
-  // 選択中の行政区画年代が変化するたびに、境界データ(hit-test用含む)を取得・反映する。
-  // フォーカス対象(focusedMunicipality)はこのデータの取得・反映とは独立して変化しうるため、
-  // 依存配列に含めない（クリックのたびに全国分のジオメトリをsetDataし直すと重くなるため。Issue #80フォローアップ）
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
-      return;
-    }
-
-    void applyAdminBoundaryData(map, adminBoundaryEra, historicalBoundariesCacheRef.current)
-      .catch((error: unknown) => {
-        addError(toAppErrorInfo(error));
-      })
-      .finally(() => {
-        onAdminBoundaryDataAppliedRef.current?.();
-      });
-  }, [adminBoundaryEra, isStyleLoaded, addError]);
-
-  // フォーカス中の自治体が変化するたびに、フォーカス用オーバーレイのデータを更新し、地図の中心を
-  // フォーカスした行政区画の重心へ合わせる（ズームレベルは変更しない）。
-  // 表示・hit-test用ソースへのsetDataは伴わない取得専用の経路を使う（Issue #80フォローアップ）
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !isStyleLoaded) {
-      return;
-    }
-
-    void getOrFetchMunicipalityBoundaries(adminBoundaryEra, historicalBoundariesCacheRef.current)
-      .then((featureCollection) => {
-        const feature = applyFocusedMunicipalityLayer(map, featureCollection, focusedMunicipality);
-        if (feature) {
-          panToMunicipalityCentroid(map, feature);
-        }
-      })
-      .catch((error: unknown) => {
-        addError(toAppErrorInfo(error));
-      });
-  }, [focusedMunicipality, adminBoundaryEra, isStyleLoaded, addError]);
+  useBicycleLogClickInteraction(mapRef, isStyleLoaded, onSelectActivities, focusedActivity);
+  useAdminBoundaryClickInteraction(mapRef, isStyleLoaded, onFocusMunicipality, focusedActivity);
+  useFocusedActivityHover(mapRef, isStyleLoaded, focusedActivity);
+  useBicycleLogDataSync(mapRef, filteredActivities, isStyleLoaded);
+  useSelectionLayerSync(mapRef, selectedActivities, focusedActivity, isStyleLoaded);
+  useStartGoalMarkers(mapRef, focusedActivity, isStyleLoaded);
+  usePhotoBalloons(mapRef, photos, isStyleLoaded, onPhotoClick);
+  useLayerVisibilitySync(mapRef, categorizedLayerIdsRef, layerVisibility, adminBoundaryEra, isStyleLoaded);
+  useAdminBoundaryData(mapRef, adminBoundaryEra, focusedMunicipality, isStyleLoaded, onAdminBoundaryDataApplied);
 
   return <Box ref={containerRef} flex="1" minWidth="0" height="100%" data-testid="map-container" />;
 };
