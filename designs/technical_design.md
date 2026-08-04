@@ -44,7 +44,7 @@ root/
 # 自転車ログ表示機能
 - レイヤONのタイミングでStrava APIを呼び出し、前回の切り替えからアクティビティが更新されていないか新規アクティビティ取得を行い、更新されていれば、バックエンドのDBを更新した上でフロントエンドの地図上に自転車ログを表示する（`ActivitiesService.sync()`）
   - Strava のAPIトークンは6時間で失効するため、失効していた場合リフレッシュトークンを使ってAPIトークンを更新する（`StravaAuthService`）
-  - フロントエンド側のトリガー検知（自転車ログレイヤーのOFF→ON遷移を監視し、Strava新規アクティビティ取得→DBからの参照取得を行う）は`useCyclingActivities`フック（`frontend/src/hooks/useCyclingActivities.ts`）が担う。`MapWorkspace`がこのフックを1回だけ呼び出し、取得した`activities`をフィルタ計算・`MapView`への表示反映へつなげる。以前は`MapView`内のuseEffectに「表示反映」と「データ取得トリガー」という異なる関心事が同居していたが、Issue #58でデータ取得側を切り出した
+  - Strava新規アクティビティ取得→DBからの参照取得は`useCyclingActivities`フック（`frontend/src/hooks/useCyclingActivities.ts`）が公開する`syncAndLoadBicycleLog`関数が担う。`MapWorkspace`がこのフックを1回だけ呼び出し、取得した`activities`をフィルタ計算・`MapView`への表示反映へつなげる。以前は`MapView`内のuseEffectに「表示反映」と「データ取得トリガー」という異なる関心事が同居していたが、Issue #58でデータ取得側を切り出した。「自転車ログレイヤーのOFF→ON遷移」の検知は、以前はこのフック内部のuseEffectが`isBicycleLogVisible`propの変化を独自に監視していたが、`MapWorkspace.handleApplyLayerSettings`が既に`resolveLayerSettingsChange`で同じ判定（`willSyncCyclingLog`）を行っており判定ロジックが重複していたため、フック側のuseEffectを廃止し、呼び出し元がこの判定結果に基づき`syncAndLoadBicycleLog()`を直接呼ぶ設計に一本化した（Issue #125）
 - アクティビティの取得には詳細API（`GET /activities/{id}`、1ログにつき1リクエスト）を使い、常に高解像度の軌跡（`path`）を取得する。一覧APIが返す簡略化された軌跡（低解像度）は、通常表示には使用しない
 - 取得した軌跡（`path`）は、隣接する2点間の距離が10km以上離れている箇所（トンネル内・フェリー乗船中等の測定不能区間）で複数の区間に分割して保持する
   - 距離の算出はHaversine公式（大圏距離）を用いる（`splitPathAtJumps`、`backend/src/activities/split-path-at-jumps.util.ts`）
@@ -62,7 +62,7 @@ root/
 
 # 自転車ログフィルタリング機能
 - 仕様書記載のフィルタ条件（年月・獲得標高・平均時速・走行距離）はフロントエンドの純粋関数`filterActivities`・バリデーション関数`isActivityFilterValid`（`frontend/src/utils/filterActivities.ts`）で実現する
-- ダイアログの入力中（draft）状態は`FilterDialog`コンポーネント自身が内部stateとして保持し、実際に地図へ適用される状態（`MapWorkspace`が保持する`filter`）とは分離する。ダイアログを開くたびに入力中の内容を現在適用中の内容へリセットし（`isOpen`の変化を検知する`useEffect`）、「実行」を押したときのみ`onApply(draftFilter)`で確定値を通知する（Issue #53。以前は`useActivityFilter`フックが`MapWorkspace`側でこのdraft管理を担っていたが、ダイアログ自身の内部関心事として`FilterDialog`へ移した）
+- ダイアログの入力中（draft）状態は`FilterDialog`コンポーネント自身が内部stateとして保持し、実際に地図へ適用される状態（`MapWorkspace`が保持する`filter`）とは分離する。ダイアログを開くたびに入力中の内容を現在適用中の内容へリセットし、「実行」を押したときのみ`onApply(draftFilter)`で確定値を通知する（Issue #53。以前は`useActivityFilter`フックが`MapWorkspace`側でこのdraft管理を担っていたが、ダイアログ自身の内部関心事として`FilterDialog`へ移した）。開くたびのリセットは、以前は`isOpen`の変化を検知する`useEffect`で行っていたが、`AppDialog`が新設した`onOpen`コールバック（後述、Issue #125）経由で呼ぶ形に変更した
 - フィルタで除外され地図上に表示されなくなったアクティビティの選択・フォーカス解除は、`useActivitySelection(activities, filter)`が内部で完結させる。フックが`filter`を直接受け取り表示対象ID集合を`useMemo`で求め、変化のたびに内部の`useEffect`で選択・フォーカスから取り除く（`MapWorkspace`側からの明示的な呼び出しは不要。PR #69レビュー対応）
 - `filterActivities`の呼び出し（フィルタ計算そのもの）は`MapWorkspace`側で1回だけ行い、結果（`filteredActivities`）を`MapView`へpropsで渡す。以前は`MapView`（`filteredActivities`算出用）と`MapWorkspace`（`visibleIds`算出用）の双方が独立して`filterActivities`を呼んでいたが、Issue #58で一本化し、`MapView`は受け取った`filteredActivities`をそのまま地図描画・選択レイヤー反映・スタートゴールマーカーの算出に使うだけになった
 
@@ -105,21 +105,33 @@ root/
 - 取得したGeoJSONは年代ごとに`MapView`内の`Map<MunicipalityEra, FeatureCollection>`（`historicalBoundariesCacheRef`）へキャッシュし、同じ年代へ再度切り替えた際の再取得を避ける
 - `resolveStyleLayerIds`（`frontend/src/utils/mapLayerCategory.ts`）はadmin-boundaryレイヤーがONのとき選択中の年代（現行/過去）に対応するレイヤー群のみを返す設計だが、これだけでは「選択されていない方の年代のレイヤー群」を非表示にする処理が無く、年代を切り替えると直前に表示していた方のレイヤーが残ってしまう不具合があった（Issue #67）。`resolveUnusedAdminBoundaryLayerIds`（同ファイル、選択中の年代の逆側のレイヤーID一覧を返す）を追加し、`applyLayerVisibility`（`frontend/src/utils/mapLayerInteraction.ts`）が行政区画レイヤーのON/OFFに関わらず常にこれらを非表示にすることで解消した
 - レイヤーダイアログの年代選択（プルダウン）は、レイヤーの表示/非表示と同じ`LayerDialog`内部のdraft state（`draftEra`）が管理し、同じ「実行」ボタンのタイミングで確定する（年代選択のためだけの別ダイアログ・別コンポーネントを設けていない）
-- 選択中の年代は`MapWorkspace`から`MapView`（描画用）・`ActivityDetailSidebar`（通過自治体の判定用、`usePassedMunicipalities`経由）の両方へ`adminBoundaryEra`として渡される
+- 選択中の年代は`layerSettingsAtom.ts`の`municipalityEraAtom`（グローバルステート）で管理する。`MapView`（描画用）へは`MapWorkspace`から`adminBoundaryEra`propとして渡す（単純な親子関係のため、この経路のみpropsのままとした）が、`ActivityDetailSidebar`配下の`ActivityDetail`（通過自治体の判定用、`usePassedMunicipalities`経由）は`useAtomValue(municipalityEraAtom)`で直接参照する。以前は`MapWorkspace`→`ActivityDetailSidebar`→`ActivityDetail`という2階層のprops経由のバケツリレーだったが、`ActivityDetailSidebar`自身はこの値を使わずただ中継するだけだったため、Atom化に合わせて`ActivityDetail`が直接参照する形に解消した（Issue #125）
 - 2026-07時点で投入済みの年代は`current`（2023-01-01）・`2000-10-01`（平成の大合併前）・`1950-10-01`（昭和の大合併前）・`1920-01-01`（大正時代）の4つで、Issue #34が要望する全年代の投入が完了している
 
 # レイヤーダイアログの非同期実行対応（Issue #65）
 - レイヤーダイアログ（`LayerDialog`）で「実行」を押した際、行政区画の年代変更（`applyAdminBoundaryData`、Promiseベースで完了を検知可能）・自転車ログレイヤーのOFF→ON（`useCyclingActivities`の同期処理）のいずれかが発生する場合、それらの完了までダイアログを閉じずマウスカーソルをローディング状態（`cursor: wait`）にする。MapLibreのタイル読み込み自体（`idle`イベント）は対象に含めない（ユーザー確認済み、issue-reviewでの事前レビュー時点の懸念）
-- 対象の2つの非同期処理は元々「状態の変化に反応するuseEffect」として実装されており、実行ボタンのクリックから直接Promiseを返す形にはなっていない。完了検知は以下のコールバックを新設して実現する。
+- 対象の2つの非同期処理は完了検知のため、以下のコールバックを新設して実現する。
   - `MapView`に`onAdminBoundaryDataApplied?: () => void`を追加し、`applyAdminBoundaryData`が成功・失敗いずれの場合も`.finally()`で呼ぶ（エラー時に呼ばないとダイアログが閉じなくなるため）。コールバックは他のprops同様`useRef`で保持し、effectの依存配列に含めない（`onSelectActivities`等と同じ、不要な再実行を避ける対策）
-  - `useCyclingActivities`に第2引数`onSyncComplete?: () => void`を追加し、OFF→ON時の同期処理（`syncAndLoadBicycleLog`）が完了した時点（成功・失敗問わず`finally`）で呼ぶ
+  - `useCyclingActivities`の引数`onSyncComplete?: () => void`は、`syncAndLoadBicycleLog`が完了した時点（成功・失敗問わず`finally`）で呼ぶ。以前は自転車ログレイヤーのOFF→ON検知（`isBicycleLogVisible`propの変化）に反応する内部useEffectとして実装されていたが、呼び出し元（`MapWorkspace.handleApplyLayerSettings`）が既に`resolveLayerSettingsChange`で同じ変化判定を行っており重複していたため、判定結果に基づき呼び出し元が`syncAndLoadBicycleLog()`を直接呼ぶ設計へ変更した（Issue #125）
 - `{ waitingForAdminBoundary: boolean; waitingForCyclingLog: boolean } | null`型の待機状態（`PendingLayerApply`、`frontend/src/utils/pendingLayerApply.ts`）は、`frontend/src/atoms/isApplyingLayerSettingsAtom.ts`のJotai atomでグローバルステートとして管理する（errorsAtomと同じ「読み取り専用の派生atom + write-only atomで更新操作を限定する」パターン）。生の状態を持つ`pendingLayerApplyStateAtom`は非公開とし、外部には以下のみを公開する。
   - `isApplyingLayerSettingsAtom`（読み取り専用、派生atom）: `pendingLayerApply`のいずれかの待機フラグがtrueかどうかを返す
   - `startPendingLayerApplyAtom`（write-only）: 実行ボタン押下時に、完了を待つ対象を記録する
   - `clearPendingLayerApplyFlagAtom`（write-only）: 指定した非同期処理が完了した時点で、対応するフラグのみをfalseにする
 - `MapWorkspace`の`handleApplyLayerSettings`（実行ボタン押下時にMapControls経由で呼ばれるコールバック）は、渡された次の表示状態・年代を**現在適用中の値と比較**し、実際に変化するかどうかをこの時点で同期的に判定して`startPendingLayerApplyAtom`へ記録する。この判定を「非同期処理が開始されたことを検知してから」ではなく「クリックの時点で」行うのは、非同期処理が実際に開始される（`useEffect`が発火する）のは1レンダーサイクル後であり、開始前に完了判定を行ってしまう競合を避けるため
-- `isApplyingLayerSettingsAtom`は、これを必要とする`MapWorkspace`（カーソル表示）・`MapControls`（ダイアログの自動クローズ判定）・`LayerDialog`（自身の入力・クローズ手段の無効化）がそれぞれ`useAtomValue`で直接参照する。props経由のバケツリレーは行わない（errorsAtom・ErrorDialogと同じ設計判断。当初はMapWorkspaceのローカルuseState+props経由で実装していたが、レビュー対応でグローバルステートへ変更した）。`MapControls`はこれがtrue→falseに変化した時点（`useRef`で前回値を保持し比較）でダイアログを閉じる。「実行」時点で非同期処理が不要と判定した場合（`appliedEra`/`appliedVisibility`との比較で変化なし）は、この仕組みを介さず即座に閉じる（既存の挙動を維持）
+- `isApplyingLayerSettingsAtom`は、これを必要とする`MapWorkspace`（カーソル表示）・`MapControls`（ダイアログの自動クローズ判定）・`LayerDialog`（自身の入力・クローズ手段の無効化）がそれぞれ`useAtomValue`で直接参照する。props経由のバケツリレーは行わない（errorsAtom・ErrorDialogと同じ設計判断。当初はMapWorkspaceのローカルuseState+props経由で実装していたが、レビュー対応でグローバルステートへ変更した）。`MapControls`はこれがtrue→falseに変化した時点（`useRef`で前回値を保持し比較）でダイアログを閉じる。「実行」時点で非同期処理が不要と判定した場合（現在適用中の表示状態・年代との比較で変化なし）は、この仕組みを介さず即座に閉じる（既存の挙動を維持）
 - カーソルのローディング表示は`MapWorkspace`の最外殻`Flex`に`cursor={isApplyingLayerSettings ? 'wait' : undefined}`を設定して実現する。このプロジェクトにローディングカーソルの既存パターンは無かったため、新規に導入した
+
+## レイヤー表示状態・行政区画の年代のAtom化（Issue #125）
+- 現在適用中(地図に反映済み)のレイヤー表示状態（`LayerVisibility`）・行政区画の年代（`MunicipalityEra`）は、以前は`MapWorkspace`のローカル`useState`として保持し、`MapView`・`MapControls`・`LayerDialog`・`ActivityDetailSidebar`（さらにその配下の`ActivityDetail`）へprops経由で伝播していた。`MapControls`→`LayerDialog`、`ActivityDetailSidebar`→`ActivityDetail`の各中継元はこの値自体を使わずただ中継するだけの箇所があり、Atomへ移行して直接参照させることでバケツリレーを解消した
+- `frontend/src/atoms/layerSettingsAtom.ts`に、`isApplyingLayerSettingsAtom`と同じ「private raw atom + 読み取り専用derived atom + write-only atomで更新操作を限定する」パターンで実装した。
+  - `layerVisibilityAtom`/`municipalityEraAtom`（いずれも読み取り専用）: `MapWorkspace`・`MapControls`・`LayerDialog`がそれぞれ`useAtomValue`で直接参照する（`ActivityDetail`は`municipalityEraAtom`のみ参照）
+  - `applyLayerSettingsAtom`（write-only）: レイヤーダイアログの「実行」時に、確定した表示状態・年代を一括で反映する。書き込み元は`MapWorkspace.handleApplyLayerSettings`の1箇所のみ
+  - `visibility`/`era`を1つの`{ visibility, era }`オブジェクトにまとめた単一のraw atomではなく、`layerVisibilityStateAtom`/`municipalityEraStateAtom`という2つの独立したraw atomに分けている。`ActivityDetail`は年代のみを必要とし表示状態の変化とは無関係なため、もし両者を1つのatomにまとめると、レイヤー表示状態のみが変化した場合でも`ActivityDetail`が不要に再レンダーされてしまう（読み取りの粒度を書き込みの粒度より細かく保つ設計判断）
+
+## AppDialogのonOpenコールバック（Issue #125）
+- `LayerDialog`・`FilterDialog`はいずれも、ダイアログを開くたびに入力中(draft)の内容を現在適用中の内容へリセットする必要があるが、以前はそれぞれが個別に`isOpen`の変化を検知する`useEffect`を持っていた。共通ラッパーである`AppDialog`（`frontend/src/components/AppDialog.tsx`）に`onOpen?: () => void`propを追加し、この検知ロジックを1箇所へ集約した
+- zag-js（Chakra UIのDialog内部実装）の`Dialog.Root`が提供する`onOpenChange`は、`Dialog.Trigger`のクリック等**内部イベント駆動でのみ**発火し、親から渡される`open`（`isOpen`）prop自体の外部変化では発火しない（`dialog.machine.js`の`watch`が`open` propの変化を検知した際に送信する`CONTROLLED.OPEN`/`CONTROLLED.CLOSE`イベントには、`onOpenChange`を呼ぶ`invokeOnOpen`/`invokeOnClose`アクションが紐づいていないため）。このアプリの開閉トリガー（各ダイアログを開くアイコンボタン）は`MapControls`側の`useState`が保持し`Dialog.Trigger`を使っていないため、`onOpenChange`では`isOpen`のfalse→true変化を検知できない
+- 代わりに、React公式が推奨する「propの変化に応じてレンダー中にstateを調整する」パターンを`AppDialog`内部に実装した。前回の`isOpen`を`useState`で保持し、レンダー中に現在の`isOpen`と比較して不一致であれば直ちに`setState`で更新し、true化した場合のみ`onOpen`を呼ぶ。`useEffect`は使わない（コミット後・ペイント後に走るuseEffectと異なり、この方式はコミット前に完結するため、リセット前の一瞬だけ古いdraft内容が見える、といった描画のちらつきが起きない）
 
 # 行政区画フォーカス機能（Issue #76）
 - 「地図上の行政区画クリック」「通過自治体一覧の項目クリック」いずれからも同じ行政区画をフォーカス表示できるようにするため、クリックした地点から自治体を特定する経路として、OSMベクトルタイルの`place`ラベル（現行の行政区画表示に使っている）ではなく、`municipalities`テーブル由来のGeoJSON（`GET /municipalities/boundaries?era=...`、通過自治体表示機能・過去年代表示機能が既に使っているものと同一のAPI）を採用した

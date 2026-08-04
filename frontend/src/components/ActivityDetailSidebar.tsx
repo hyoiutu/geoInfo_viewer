@@ -1,9 +1,10 @@
 import { Box, Button, Flex, Image, SimpleGrid, Spinner, Text } from '@chakra-ui/react';
+import { useAtomValue } from 'jotai';
 import type { CyclingActivity, PassedMunicipality, Photo } from '../api/activitiesApi';
+import { municipalityEraAtom } from '../atoms/layerSettingsAtom';
 import { usePassedMunicipalities } from '../hooks/usePassedMunicipalities';
 import { usePhotoThumbnailFallback } from '../hooks/usePhotoThumbnailFallback';
 import { layout } from '../theme';
-import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
 import { toActivityDetailView } from '../utils/activityDetailView';
 
 const NO_ACTIVITIES = 0;
@@ -29,8 +30,6 @@ type ActivityDetailSidebarProps = {
   onBackFromDetail: () => void;
   /** 一覧画面の戻るボタンが押されたときに呼ばれるコールバック */
   onBackFromList: () => void;
-  /** 通過自治体の判定に使う行政区画の年代（省略時は現行） */
-  adminBoundaryEra?: MunicipalityEra;
   /** 通過自治体一覧の項目がクリックされたときに呼ばれるコールバック */
   onMunicipalityFocus: (municipality: PassedMunicipality) => void;
   /** フォーカス中のアクティビティの写真一覧（地図上の吹き出し表示、Issue #107と共有するため呼び出し元で取得したものを渡す） */
@@ -192,8 +191,6 @@ type ActivityDetailProps = {
   activity: CyclingActivity;
   /** 詳細画面の戻るボタンが押されたときに呼ばれるコールバック */
   onBackFromDetail: () => void;
-  /** 通過自治体の判定に使う行政区画の年代 */
-  adminBoundaryEra: MunicipalityEra;
   /** 通過自治体一覧の項目がクリックされたときに呼ばれるコールバック */
   onMunicipalityFocus: (municipality: PassedMunicipality) => void;
   /** フォーカス中のアクティビティの写真一覧 */
@@ -204,16 +201,20 @@ type ActivityDetailProps = {
   onPhotoClick: (photoId: number) => void;
 };
 
-/** フォーカス中のアクティビティの詳細（詳細画面）を表示する。フォーカス中のアクティビティ・行政区画の年代が変わるたびに通過自治体を取得する */
+/**
+ * フォーカス中のアクティビティの詳細（詳細画面）を表示する。フォーカス中のアクティビティ・行政区画の年代が
+ * 変わるたびに通過自治体を取得する。行政区画の年代はmunicipalityEraAtom（グローバルステート）から直接
+ * 参照し、props経由のバケツリレーは行わない（Issue #125）
+ */
 const ActivityDetail = ({
   activity,
   onBackFromDetail,
-  adminBoundaryEra,
   onMunicipalityFocus,
   photos,
   isPhotosLoading,
   onPhotoClick
 }: ActivityDetailProps) => {
+  const adminBoundaryEra = useAtomValue(municipalityEraAtom);
   const view = toActivityDetailView(activity);
   const { municipalities, isLoading: isMunicipalitiesLoading } = usePassedMunicipalities(activity.id, adminBoundaryEra);
 
@@ -251,7 +252,6 @@ export const ActivityDetailSidebar = ({
   onFocus,
   onBackFromDetail,
   onBackFromList,
-  adminBoundaryEra = MUNICIPALITY_ERA_CURRENT,
   onMunicipalityFocus,
   photos,
   isPhotosLoading,
@@ -276,7 +276,6 @@ export const ActivityDetailSidebar = ({
         <ActivityDetail
           activity={focusedActivity}
           onBackFromDetail={onBackFromDetail}
-          adminBoundaryEra={adminBoundaryEra}
           onMunicipalityFocus={onMunicipalityFocus}
           photos={photos}
           isPhotosLoading={isPhotosLoading}

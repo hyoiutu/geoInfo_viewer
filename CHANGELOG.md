@@ -14,6 +14,20 @@
 
 ## 変更履歴
 
+### [2026-08-04] レイヤー表示状態・行政区画の年代のAtom化、および複数箇所のuseEffectをより単純な手段へ置き換えるリファクタリングを行った（Issue #125）
+* **修正の動機・概要**:
+  - 現在適用中のレイヤー表示状態（`LayerVisibility`）・行政区画の年代（`MunicipalityEra`）が`MapWorkspace`のローカルstateとしてあらゆるコンポーネントへprops経由で引き回されていたため、既存の`isApplyingLayerSettingsAtom`と同じパターンでJotai atom化した。あわせて、issue-reviewでの事前検証を経て、useEffectに依存していた複数箇所をより単純な手段へ置き換えた。issue-reviewの結果、Issue本文の提案のうち一部は見送り・前提修正を行った（詳細はIssue #125のコメント参照）。
+* **各ファイルへの影響と変更内容**:
+  * **実装**:
+    - `frontend/src/atoms/layerSettingsAtom.ts`を新設。`layerVisibilityAtom`/`municipalityEraAtom`（読み取り専用）・`applyLayerSettingsAtom`（write-only）を公開する。`MapWorkspace.tsx`のローカルuseState（`visibility`/`era`）を廃止し、上記atomの読み書きに置き換えた。`MapControls.tsx`・`LayerDialog.tsx`は`appliedVisibility`/`appliedEra`propを廃止し`useAtomValue`で直接参照するよう変更（props経由のバケツリレーを解消）。`ActivityDetailSidebar.tsx`も`adminBoundaryEra`propを廃止し、配下の`ActivityDetail`が`municipalityEraAtom`を直接参照するよう変更した
+    - `LayerDialog.tsx`の`AdminBoundaryEraSelect`のonChangeを`handleChange`として別メソッドに切り出した
+    - `AppDialog.tsx`に`onOpen?: () => void`propを新設。ダイアログが開いた瞬間（`isOpen`がfalse→trueに変化したタイミング）に呼ばれる。zag-jsの`Dialog.Root`が提供する`onOpenChange`は外部からの`isOpen`変化では発火しないため使えず、代わりにReact公式が推奨する「propの変化に応じてレンダー中にstateを調整する」パターンで実現した。`LayerDialog.tsx`・`FilterDialog.tsx`はそれぞれが個別に持っていた「開くたびにdraftを現在適用中の内容へリセットする」useEffectを廃止し、この`onOpen`経由で行うよう変更した
+    - `useCyclingActivities.ts`の内部useEffect（自転車ログレイヤーのOFF→ON変化を検知しStrava同期を行う）を廃止し、同期処理を行う`syncAndLoadBicycleLog`関数をフックの戻り値として公開するよう変更した。呼び出し元の`MapWorkspace.handleApplyLayerSettings`は既に`resolveLayerSettingsChange`で同じOFF→ON変化を判定しており判定ロジックが重複していたため、その判定結果に基づき`syncAndLoadBicycleLog()`を直接呼ぶ設計に一本化した
+    - Issue本文が提案していた以下2点は、issue-reviewでの事前検証の結果、見送りとした（詳細はIssue #125コメント参照）: (1) `MapControls.tsx`のuseEffect（`isApplyingLayerSettingsAtom`のtrue→false遷移を検知しダイアログを自動で閉じる、Issue #65由来）は正当な外部状態同期の副作用であり除去対象から外した (2) `useCyclingActivities`の`onSyncComplete`コールバックを内部で直接`clearPendingLayerApplyFlagAtom`を呼ぶ設計に変更する案は、フックが「サイクリングデータ取得」と「レイヤーダイアログの待機状態管理」の2責務を持つことになりSRP原則に反するため、現状のコールバック注入を維持した
+  * **README.md**: 変更なし。
+  * **仕様書**: 変更なし（内部実装のみで、ユーザーから見た機能・挙動に変化は無い）。
+  * **設計書**: `designs/technical_design.md`に新規節「レイヤー表示状態・行政区画の年代のAtom化（Issue #125）」「AppDialogのonOpenコールバック（Issue #125）」を追加。「自転車ログ表示機能」「自転車ログフィルタリング機能」「行政区画レイヤー（年代選択）」「レイヤーダイアログの非同期実行対応（Issue #65）」の各節も、Atom化・onOpen化・useCyclingActivitiesのリファクタリングを反映して更新。
+
 ### [2026-07-30] サムネイルクリックで写真の拡大プレビューを表示するようにした（Issue #108）
 * **修正の動機・概要**:
   - アクティビティパネル（Issue #105）・地図上の吹き出し（Issue #107）いずれもサムネイルのみの表示のため、写真を大きく見たいというニーズに対応する拡大プレビュー機能を追加した。ユーザーとの相談の結果、矢印キーでの前後移動、吹き出し由来・パネル由来での見た目・挙動の共通化、という仕様で実装した。

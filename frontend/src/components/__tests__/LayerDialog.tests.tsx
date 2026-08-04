@@ -2,10 +2,11 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { createStore } from 'jotai';
 import { describe, expect, test, vi } from 'vitest';
 import { startPendingLayerApplyAtom } from '../../atoms/isApplyingLayerSettingsAtom';
+import { applyLayerSettingsAtom } from '../../atoms/layerSettingsAtom';
 import { LAYER_DEFINITIONS } from '../../constants/layerDefinitions';
 import { renderWithChakra } from '../../test-utils/renderWithChakra';
 import type { LayerVisibility } from '../../types/layer';
-import { MUNICIPALITY_ERA_CURRENT } from '../../types/municipalityEra';
+import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../../types/municipalityEra';
 import { LayerDialog } from '../LayerDialog';
 
 const DEFAULT_VISIBILITY: LayerVisibility = {
@@ -19,28 +20,29 @@ const DEFAULT_VISIBILITY: LayerVisibility = {
 };
 
 /**
- * テスト専用のストアを作り、isApplyingLayerSettingsがtrueの場合はstartPendingLayerApplyAtom経由で
- * グローバルステート（isApplyingLayerSettingsAtom）へ注入した上でレンダリングする
+ * テスト専用のストアを作り、layerSettingsAtom（appliedVisibility/appliedEra）・
+ * isApplyingLayerSettingsAtomへ値を注入した上でレンダリングする
  */
 const renderDialog = (
   overrides: Partial<Parameters<typeof LayerDialog>[0]> = {},
-  options: { isApplyingLayerSettings?: boolean } = {}
+  options: {
+    isApplyingLayerSettings?: boolean;
+    appliedVisibility?: LayerVisibility;
+    appliedEra?: MunicipalityEra;
+  } = {}
 ) => {
   const store = createStore();
+  store.set(applyLayerSettingsAtom, {
+    visibility: options.appliedVisibility ?? DEFAULT_VISIBILITY,
+    era: options.appliedEra ?? MUNICIPALITY_ERA_CURRENT
+  });
   if (options.isApplyingLayerSettings) {
     store.set(startPendingLayerApplyAtom, { waitingForAdminBoundary: true, waitingForCyclingLog: false });
   }
-  return renderWithChakra(
-    <LayerDialog
-      isOpen
-      appliedVisibility={DEFAULT_VISIBILITY}
-      appliedEra={MUNICIPALITY_ERA_CURRENT}
-      onApply={vi.fn()}
-      onClose={vi.fn()}
-      {...overrides}
-    />,
-    { store }
-  );
+  return {
+    ...renderWithChakra(<LayerDialog isOpen onApply={vi.fn()} onClose={vi.fn()} {...overrides} />, { store }),
+    store
+  };
 };
 
 describe('LayerDialogに関するテスト', () => {
@@ -159,31 +161,15 @@ describe('LayerDialogに関するテスト', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: '航空写真' }));
     await waitFor(() => expect(screen.getByRole('checkbox', { name: '航空写真' })).toBeChecked());
 
-    rerender(
-      <LayerDialog
-        isOpen={false}
-        appliedVisibility={DEFAULT_VISIBILITY}
-        appliedEra={MUNICIPALITY_ERA_CURRENT}
-        onApply={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    rerender(
-      <LayerDialog
-        isOpen
-        appliedVisibility={DEFAULT_VISIBILITY}
-        appliedEra={MUNICIPALITY_ERA_CURRENT}
-        onApply={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
+    rerender(<LayerDialog isOpen={false} onApply={vi.fn()} onClose={vi.fn()} />);
+    rerender(<LayerDialog isOpen onApply={vi.fn()} onClose={vi.fn()} />);
 
     expect(screen.getByRole('checkbox', { name: '航空写真' })).not.toBeChecked();
   });
 
   describe('行政区画の年代選択に関するテスト', () => {
     test('appliedEraの内容が年代選択プルダウンに反映される', () => {
-      renderDialog({ appliedEra: '2000-10-01' });
+      renderDialog({}, { appliedEra: '2000-10-01' });
 
       expect(screen.getByRole('combobox', { name: '行政区画の年代' })).toHaveValue('2000-10-01');
     });

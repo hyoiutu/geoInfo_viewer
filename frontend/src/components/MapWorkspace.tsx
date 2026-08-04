@@ -7,7 +7,7 @@ import {
   isApplyingLayerSettingsAtom,
   startPendingLayerApplyAtom
 } from '../atoms/isApplyingLayerSettingsAtom';
-import { createDefaultVisibility } from '../constants/layerDefinitions';
+import { applyLayerSettingsAtom, layerVisibilityAtom, municipalityEraAtom } from '../atoms/layerSettingsAtom';
 import { useActivitySelection } from '../hooks/useActivitySelection';
 import { useBackfillProgressFooter } from '../hooks/useBackfillProgressFooter';
 import { useBackfillStatus } from '../hooks/useBackfillStatus';
@@ -15,7 +15,7 @@ import { useCyclingActivities } from '../hooks/useCyclingActivities';
 import { usePhotos } from '../hooks/usePhotos';
 import { type ActivityFilter, DEFAULT_ACTIVITY_FILTER } from '../types/activityFilter';
 import type { LayerVisibility } from '../types/layer';
-import { MUNICIPALITY_ERA_CURRENT, type MunicipalityEra } from '../types/municipalityEra';
+import type { MunicipalityEra } from '../types/municipalityEra';
 import { filterActivities } from '../utils/filterActivities';
 import { resolveLayerSettingsChange } from '../utils/resolveLayerSettingsChange';
 import { ActivityDetailSidebar } from './ActivityDetailSidebar';
@@ -27,19 +27,21 @@ import { PhotoPreviewModal } from './PhotoPreviewModal';
 
 /**
  * 地図・Map Controls・各種ダイアログを組み合わせたアプリのメイン画面。
- * 各種状態のうち「確定済みの結果」（レイヤー表示状態・フィルタ条件・アクティビティの選択状態）のみをここで一元管理し、
+ * 各種状態のうち「確定済みの結果」（フィルタ条件・アクティビティの選択状態）のみをここで一元管理し、
  * 各コンポーネントへpropsとして渡す。ダイアログの開閉・入力中(draft)の内容はMapControls・各Dialogコンポーネント自身が
  * 保持する（Issue #53）。自転車ログの新規アクティビティ取得（Strava同期）は`useCyclingActivities`が担い、
  * フィルタ計算もここで1回だけ行った上でMapViewへ渡す（Issue #58）。エラー状態（errorsAtom）・レイヤーダイアログの
- * 非同期処理待機状態（isApplyingLayerSettingsAtom）はいずれもグローバルステートで管理するため、ここでは保持しない
+ * 非同期処理待機状態（isApplyingLayerSettingsAtom）・レイヤー表示状態/行政区画の年代（layerSettingsAtom）は
+ * いずれもグローバルステートで管理するため、ここではローカルstateとして保持しない（Issue #125）
  */
 export const MapWorkspace = () => {
   const isApplyingLayerSettings = useAtomValue(isApplyingLayerSettingsAtom);
   const startPendingLayerApply = useSetAtom(startPendingLayerApplyAtom);
   const clearPendingLayerApplyFlag = useSetAtom(clearPendingLayerApplyFlagAtom);
+  const visibility = useAtomValue(layerVisibilityAtom);
+  const era = useAtomValue(municipalityEraAtom);
+  const applyLayerSettings = useSetAtom(applyLayerSettingsAtom);
 
-  const [visibility, setVisibility] = useState<LayerVisibility>(createDefaultVisibility);
-  const [era, setEra] = useState<MunicipalityEra>(MUNICIPALITY_ERA_CURRENT);
   const [filter, setFilter] = useState<ActivityFilter>(DEFAULT_ACTIVITY_FILTER);
   const [focusedMunicipality, setFocusedMunicipality] = useState<PassedMunicipality | null>(null);
   // 拡大プレビュー中の写真の、photos内でのindex（Issue #108）。nullは非表示を表す
@@ -51,7 +53,7 @@ export const MapWorkspace = () => {
     show: showBackfillFooter,
     dismiss: dismissBackfillFooter
   } = useBackfillProgressFooter(backfillStatus);
-  const { activities } = useCyclingActivities(visibility['bicycle-log'], () =>
+  const { activities, syncAndLoadBicycleLog } = useCyclingActivities(() =>
     clearPendingLayerApplyFlag('waitingForCyclingLog')
   );
   const { selectedActivities, focusedActivity, selectActivities, focusActivity, clearFocus, clearSelection } =
@@ -88,16 +90,21 @@ export const MapWorkspace = () => {
   };
 
   const handleApplyLayerSettings = (nextVisibility: LayerVisibility, nextEra: MunicipalityEra) => {
-    // 行政区画データ取得(MapViewのuseEffect)・自転車ログ同期(useCyclingActivities)は
-    // いずれも変化を検知して反応するため、ここで「今回変化するかどうか」を先に判定しておく必要がある。
+    // 行政区画データ取得(MapViewのuseEffect)・自転車ログ同期(syncAndLoadBicycleLog)は
+    // いずれも「今回変化するかどうか」の判定結果に基づき動くため、ここで先に同期的に判定しておく必要がある。
     // 完了通知(onAdminBoundaryDataApplied/onSyncComplete)を待つ対象を、実行直後の同じレンダーで
     // 確定させることで、非同期処理の開始前に誤って「待つものが無い」と判定してしまう競合を避ける（Issue #65）
     const { willChangeEra, willSyncCyclingLog } = resolveLayerSettingsChange(visibility, era, nextVisibility, nextEra);
-    setVisibility(nextVisibility);
-    setEra(nextEra);
+    applyLayerSettings({ visibility: nextVisibility, era: nextEra });
     setFocusedMunicipality(null);
     if (willChangeEra || willSyncCyclingLog) {
       startPendingLayerApply({ waitingForAdminBoundary: willChangeEra, waitingForCyclingLog: willSyncCyclingLog });
+    }
+    // 自転車ログレイヤーがOFF→ONに変化する場合のみ、Strava新規アクティビティ取得・参照取得を行う
+    // （以前はuseCyclingActivities内部のuseEffectが独自に変化検知していたが、上記判定と重複していたため
+    // ここでの判定結果をそのまま使う形に一本化した、Issue #125）
+    if (willSyncCyclingLog) {
+      void syncAndLoadBicycleLog();
     }
   };
 
@@ -130,8 +137,6 @@ export const MapWorkspace = () => {
             onPhotoClick={handlePhotoClick}
           />
           <MapControls
-            appliedVisibility={visibility}
-            appliedEra={era}
             onApplyLayerSettings={handleApplyLayerSettings}
             appliedFilter={filter}
             onApplyFilter={setFilter}
@@ -153,7 +158,6 @@ export const MapWorkspace = () => {
         onFocus={handleFocusActivity}
         onBackFromDetail={handleBackFromDetail}
         onBackFromList={clearSelection}
-        adminBoundaryEra={era}
         onMunicipalityFocus={setFocusedMunicipality}
         photos={photos}
         isPhotosLoading={isPhotosLoading}
